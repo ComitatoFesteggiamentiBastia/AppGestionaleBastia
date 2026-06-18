@@ -116,6 +116,7 @@ function showPage(pageId) {
   });
   closeSidebar();
   if (pageId === 'soci' || pageId === 'db-avanzato') loadSoci();
+  if (pageId === 'impostazioni-anno') loadImpostazioniAnno();
 }
 
 function toggleSidebar() {
@@ -211,6 +212,7 @@ document.getElementById('login-password').addEventListener('keydown', e => {
 
 // ===== DATI SOCI =====
 let tuttiSoci = [];
+let impostazioniAnno = [];
 const ANNO_CORRENTE = new Date().getFullYear();
 
 function statoSocio(s) {
@@ -246,6 +248,13 @@ async function loadSoci() {
   const { data, error } = await db.from('soci').select('*').eq('attivo', true).order('cognome');
   if (error) { console.error(error); return; }
   tuttiSoci = data || [];
+
+  // Carica quota anno corrente per la barra rinnovo
+  const { data: imp } = await db.from('impostazioni_anno').select('quota').eq('anno', ANNO_CORRENTE).single();
+  impostazioniAnno = imp ? [{ anno: ANNO_CORRENTE, quota: imp.quota }] : [];
+  const barraQuota = document.getElementById('barra-quota');
+  if (barraQuota) barraQuota.textContent = imp ? parseFloat(imp.quota).toFixed(2) : '—';
+
   renderSoci(tuttiSoci);
   renderDB(tuttiSoci);
 }
@@ -276,6 +285,8 @@ function rowSocio(s, stato) {
     ? '<span class="badge badge-ok">Attivo</span>'
     : `<span class="badge badge-no">${s.anno_rinnovo || '—'}</span>`;
   return `<div class="table-row">
+    <input type="checkbox" class="socio-checkbox" data-id="${s.id}" onchange="aggiornaBarraRinnovo()"
+      style="margin-right:4px;width:16px;height:16px;cursor:pointer;accent-color:var(--blu);">
     <div style="flex:1;">
       <div class="row-name">${s.cognome} ${s.nome}</div>
       <div class="row-sub">${s.codice_fiscale} · ${s.citta || ''} · ${s.telefono || ''}</div>
@@ -547,6 +558,118 @@ function exportExcel() {
   XLSX.utils.book_append_sheet(wb, ws, 'SOCI');
   XLSX.writeFile(wb, `soci_export_${anno}.xlsx`);
   showToast('Export completato!', 'success');
+}
+
+// ===== IMPOSTAZIONI ANNO =====
+async function loadImpostazioniAnno() {
+  const { data } = await db.from('impostazioni_anno').select('*').order('anno', { ascending: false });
+  impostazioniAnno = data || [];
+  renderImpostazioniAnno();
+}
+
+function renderImpostazioniAnno() {
+  const tbody = document.getElementById('impostazioni-anno-tbody');
+  if (!tbody) return;
+  if (!impostazioniAnno.length) {
+    tbody.innerHTML = '<tr><td colspan="4" style="padding:24px;text-align:center;color:var(--testo-muted);">Nessun anno configurato</td></tr>';
+    return;
+  }
+  tbody.innerHTML = impostazioniAnno.map(a => `
+    <tr style="border-bottom:1px solid var(--border);">
+      <td style="padding:10px 16px;font-weight:600;">${a.anno}</td>
+      <td style="padding:10px 16px;">€ ${parseFloat(a.quota).toFixed(2)}</td>
+      <td style="padding:10px 16px;color:var(--testo-muted);">${a.note || '—'}</td>
+      <td style="padding:10px 16px;text-align:center;">
+        <button class="btn btn-sm" onclick="openModalAnno(${JSON.stringify(a).replace(/"/g,'&quot;')})"><i class="ti ti-edit"></i></button>
+        <button class="btn btn-sm" style="color:#991B1B" onclick="eliminaAnno('${a.id}',${a.anno})"><i class="ti ti-trash"></i></button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+function openModalAnno(a = null) {
+  document.getElementById('modal-anno').style.display = 'flex';
+  document.getElementById('modal-anno').style.pointerEvents = 'auto';
+  document.getElementById('m-anno-id').value = a?.id || '';
+  document.getElementById('m-anno').value = a?.anno || ANNO_CORRENTE;
+  document.getElementById('m-quota').value = a?.quota || 20;
+  document.getElementById('m-anno-note').value = a?.note || '';
+}
+
+function closeModalAnno() {
+  const m = document.getElementById('modal-anno');
+  m.style.display = 'none';
+  m.style.pointerEvents = 'none';
+}
+
+async function saveAnno() {
+  const anno = parseInt(document.getElementById('m-anno').value);
+  const quota = parseFloat(document.getElementById('m-quota').value);
+  if (!anno || isNaN(quota)) { showToast('Anno e quota obbligatori', 'error'); return; }
+
+  const payload = { anno, quota, note: document.getElementById('m-anno-note').value.trim() || null };
+  const id = document.getElementById('m-anno-id').value;
+  let error;
+  if (id) {
+    ({ error } = await db.from('impostazioni_anno').update(payload).eq('id', id));
+  } else {
+    ({ error } = await db.from('impostazioni_anno').insert(payload));
+  }
+  if (error) { showToast('Errore: ' + error.message, 'error'); return; }
+  showToast('Salvato!', 'success');
+  closeModalAnno();
+  loadImpostazioniAnno();
+}
+
+async function eliminaAnno(id, anno) {
+  if (!confirm(`Eliminare la configurazione per il ${anno}?`)) return;
+  const { error } = await db.from('impostazioni_anno').delete().eq('id', id);
+  if (error) { showToast('Errore', 'error'); return; }
+  showToast('Eliminato', 'success');
+  loadImpostazioniAnno();
+}
+
+function getQuotaAnnoCorrente() {
+  const imp = impostazioniAnno.find(a => a.anno === ANNO_CORRENTE);
+  return imp?.quota || 0;
+}
+
+// ===== SELEZIONE E RINNOVO MASSIVO =====
+function toggleSelezioneTutti(checked) {
+  document.querySelectorAll('.socio-checkbox').forEach(cb => cb.checked = checked);
+  aggiornaBarraRinnovo();
+}
+
+function aggiornaBarraRinnovo() {
+  const selezionati = document.querySelectorAll('.socio-checkbox:checked').length;
+  const barra = document.getElementById('barra-rinnovo');
+  const count = document.getElementById('rinnovo-count');
+  if (selezionati > 0) {
+    barra.style.display = 'flex';
+    count.textContent = selezionati;
+  } else {
+    barra.style.display = 'none';
+  }
+}
+
+async function rinnovaMassivo() {
+  const checkboxes = document.querySelectorAll('.socio-checkbox:checked');
+  const ids = Array.from(checkboxes).map(cb => cb.dataset.id);
+  if (!ids.length) return;
+
+  const quota = getQuotaAnnoCorrente();
+  const oggi = new Date().toISOString().split('T')[0];
+
+  let ok = 0, err = 0;
+  for (const id of ids) {
+    const { error: e1 } = await db.from('soci').update({ anno_rinnovo: ANNO_CORRENTE, updated_at: new Date().toISOString() }).eq('id', id);
+    const { error: e2 } = await db.from('quote').insert({ socio_id: id, anno: ANNO_CORRENTE, importo: quota, pagato: true, data_pagamento: oggi });
+    if (e1 || e2) err++; else ok++;
+  }
+
+  showToast(`Rinnovati: ${ok}${err ? ' | Errori: ' + err : ''}`, ok > 0 ? 'success' : 'error');
+  document.getElementById('barra-rinnovo').style.display = 'none';
+  loadSoci();
 }
 
 // Il caricamento soci è gestito direttamente in showPage

@@ -535,6 +535,7 @@
     </div>
     <div class="s-section" id="admin-section" style="display:none">
       <div class="s-label">Amministrazione</div>
+      <div class="s-item" onclick="showPage('impostazioni-anno')"><i class="ti ti-calendar-stats"></i> Anni e quote</div>
       <div class="s-item" onclick="showPage('utenti')"><i class="ti ti-settings"></i> Utenti</div>
     </div>
   </nav>
@@ -599,6 +600,22 @@
           <input type="text" id="soci-search" placeholder="Cerca per nome o CF..." oninput="filterSoci()" style="padding:7px 12px;border:1px solid #D4C9BE;border-radius:7px;font-size:13px;width:220px;outline:none;">
           <button class="btn btn-add" onclick="openModalSocio()"><i class="ti ti-plus"></i> Nuovo socio</button>
         </div>
+      </div>
+
+      <!-- Barra rinnovo massivo -->
+      <div id="barra-rinnovo" style="display:none;align-items:center;gap:12px;background:var(--blu-notte);color:white;padding:10px 16px;border-radius:10px;margin-bottom:16px;">
+        <span style="flex:1;font-size:13px;"><span id="rinnovo-count">0</span> soci selezionati</span>
+        <button class="btn" style="background:var(--oro);color:white;border-color:var(--oro);" onclick="rinnovaMassivo()">
+          <i class="ti ti-refresh"></i> Rinnova selezionati (€ <span id="barra-quota">—</span>)
+        </button>
+        <button class="btn" style="background:transparent;color:white;border-color:rgba(255,255,255,0.3);" onclick="toggleSelezioneTutti(false)">Deseleziona tutti</button>
+      </div>
+
+      <!-- Seleziona tutti -->
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+        <input type="checkbox" id="select-tutti" onchange="toggleSelezioneTutti(this.checked)"
+          style="width:16px;height:16px;cursor:pointer;accent-color:var(--blu);">
+        <label for="select-tutti" style="font-size:13px;color:var(--testo-muted);cursor:pointer;">Seleziona tutti</label>
       </div>
 
       <!-- Attivi -->
@@ -717,6 +734,29 @@
       <div class="coming-soon"><i class="ti ti-box"></i><h3>Inventario</h3><p>Attrezzature e materiali dell'associazione</p></div>
     </div>
 
+    <!-- IMPOSTAZIONI ANNO -->
+    <div class="page" id="page-impostazioni-anno">
+      <div class="page-header">
+        <h2>Anni e quote associative</h2>
+        <button class="btn btn-add" onclick="openModalAnno()"><i class="ti ti-plus"></i> Nuovo anno</button>
+      </div>
+      <div class="table-card">
+        <table style="width:100%;border-collapse:collapse;font-size:13px;">
+          <thead>
+            <tr style="background:var(--grigio-chiaro,#F2EDE4);">
+              <th style="padding:10px 16px;text-align:left;font-weight:600;color:var(--blu-notte);">Anno</th>
+              <th style="padding:10px 16px;text-align:left;font-weight:600;color:var(--blu-notte);">Quota</th>
+              <th style="padding:10px 16px;text-align:left;font-weight:600;color:var(--blu-notte);">Note</th>
+              <th style="padding:10px 16px;text-align:center;font-weight:600;color:var(--blu-notte);">Azioni</th>
+            </tr>
+          </thead>
+          <tbody id="impostazioni-anno-tbody">
+            <tr><td colspan="4" style="padding:24px;text-align:center;color:var(--testo-muted);">Caricamento...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
     <!-- UTENTI -->
     <div class="page" id="page-utenti">
       <div class="page-header"><h2>Utenti</h2></div>
@@ -769,5 +809,23 @@
 
 
 <script src="app.js"></script>
+<!-- MODALE ANNO -->
+<div id="modal-anno" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:200;align-items:center;justify-content:center;padding:16px;pointer-events:none;">
+  <div style="background:white;border-radius:14px;width:100%;max-width:400px;padding:24px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
+      <h3 style="font-size:16px;font-weight:600;color:var(--blu-notte);">Configura anno</h3>
+      <button onclick="closeModalAnno()" style="background:none;border:none;cursor:pointer;font-size:20px;color:var(--testo-muted);">✕</button>
+    </div>
+    <div class="form-group"><label>Anno *</label><input id="m-anno" type="number" placeholder="2025"></div>
+    <div class="form-group"><label>Quota associativa (€) *</label><input id="m-quota" type="number" step="0.01" placeholder="20.00"></div>
+    <div class="form-group"><label>Note</label><input id="m-anno-note" placeholder="Opzionale"></div>
+    <input type="hidden" id="m-anno-id">
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;">
+      <button class="btn" onclick="closeModalAnno()">Annulla</button>
+      <button class="btn btn-add" onclick="saveAnno()"><i class="ti ti-check"></i> Salva</button>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>
