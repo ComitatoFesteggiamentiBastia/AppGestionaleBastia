@@ -427,20 +427,43 @@ async function importExcel(input) {
     if (headerRow < 0) { showToast('Intestazioni non trovate', 'error'); return; }
 
     const rawHeaders = rows[headerRow].map(c => String(c).toLowerCase().trim()
-      .replace(/\s+/g,'_').replace(/[*]/g,'').replace('codice_fiscale','codice_fiscale')
-      .replace('è','e').replace('à','a').replace('ì','i').replace('ò','o').replace('ù','u'));
+      .replace(/[*]/g,'')
+      .replace(/è/g,'e').replace(/à/g,'a').replace(/ì/g,'i').replace(/ò/g,'o').replace(/ù/g,'u'));
 
     const keyMap = {
-      'codice_fiscale': 'codice_fiscale', 'cognome': 'cognome', 'nome': 'nome',
-      'sesso_(m/f)': 'sesso', 'sesso': 'sesso',
-      'data_nascita_(gg/mm/aaaa)': 'data_nascita', 'data_nascita': 'data_nascita',
-      'cap_nascita': 'cap_nascita', 'comune_nascita': 'luogo_nascita', 'luogo_nascita': 'luogo_nascita',
-      'indirizzo_residenza': 'indirizzo', 'indirizzo': 'indirizzo',
-      'cap': 'cap', 'citta': 'citta', 'città': 'citta',
-      'cellulare': 'telefono', 'telefono': 'telefono',
-      'email': 'email',
-      'data_iscrizione_(gg/mm/aaaa)': 'data_iscrizione', 'data_iscrizione': 'data_iscrizione',
-      'anno_rinnovo': 'anno_rinnovo'
+      // codice fiscale
+      'codice_fiscale': 'codice_fiscale', 'codice fiscale': 'codice_fiscale',
+      // nome cognome
+      'cognome': 'cognome', 'nome': 'nome',
+      // sesso
+      'sesso': 'sesso', 'sesso_(m/f)': 'sesso',
+      // data nascita
+      'data_nascita': 'data_nascita', 'data nascita': 'data_nascita',
+      'data_nascita_(gg/mm/aaaa)': 'data_nascita', 'data di nascita': 'data_nascita',
+      // luogo nascita
+      'luogo_nascita': 'luogo_nascita', 'luogo nascita': 'luogo_nascita',
+      'comune_nascita': 'luogo_nascita', 'comune nascita': 'luogo_nascita',
+      'comune di nascita': 'luogo_nascita',
+      // cap nascita
+      'cap_nascita': 'cap_nascita', 'cap nascita': 'cap_nascita',
+      'cap di nascita': 'cap_nascita',
+      // indirizzo
+      'indirizzo': 'indirizzo', 'indirizzo_residenza': 'indirizzo',
+      'indirizzo residenza': 'indirizzo', 'residenza': 'indirizzo',
+      // cap
+      'cap': 'cap',
+      // citta
+      'citta': 'citta', 'città': 'citta', 'comune': 'citta',
+      // telefono
+      'telefono': 'telefono', 'cellulare': 'telefono', 'cell': 'telefono',
+      // email
+      'email': 'email', 'e-mail': 'email',
+      // iscrizione
+      'data_iscrizione': 'data_iscrizione', 'data iscrizione': 'data_iscrizione',
+      'data_iscrizione_(gg/mm/aaaa)': 'data_iscrizione',
+      'data iscrizione*': 'data_iscrizione',
+      // anno rinnovo
+      'anno_rinnovo': 'anno_rinnovo', 'anno rinnovo': 'anno_rinnovo'
     };
 
     const dataRows = rows.slice(headerRow + 1).filter(r => r.some(c => c !== ''));
@@ -448,7 +471,11 @@ async function importExcel(input) {
 
     for (const row of dataRows) {
       const obj = {};
-      rawHeaders.forEach((h, i) => { if (keyMap[h]) obj[keyMap[h]] = String(row[i] || '').trim(); });
+      rawHeaders.forEach((h, i) => {
+        const normalized = h.replace(/_/g, ' ').trim();
+        const key = keyMap[h] || keyMap[normalized];
+        if (key) obj[key] = String(row[i] || '').trim();
+      });
       if (!obj.codice_fiscale || !obj.cognome || !obj.nome) { errori++; continue; }
 
       obj.codice_fiscale = obj.codice_fiscale.toUpperCase();
