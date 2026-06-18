@@ -1512,12 +1512,9 @@ async function loadInventario() {
 function renderInventario() {
   const search = (document.getElementById('inv-search')?.value || '').toLowerCase();
   const filtroCategoria = document.getElementById('inv-filtro-cat')?.value || 'tutti';
-  const filtroStato = document.getElementById('inv-filtro-stato')?.value || 'tutti';
-
   let lista = tuttoInventario;
   if (search) lista = lista.filter(i => JSON.stringify(i).toLowerCase().includes(search));
   if (filtroCategoria !== 'tutti') lista = lista.filter(i => i.categoria === filtroCategoria);
-  if (filtroStato !== 'tutti') lista = lista.filter(i => i.stato === filtroStato);
 
   // Aggiorna select categorie
   const sel = document.getElementById('inv-filtro-cat');
@@ -1558,7 +1555,7 @@ function renderInventario() {
             <div class="row-name">${i.nome}</div>
             <div class="row-sub">${i.posizione ? '📍 ' + i.posizione + ' · ' : ''}Q: <strong>${i.quantita} ${i.unita || 'pz'}</strong>${i.note ? ' · ' + i.note : ''}</div>
           </div>
-          <span class="badge ${statoColor[i.stato] || 'badge-ok'}">${statoLabel[i.stato] || i.stato || 'Buono'}</span>
+
           <button class="btn btn-sm" onclick='openModalInventario(${JSON.stringify(i).replace(/"/g,"&quot;")})'><i class="ti ti-edit"></i></button>
           <button class="btn btn-sm" style="color:#991B1B" onclick="eliminaInventario('${i.id}')"><i class="ti ti-trash"></i></button>
         </div>
@@ -1574,8 +1571,6 @@ function aggiornaStatsInventario() {
   const categorie = categorieInventario.length;
   if (document.getElementById('inv-stat-tot')) document.getElementById('inv-stat-tot').textContent = tot;
   if (document.getElementById('inv-stat-cat')) document.getElementById('inv-stat-cat').textContent = categorie;
-  if (document.getElementById('inv-stat-rev')) document.getElementById('inv-stat-rev').textContent = daRev;
-  if (document.getElementById('inv-stat-fuori')) document.getElementById('inv-stat-fuori').textContent = fuoriUso;
 }
 
 function openModalInventario(i = null) {
@@ -1586,8 +1581,7 @@ function openModalInventario(i = null) {
   document.getElementById('m-inv-categoria').value = i?.categoria || '';
   document.getElementById('m-inv-quantita').value = i?.quantita ?? '';
   document.getElementById('m-inv-unita').value = i?.unita || 'pz';
-  document.getElementById('m-inv-stato').value = i?.stato || 'buono';
-  document.getElementById('m-inv-posizione').value = i?.posizione || '';
+
   document.getElementById('m-inv-note').value = i?.note || '';
   // Aggiorna datalist categorie
   const dl = document.getElementById('inv-categorie-list');
@@ -1610,8 +1604,6 @@ async function saveInventario() {
     categoria: document.getElementById('m-inv-categoria').value.trim() || null,
     quantita,
     unita: document.getElementById('m-inv-unita').value.trim() || 'pz',
-    stato: document.getElementById('m-inv-stato').value,
-    posizione: document.getElementById('m-inv-posizione').value.trim() || null,
     note: document.getElementById('m-inv-note').value.trim() || null,
     updated_at: new Date().toISOString()
   };

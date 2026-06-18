@@ -883,22 +883,14 @@
           <select id="inv-filtro-cat" onchange="renderInventario()" style="padding:7px 10px;border:1px solid #D4C9BE;border-radius:7px;font-size:13px;outline:none;">
             <option value="tutti">Tutte le categorie</option>
           </select>
-          <select id="inv-filtro-stato" onchange="renderInventario()" style="padding:7px 10px;border:1px solid #D4C9BE;border-radius:7px;font-size:13px;outline:none;">
-            <option value="tutti">Tutti gli stati</option>
-            <option value="ottimo">Ottimo</option>
-            <option value="buono">Buono</option>
-            <option value="da_revisionare">Da revisionare</option>
-            <option value="fuori_uso">Fuori uso</option>
-          </select>
+
           <button class="btn btn-add" onclick="openModalInventario()"><i class="ti ti-plus"></i> Articolo</button>
         </div>
       </div>
       <!-- Stats -->
-      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:20px;">
+      <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:20px;">
         <div class="stat-card" style="cursor:default;"><i class="ti ti-box"></i><div class="stat-val" id="inv-stat-tot" style="font-size:22px;">0</div><div class="stat-lbl">Articoli totali</div></div>
         <div class="stat-card" style="cursor:default;"><i class="ti ti-category"></i><div class="stat-val" id="inv-stat-cat" style="font-size:22px;">0</div><div class="stat-lbl">Categorie</div></div>
-        <div class="stat-card" style="border-top-color:var(--oro);cursor:default;"><i class="ti ti-tool" style="color:var(--oro);"></i><div class="stat-val" id="inv-stat-rev" style="font-size:22px;color:var(--oro);">0</div><div class="stat-lbl">Da revisionare</div></div>
-        <div class="stat-card" style="border-top-color:#991B1B;cursor:default;"><i class="ti ti-alert-circle" style="color:#991B1B;"></i><div class="stat-val" id="inv-stat-fuori" style="font-size:22px;color:#991B1B;">0</div><div class="stat-lbl">Fuori uso</div></div>
       </div>
       <div id="inventario-list"><div style="padding:32px;text-align:center;color:var(--testo-muted);">Caricamento...</div></div>
     </div>
@@ -1057,16 +1049,7 @@
       </div>
       <div class="form-group"><label>Quantità *</label><input id="m-inv-quantita" type="number" min="0"></div>
       <div class="form-group"><label>Unità</label><input id="m-inv-unita" placeholder="pz, kg, lt..."></div>
-      <div class="form-group">
-        <label>Stato</label>
-        <select id="m-inv-stato" style="width:100%;padding:9px 12px;border:1px solid #D4C9BE;border-radius:8px;font-size:14px;outline:none;">
-          <option value="ottimo">Ottimo</option>
-          <option value="buono">Buono</option>
-          <option value="da_revisionare">Da revisionare</option>
-          <option value="fuori_uso">Fuori uso</option>
-        </select>
-      </div>
-      <div class="form-group"><label>Posizione</label><input id="m-inv-posizione" placeholder="Es. Magazzino, Cucina..."></div>
+
       <div class="form-group" style="grid-column:1/3"><label>Note</label><input id="m-inv-note"></div>
     </div>
     <input type="hidden" id="m-inv-id">
