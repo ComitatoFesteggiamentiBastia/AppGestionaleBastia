@@ -476,11 +476,7 @@ async function importExcel(input) {
         const key = keyMap[h] || keyMap[normalized];
         if (key) obj[key] = String(row[i] || '').trim();
       });
-      if (!obj.codice_fiscale || !obj.cognome || !obj.nome) {
-        console.warn('Riga saltata - dati mancanti:', obj, 'raw headers:', rawHeaders, 'row:', row);
-        errori++; continue;
-      }
-      console.log('Import row:', JSON.stringify(obj));
+      if (!obj.codice_fiscale || !obj.cognome || !obj.nome) { errori++; continue; }
 
       obj.codice_fiscale = obj.codice_fiscale.toUpperCase();
       if (obj.data_nascita) obj.data_nascita = parseDataIT(obj.data_nascita);
@@ -489,8 +485,15 @@ async function importExcel(input) {
       obj.attivo = true;
       obj.updated_at = new Date().toISOString();
 
-      const { error } = await db.from('soci').upsert(obj, { onConflict: 'codice_fiscale' });
-      if (error) errori++; else importati++;
+      // Prima prova ad aggiornare, se non esiste inserisce
+      const { data: existing } = await db.from('soci').select('id').eq('codice_fiscale', obj.codice_fiscale).single();
+      let error;
+      if (existing?.id) {
+        ({ error } = await db.from('soci').update(obj).eq('codice_fiscale', obj.codice_fiscale));
+      } else {
+        ({ error } = await db.from('soci').insert(obj));
+      }
+      if (error) { console.error('Insert error:', error.message, obj); errori++; } else importati++;
     }
 
     showToast(`Importati: ${importati} | Errori: ${errori}`, importati > 0 ? 'success' : 'error');
