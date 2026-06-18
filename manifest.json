@@ -1,0 +1,19 @@
+{
+  "name": "Gestionale Bastia",
+  "short_name": "Bastia",
+  "description": "Gestionale APS — Comitato Festeggiamenti N.S. della Bastia",
+  "start_url": "/AppGestionaleBastia/",
+  "scope": "/AppGestionaleBastia/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#1E2D47",
+  "theme_color": "#1E2D47",
+  "icons": [
+    {
+      "src": "logo.jpg",
+      "sizes": "any",
+      "type": "image/jpeg",
+      "purpose": "any maskable"
+    }
+  ]
+}
