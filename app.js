@@ -189,30 +189,18 @@ function showToast(msg, type = '') {
 }
 
 db.auth.onAuthStateChange(async (event, session) => {
-  if (event === 'SIGNED_IN' && session?.user && !currentUser) {
-    await initApp(session.user);
-  }
   if (event === 'SIGNED_OUT') {
     currentUser = null;
     currentProfile = null;
   }
 });
 
-// All'avvio: controlla se c'è già una sessione valida
+// All'avvio: pulisci sempre la sessione e mostra login
 (async () => {
-  try {
-    const { data: { session }, error } = await db.auth.getSession();
-    if (error) throw error;
-    if (session?.user && !currentUser) {
-      await initApp(session.user);
-    }
-  } catch(e) {
-    // Sessione corrotta: pulisci tutto e mostra login
-    Object.keys(localStorage).forEach(k => {
-      if (k.startsWith('sb-')) localStorage.removeItem(k);
-    });
-    await db.auth.signOut();
-  }
+  Object.keys(localStorage).forEach(k => {
+    if (k.startsWith('sb-')) localStorage.removeItem(k);
+  });
+  await db.auth.signOut();
 })();
 
 document.getElementById('login-password').addEventListener('keydown', e => {
