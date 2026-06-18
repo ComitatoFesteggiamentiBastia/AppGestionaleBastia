@@ -695,10 +695,8 @@ async function rinnovaMassivo() {
 let tuttiUtenti = [];
 
 async function loadUtenti() {
-  const { data: profili, error: e1 } = await db.from('profiles').select('*').order('cognome');
-  const { data: permessi, error: e2 } = await db.from('utenti_permessi').select('*');
-  console.log('profili:', profili, 'error:', e1);
-  console.log('permessi:', permessi, 'error:', e2);
+  const { data: profili } = await db.from('profiles').select('*').order('cognome');
+  const { data: permessi } = await db.from('utenti_permessi').select('*');
   tuttiUtenti = (profili || []).map(p => ({
     ...p,
     permessi: permessi?.find(x => x.user_id === p.id)?.permessi || {}
