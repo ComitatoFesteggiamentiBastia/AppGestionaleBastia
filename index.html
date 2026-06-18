@@ -795,46 +795,42 @@ async function doLogout() {
   document.getElementById('login-password').value = '';
 }
 
-function debugLog(msg) {
-  const err = document.getElementById('login-error');
-  err.style.display = 'block';
-  err.style.background = '#EEF2F8';
-  err.style.color = '#1E2D47';
-  err.textContent = '⏳ ' + msg;
-}
-
 async function initApp(user) {
   try {
-    debugLog('Utente ricevuto: ' + user.email);
     currentUser = user;
 
-    debugLog('Carico profilo...');
-    const { data: profileRaw, error: profErr } = await db.rpc('get_my_profile');
-    if (profErr) debugLog('Errore profilo: ' + profErr.message);
-    const profile = profileRaw || null;
-
-    currentProfile = profile;
-    debugLog('Profilo OK: ' + JSON.stringify(profile?.ruolo));
-
-    const nome = profile?.nome || user.email.split('@')[0];
-    const cognome = profile?.cognome || '';
-    const iniziali = ((nome[0] || '') + (cognome[0] || '')).toUpperCase() || '?';
-
-    document.getElementById('header-avatar').textContent = iniziali;
-    document.getElementById('header-user-name').textContent = nome + (cognome ? ' ' + cognome : '');
-
-    if (profile?.ruolo === 'admin') {
-      document.getElementById('admin-section').style.display = 'block';
-    }
-
-    debugLog('Mostro app...');
+    // Mostra subito l'app con i dati dell'email
+    const emailName = user.email.split('@')[0];
+    document.getElementById('header-avatar').textContent = emailName[0].toUpperCase();
+    document.getElementById('header-user-name').textContent = user.email;
+    document.getElementById('login-error').style.display = 'none';
     document.getElementById('login-screen').style.display = 'none';
     document.getElementById('app-shell').style.display = 'block';
-
     showPage('dashboard');
-    loadDashboard();
+
+    // Carica profilo in background dopo che l'app è visibile
+    setTimeout(async () => {
+      try {
+        const { data: profile } = await db.from('profiles').select('*').eq('id', user.id).single();
+        if (profile) {
+          currentProfile = profile;
+          const nome = profile.nome || emailName;
+          const cognome = profile.cognome || '';
+          const iniziali = ((nome[0] || '') + (cognome[0] || '')).toUpperCase();
+          document.getElementById('header-avatar').textContent = iniziali;
+          document.getElementById('header-user-name').textContent = nome + (cognome ? ' ' + cognome : '');
+          if (profile.ruolo === 'admin') {
+            document.getElementById('admin-section').style.display = 'block';
+          }
+        }
+        loadDashboard();
+      } catch(e) {
+        loadDashboard();
+      }
+    }, 500);
+
   } catch(e) {
-    debugLog('ERRORE initApp: ' + e.message);
+    showLoginError('Errore: ' + e.message);
     document.getElementById('login-btn').disabled = false;
     document.getElementById('login-btn').textContent = 'Accedi';
   }
