@@ -809,8 +809,9 @@ async function initApp(user) {
     currentUser = user;
 
     debugLog('Carico profilo...');
-    const { data: profile, error: profErr } = await db.from('profiles').select('*').eq('id', user.id).single();
+    const { data: profileRaw, error: profErr } = await db.rpc('get_my_profile');
     if (profErr) debugLog('Errore profilo: ' + profErr.message);
+    const profile = profileRaw || null;
 
     currentProfile = profile;
     debugLog('Profilo OK: ' + JSON.stringify(profile?.ruolo));
