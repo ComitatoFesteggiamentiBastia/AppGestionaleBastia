@@ -574,6 +574,7 @@
       <div class="s-item" onclick="showPage('volontari')"><i class="ti ti-hand-stop"></i> Volontari</div>
       <div class="s-item" onclick="showPage('turni')"><i class="ti ti-calendar"></i> Turni</div>
       <div class="s-item" onclick="showPage('spesa')"><i class="ti ti-shopping-cart"></i> Lista spesa</div>
+      <div class="s-item" onclick="showPage('sponsor')"><i class="ti ti-award"></i> Sponsor</div>
     </div>
     <div class="s-section">
       <div class="s-label">Risorse</div>
@@ -746,14 +747,54 @@
 
     <!-- SAGRA -->
     <div class="page" id="page-sagra">
-      <div class="page-header"><h2>Edizioni sagra</h2><button class="btn btn-add"><i class="ti ti-plus"></i> Nuova edizione</button></div>
-      <div class="coming-soon"><i class="ti ti-tent"></i><h3>Edizioni della Sagra della Bastia</h3><p>Gestione delle edizioni annuali</p></div>
+      <div class="page-header">
+        <h2>Edizioni sagra</h2>
+        <button class="btn btn-add" onclick="openModalSagra()"><i class="ti ti-plus"></i> Nuova edizione</button>
+      </div>
+      <div id="sagre-list"><div class="coming-soon"><i class="ti ti-tent"></i><h3>Caricamento...</h3></div></div>
     </div>
 
     <!-- MOVIMENTI SAGRA -->
     <div class="page" id="page-movimenti-sagra">
-      <div class="page-header"><h2>Entrate / Uscite sagra</h2><button class="btn btn-add"><i class="ti ti-plus"></i> Movimento</button></div>
-      <div class="coming-soon"><i class="ti ti-chart-bar"></i><h3>Contabilità sagra</h3><p>Entrate e uscite per edizione e per stand</p></div>
+      <div class="page-header">
+        <div>
+          <h2>Entrate / Uscite</h2>
+          <div id="ms-sagra-header" style="font-size:12px;color:var(--testo-muted);margin-top:2px;"></div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <input type="text" id="ms-search" placeholder="Cerca..." oninput="renderMovimentiSagra()" style="padding:7px 12px;border:1px solid #D4C9BE;border-radius:7px;font-size:13px;width:160px;outline:none;">
+          <select id="ms-filtro" onchange="renderMovimentiSagra()" style="padding:7px 10px;border:1px solid #D4C9BE;border-radius:7px;font-size:13px;outline:none;">
+            <option value="tutti">Tutti</option>
+            <option value="entrata">Entrate</option>
+            <option value="uscita">Uscite</option>
+          </select>
+          <button class="btn btn-add" onclick="openModalMovimento()"><i class="ti ti-plus"></i> Nuovo</button>
+        </div>
+      </div>
+      <!-- Bilancio rapido -->
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:20px;">
+        <div class="stat-card verde" style="cursor:default;">
+          <i class="ti ti-arrow-up"></i>
+          <div class="stat-val" id="ms-tot-entrate" style="font-size:18px;">—</div>
+          <div class="stat-lbl">Totale entrate</div>
+        </div>
+        <div class="stat-card" style="border-top-color:#991B1B;cursor:default;">
+          <i class="ti ti-arrow-down" style="color:#991B1B;"></i>
+          <div class="stat-val" id="ms-tot-uscite" style="font-size:18px;color:#991B1B;">—</div>
+          <div class="stat-lbl">Totale uscite</div>
+        </div>
+        <div class="stat-card oro" style="cursor:default;">
+          <i class="ti ti-trending-up"></i>
+          <div class="stat-val" id="ms-utile" style="font-size:18px;">—</div>
+          <div class="stat-lbl">Utile</div>
+        </div>
+      </div>
+      <!-- Entrate -->
+      <div style="font-size:13px;font-weight:600;color:var(--verde);margin-bottom:8px;">Entrate</div>
+      <div class="table-card" style="margin-bottom:20px;"><div id="ms-entrate-list"></div></div>
+      <!-- Uscite -->
+      <div style="font-size:13px;font-weight:600;color:#991B1B;margin-bottom:8px;">Uscite</div>
+      <div class="table-card"><div id="ms-uscite-list"></div></div>
     </div>
 
     <!-- VOLONTARI -->
@@ -766,6 +807,34 @@
     <div class="page" id="page-turni">
       <div class="page-header"><h2>Turni</h2><button class="btn btn-add"><i class="ti ti-plus"></i> Nuovo turno</button></div>
       <div class="coming-soon"><i class="ti ti-calendar"></i><h3>Turni sagra</h3><p>Assegnazione turni per stand e volontario</p></div>
+    </div>
+
+    <!-- SPONSOR -->
+    <div class="page" id="page-sponsor">
+      <div class="page-header">
+        <div>
+          <h2>Sponsor</h2>
+          <div id="sp-sagra-header" style="font-size:12px;color:var(--testo-muted);margin-top:2px;"></div>
+        </div>
+        <button class="btn btn-add" onclick="openModalSponsor()"><i class="ti ti-plus"></i> Nuovo sponsor</button>
+      </div>
+      <div style="overflow-x:auto;">
+        <table style="width:100%;border-collapse:collapse;font-size:13px;background:white;border-radius:10px;overflow:hidden;border:1px solid var(--border);">
+          <thead>
+            <tr style="background:var(--blu-notte);color:white;">
+              <th style="padding:10px 12px;text-align:left;">Ditta</th>
+              <th style="padding:10px 12px;text-align:left;">Tipo</th>
+              <th style="padding:10px 12px;text-align:left;">Importo</th>
+              <th style="padding:10px 12px;text-align:left;">Dettaglio</th>
+              <th style="padding:10px 12px;text-align:left;">Stato</th>
+              <th style="padding:10px 12px;text-align:center;">Azioni</th>
+            </tr>
+          </thead>
+          <tbody id="sponsor-tbody">
+            <tr><td colspan="6" style="padding:24px;text-align:center;color:var(--testo-muted);">Caricamento...</td></tr>
+          </tbody>
+        </table>
+      </div>
     </div>
 
     <!-- SPESA -->
@@ -877,6 +946,119 @@
 
 
 <script src="app.js"></script>
+<!-- MODALE SAGRA -->
+<div id="modal-sagra" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:200;align-items:center;justify-content:center;padding:16px;pointer-events:none;">
+  <div style="background:white;border-radius:14px;width:100%;max-width:440px;padding:24px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
+      <h3 style="font-size:16px;font-weight:600;color:var(--blu-notte);">Edizione sagra</h3>
+      <button onclick="closeModalSagra()" style="background:none;border:none;cursor:pointer;font-size:20px;color:var(--testo-muted);">✕</button>
+    </div>
+    <div class="form-group"><label>Anno *</label><input id="m-sagra-anno" type="number"></div>
+    <div class="form-group"><label>Nome *</label><input id="m-sagra-nome"></div>
+    <div class="form-group"><label>Data inizio</label><input id="m-sagra-inizio" type="date"></div>
+    <div class="form-group"><label>Data fine</label><input id="m-sagra-fine" type="date"></div>
+    <div class="form-group"><label>Note</label><input id="m-sagra-note"></div>
+    <input type="hidden" id="m-sagra-id">
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;">
+      <button class="btn" onclick="closeModalSagra()">Annulla</button>
+      <button class="btn btn-add" onclick="saveSagra()"><i class="ti ti-check"></i> Salva</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODALE MOVIMENTO SAGRA -->
+<div id="modal-movimento" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:200;align-items:center;justify-content:center;padding:16px;pointer-events:none;">
+  <div style="background:white;border-radius:14px;width:100%;max-width:520px;max-height:90vh;overflow-y:auto;padding:24px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
+      <h3 style="font-size:16px;font-weight:600;color:var(--blu-notte);">Movimento sagra</h3>
+      <button onclick="closeModalMovimento()" style="background:none;border:none;cursor:pointer;font-size:20px;color:var(--testo-muted);">✕</button>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+      <div class="form-group">
+        <label>Tipo *</label>
+        <select id="m-mov-tipo" style="width:100%;padding:9px 12px;border:1px solid #D4C9BE;border-radius:8px;font-size:14px;outline:none;">
+          <option value="entrata">Entrata</option>
+          <option value="uscita">Uscita</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Categoria</label>
+        <select id="m-mov-categoria" style="width:100%;padding:9px 12px;border:1px solid #D4C9BE;border-radius:8px;font-size:14px;outline:none;">
+          <option value="">—</option>
+          <option>RISTORANTE</option><option>BAR</option><option>TORTE</option>
+          <option>LOTTERIA</option><option>SPONSOR</option><option>OFFERTE</option>
+          <option>ALIMENTARI</option><option>MATERIALE</option><option>INTRATTENIMENTO</option>
+          <option>SICUREZZA</option><option>ASSICURAZIONE</option><option>SIAE</option>
+          <option>NON FESTA</option><option>ALTRO</option>
+        </select>
+      </div>
+      <div class="form-group" style="grid-column:1/3"><label>Descrizione *</label><input id="m-mov-descrizione"></div>
+      <div class="form-group"><label>Fornitore</label><input id="m-mov-fornitore"></div>
+      <div class="form-group"><label>Importo (€) *</label><input id="m-mov-importo" type="number" step="0.01"></div>
+      <div class="form-group"><label>Data</label><input id="m-mov-data" type="date"></div>
+      <div class="form-group">
+        <label>Metodo pagamento</label>
+        <select id="m-mov-metodo" style="width:100%;padding:9px 12px;border:1px solid #D4C9BE;border-radius:8px;font-size:14px;outline:none;">
+          <option value="contanti">Contanti</option>
+          <option value="bonifico">Bonifico</option>
+          <option value="carta">Carta/Bancomat</option>
+          <option value="altro">Altro</option>
+        </select>
+      </div>
+      <div class="form-group" style="grid-column:1/3;display:flex;gap:20px;align-items:center;padding-top:4px;">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;">
+          <input type="checkbox" id="m-mov-pagato" style="width:16px;height:16px;accent-color:var(--blu);"> Pagato
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;">
+          <input type="checkbox" id="m-mov-offerta" style="width:16px;height:16px;accent-color:var(--oro);"> Offerta/Donazione
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;">
+          <input type="checkbox" id="m-mov-bilancio" checked style="width:16px;height:16px;accent-color:var(--verde);"> A bilancio
+        </label>
+      </div>
+    </div>
+    <input type="hidden" id="m-mov-id">
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;">
+      <button class="btn" onclick="closeModalMovimento()">Annulla</button>
+      <button class="btn btn-add" onclick="saveMovimento()"><i class="ti ti-check"></i> Salva</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODALE SPONSOR -->
+<div id="modal-sponsor" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:200;align-items:center;justify-content:center;padding:16px;pointer-events:none;">
+  <div style="background:white;border-radius:14px;width:100%;max-width:440px;padding:24px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
+      <h3 style="font-size:16px;font-weight:600;color:var(--blu-notte);">Sponsor</h3>
+      <button onclick="closeModalSponsor()" style="background:none;border:none;cursor:pointer;font-size:20px;color:var(--testo-muted);">✕</button>
+    </div>
+    <div class="form-group"><label>Ditta *</label><input id="m-sp-ditta"></div>
+    <div class="form-group">
+      <label>Tipo contributo</label>
+      <select id="m-sp-tipo" style="width:100%;padding:9px 12px;border:1px solid #D4C9BE;border-radius:8px;font-size:14px;outline:none;">
+        <option value="offerta">Offerta in €</option>
+        <option value="materiale">Materiale</option>
+        <option value="mano_dopera">Mano d'opera</option>
+        <option value="altro">Altro</option>
+      </select>
+    </div>
+    <div class="form-group"><label>Importo (€)</label><input id="m-sp-importo" type="number" step="0.01" placeholder="Solo per offerte in €"></div>
+    <div class="form-group"><label>Dettaglio</label><input id="m-sp-dettaglio" placeholder="Es. Trapunta lotteria, mano d'opera..."></div>
+    <div class="form-group"><label>Modo pagamento</label><input id="m-sp-modo" placeholder="Contanti, bonifico..."></div>
+    <div class="form-group"><label>Note</label><input id="m-sp-note"></div>
+    <div class="form-group">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;">
+        <input type="checkbox" id="m-sp-ricevuto" style="width:16px;height:16px;accent-color:var(--verde);"> Contributo ricevuto
+      </label>
+    </div>
+    <input type="hidden" id="m-sp-id">
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;">
+      <button class="btn" onclick="closeModalSponsor()">Annulla</button>
+      <button class="btn btn-add" onclick="saveSponsor()"><i class="ti ti-check"></i> Salva</button>
+    </div>
+  </div>
+</div>
+
 <!-- MODALE UTENTE PERMESSI -->
 <div id="modal-utente" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:200;align-items:center;justify-content:center;padding:16px;pointer-events:none;">
   <div style="background:white;border-radius:14px;width:100%;max-width:460px;max-height:90vh;overflow-y:auto;padding:24px;">

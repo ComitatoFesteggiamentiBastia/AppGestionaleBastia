@@ -119,6 +119,9 @@ function showPage(pageId) {
   if (pageId === 'soci' || pageId === 'db-avanzato') loadSoci();
   if (pageId === 'impostazioni-anno') loadImpostazioniAnno();
   if (pageId === 'utenti') loadUtenti();
+  if (pageId === 'sagra') loadSagre();
+  if (pageId === 'movimenti-sagra') loadMovimentiSagra();
+  if (pageId === 'sponsor') loadSponsor();
 }
 
 function toggleSidebar() {
@@ -821,3 +824,300 @@ async function applicaPermessi(userId) {
 }
 
 // Il caricamento soci è gestito direttamente in showPage
+
+// ===== SAGRE =====
+let tutteSagre = [];
+let sagraSelezionata = null;
+
+async function loadSagre() {
+  const { data } = await db.from('sagre').select('*').order('anno', { ascending: false });
+  tutteSagre = data || [];
+  renderSagre();
+}
+
+function renderSagre() {
+  const container = document.getElementById('sagre-list');
+  if (!container) return;
+  if (!tutteSagre.length) {
+    container.innerHTML = '<div class="coming-soon"><i class="ti ti-tent"></i><h3>Nessuna edizione</h3><p>Crea la prima edizione della sagra</p></div>';
+    return;
+  }
+  container.innerHTML = tutteSagre.map(s => `
+    <div class="table-card" style="margin-bottom:12px;cursor:pointer;" onclick="selezionaSagra('${s.id}')">
+      <div class="table-row" style="padding:14px 16px;">
+        <div style="flex:1;">
+          <div style="font-weight:600;font-size:15px;color:var(--blu-notte);">${s.nome}</div>
+          <div class="row-sub">${s.data_inizio ? formatDataIT(s.data_inizio) : ''} ${s.data_fine ? '→ ' + formatDataIT(s.data_fine) : ''}</div>
+        </div>
+        <span class="badge ${s.chiusa ? 'badge-pietra' : 'badge-ok'}">${s.chiusa ? 'Chiusa' : 'Aperta'}</span>
+        <button class="btn btn-sm" onclick="event.stopPropagation();openModalSagra(${JSON.stringify(s).replace(/"/g,'&quot;')})"><i class="ti ti-edit"></i></button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function openModalSagra(s = null) {
+  document.getElementById('modal-sagra').style.display = 'flex';
+  document.getElementById('modal-sagra').style.pointerEvents = 'auto';
+  document.getElementById('m-sagra-id').value = s?.id || '';
+  document.getElementById('m-sagra-anno').value = s?.anno || new Date().getFullYear();
+  document.getElementById('m-sagra-nome').value = s?.nome || 'Sagra della Bastia ' + new Date().getFullYear();
+  document.getElementById('m-sagra-inizio').value = s?.data_inizio || '';
+  document.getElementById('m-sagra-fine').value = s?.data_fine || '';
+  document.getElementById('m-sagra-note').value = s?.note || '';
+}
+
+function closeModalSagra() {
+  const m = document.getElementById('modal-sagra');
+  m.style.display = 'none';
+  m.style.pointerEvents = 'none';
+}
+
+async function saveSagra() {
+  const anno = parseInt(document.getElementById('m-sagra-anno').value);
+  const nome = document.getElementById('m-sagra-nome').value.trim();
+  if (!anno || !nome) { showToast('Anno e nome obbligatori', 'error'); return; }
+  const payload = {
+    anno, nome,
+    data_inizio: document.getElementById('m-sagra-inizio').value || null,
+    data_fine: document.getElementById('m-sagra-fine').value || null,
+    note: document.getElementById('m-sagra-note').value.trim() || null
+  };
+  const id = document.getElementById('m-sagra-id').value;
+  let error;
+  if (id) {
+    ({ error } = await db.from('sagre').update(payload).eq('id', id));
+  } else {
+    ({ error } = await db.from('sagre').insert(payload));
+  }
+  if (error) { showToast('Errore: ' + error.message, 'error'); return; }
+  showToast('Edizione salvata!', 'success');
+  closeModalSagra();
+  loadSagre();
+}
+
+function selezionaSagra(id) {
+  sagraSelezionata = tutteSagre.find(s => s.id === id);
+  showPage('movimenti-sagra');
+}
+
+function getSagraId() {
+  return sagraSelezionata?.id || tutteSagre[0]?.id || null;
+}
+
+// ===== MOVIMENTI SAGRA =====
+let tuttiMovimenti = [];
+
+async function loadMovimentiSagra() {
+  const sagraId = getSagraId();
+  aggiornaHeaderSagra('ms-sagra-header');
+  if (!sagraId) {
+    document.getElementById('ms-entrate-list').innerHTML = '<div style="padding:16px;color:var(--testo-muted)">Nessuna edizione selezionata — vai su Edizioni Sagra</div>';
+    return;
+  }
+  const { data } = await db.from('movimenti_sagra').select('*').eq('sagra_id', sagraId).order('data');
+  tuttiMovimenti = data || [];
+  renderMovimentiSagra();
+  aggiornaBilancioSagra();
+}
+
+function aggiornaHeaderSagra(elId) {
+  const el = document.getElementById(elId);
+  if (el && sagraSelezionata) el.textContent = sagraSelezionata.nome;
+  else if (el && tutteSagre[0]) el.textContent = tutteSagre[0].nome;
+}
+
+function renderMovimentiSagra() {
+  const search = (document.getElementById('ms-search')?.value || '').toLowerCase();
+  const filtro = document.getElementById('ms-filtro')?.value || 'tutti';
+  let lista = tuttiMovimenti;
+  if (search) lista = lista.filter(m => JSON.stringify(m).toLowerCase().includes(search));
+  if (filtro !== 'tutti') lista = lista.filter(m => m.tipo === filtro);
+
+  const entrate = lista.filter(m => m.tipo === 'entrata');
+  const uscite = lista.filter(m => m.tipo === 'uscita');
+
+  document.getElementById('ms-entrate-list').innerHTML = entrate.length
+    ? entrate.map(m => rowMovimento(m)).join('')
+    : '<div style="padding:12px 16px;color:var(--testo-muted);font-size:13px;">Nessuna entrata</div>';
+
+  document.getElementById('ms-uscite-list').innerHTML = uscite.length
+    ? uscite.map(m => rowMovimento(m)).join('')
+    : '<div style="padding:12px 16px;color:var(--testo-muted);font-size:13px;">Nessuna uscita</div>';
+}
+
+function rowMovimento(m) {
+  const isEntrata = m.tipo === 'entrata';
+  const color = isEntrata ? 'var(--verde)' : '#991B1B';
+  return `<div class="table-row">
+    <div style="flex:1;">
+      <div class="row-name">${m.descrizione}${m.fornitore ? ' — <span style="color:var(--testo-muted)">' + m.fornitore + '</span>' : ''}</div>
+      <div class="row-sub">${m.categoria || ''} · ${m.data ? formatDataIT(m.data) : ''} · ${m.metodo_pagamento || ''} ${m.offerta ? '· <span style="color:var(--oro)">Offerta</span>' : ''} ${m.pagato === false ? '· <span style="color:#991B1B">Da pagare</span>' : ''}</div>
+    </div>
+    <span style="font-weight:600;color:${color};white-space:nowrap;">€ ${parseFloat(m.importo).toFixed(2)}</span>
+    <button class="btn btn-sm" onclick='openModalMovimento(${JSON.stringify(m).replace(/'/g,"\\'")})'><i class="ti ti-edit"></i></button>
+    <button class="btn btn-sm" style="color:#991B1B" onclick="eliminaMovimento('${m.id}')"><i class="ti ti-trash"></i></button>
+  </div>`;
+}
+
+function aggiornaBilancioSagra() {
+  const entrate = tuttiMovimenti.filter(m => m.tipo === 'entrata' && m.a_bilancio !== false).reduce((s, m) => s + parseFloat(m.importo), 0);
+  const uscite = tuttiMovimenti.filter(m => m.tipo === 'uscita' && m.a_bilancio !== false && !m.offerta).reduce((s, m) => s + parseFloat(m.importo), 0);
+  const utile = entrate - uscite;
+  document.getElementById('ms-tot-entrate').textContent = '€ ' + entrate.toFixed(2);
+  document.getElementById('ms-tot-uscite').textContent = '€ ' + uscite.toFixed(2);
+  document.getElementById('ms-utile').textContent = '€ ' + utile.toFixed(2);
+  document.getElementById('ms-utile').style.color = utile >= 0 ? 'var(--verde)' : '#991B1B';
+}
+
+function openModalMovimento(m = null) {
+  document.getElementById('modal-movimento').style.display = 'flex';
+  document.getElementById('modal-movimento').style.pointerEvents = 'auto';
+  document.getElementById('m-mov-id').value = m?.id || '';
+  document.getElementById('m-mov-tipo').value = m?.tipo || 'entrata';
+  document.getElementById('m-mov-categoria').value = m?.categoria || '';
+  document.getElementById('m-mov-descrizione').value = m?.descrizione || '';
+  document.getElementById('m-mov-fornitore').value = m?.fornitore || '';
+  document.getElementById('m-mov-importo').value = m?.importo || '';
+  document.getElementById('m-mov-data').value = m?.data || new Date().toISOString().split('T')[0];
+  document.getElementById('m-mov-metodo').value = m?.metodo_pagamento || 'contanti';
+  document.getElementById('m-mov-pagato').checked = m ? (m.pagato !== false) : true;
+  document.getElementById('m-mov-offerta').checked = m?.offerta || false;
+  document.getElementById('m-mov-bilancio').checked = m ? (m.a_bilancio !== false) : true;
+}
+
+function closeModalMovimento() {
+  const m = document.getElementById('modal-movimento');
+  m.style.display = 'none';
+  m.style.pointerEvents = 'none';
+}
+
+async function saveMovimento() {
+  const sagraId = getSagraId();
+  if (!sagraId) { showToast('Seleziona prima un\'edizione sagra', 'error'); return; }
+  const descrizione = document.getElementById('m-mov-descrizione').value.trim();
+  const importo = parseFloat(document.getElementById('m-mov-importo').value);
+  if (!descrizione || isNaN(importo)) { showToast('Descrizione e importo obbligatori', 'error'); return; }
+
+  const payload = {
+    sagra_id: sagraId,
+    tipo: document.getElementById('m-mov-tipo').value,
+    categoria: document.getElementById('m-mov-categoria').value.trim() || null,
+    descrizione,
+    fornitore: document.getElementById('m-mov-fornitore').value.trim() || null,
+    importo,
+    data: document.getElementById('m-mov-data').value,
+    metodo_pagamento: document.getElementById('m-mov-metodo').value || null,
+    pagato: document.getElementById('m-mov-pagato').checked,
+    offerta: document.getElementById('m-mov-offerta').checked,
+    a_bilancio: document.getElementById('m-mov-bilancio').checked
+  };
+
+  const id = document.getElementById('m-mov-id').value;
+  let error;
+  if (id) {
+    ({ error } = await db.from('movimenti_sagra').update(payload).eq('id', id));
+  } else {
+    ({ error } = await db.from('movimenti_sagra').insert(payload));
+  }
+  if (error) { showToast('Errore: ' + error.message, 'error'); return; }
+  showToast('Salvato!', 'success');
+  closeModalMovimento();
+  loadMovimentiSagra();
+}
+
+async function eliminaMovimento(id) {
+  if (!confirm('Eliminare questo movimento?')) return;
+  await db.from('movimenti_sagra').delete().eq('id', id);
+  showToast('Eliminato', 'success');
+  loadMovimentiSagra();
+}
+
+// ===== SPONSOR =====
+let tuttiSponsor = [];
+
+async function loadSponsor() {
+  const sagraId = getSagraId();
+  aggiornaHeaderSagra('sp-sagra-header');
+  if (!sagraId) return;
+  const { data } = await db.from('sponsor').select('*').eq('sagra_id', sagraId).order('ditta');
+  tuttiSponsor = data || [];
+  renderSponsor();
+}
+
+function renderSponsor() {
+  const tbody = document.getElementById('sponsor-tbody');
+  if (!tbody) return;
+  if (!tuttiSponsor.length) {
+    tbody.innerHTML = '<tr><td colspan="6" style="padding:24px;text-align:center;color:var(--testo-muted);">Nessuno sponsor</td></tr>';
+    return;
+  }
+  const tipoLabel = { offerta: 'Offerta €', materiale: 'Materiale', mano_dopera: 'Mano d\'opera', altro: 'Altro' };
+  tbody.innerHTML = tuttiSponsor.map((s, i) => `
+    <tr style="${i%2===0?'':'background:#F5F7FB;'}border-bottom:1px solid var(--border);">
+      <td style="padding:8px 12px;font-weight:500;">${s.ditta}</td>
+      <td style="padding:8px 12px;"><span class="badge badge-pietra">${tipoLabel[s.tipo] || s.tipo}</span></td>
+      <td style="padding:8px 12px;">${s.importo ? '€ ' + parseFloat(s.importo).toFixed(2) : '—'}</td>
+      <td style="padding:8px 12px;font-size:12px;color:var(--testo-muted);">${s.dettaglio || '—'}</td>
+      <td style="padding:8px 12px;"><span class="badge ${s.ricevuto ? 'badge-ok' : 'badge-no'}">${s.ricevuto ? 'Ricevuto' : 'In attesa'}</span></td>
+      <td style="padding:8px 12px;text-align:center;white-space:nowrap;">
+        <button class="btn btn-sm" onclick='openModalSponsor(${JSON.stringify(s).replace(/"/g,"&quot;")})'><i class="ti ti-edit"></i></button>
+        <button class="btn btn-sm" style="color:#991B1B" onclick="eliminaSponsor('${s.id}')"><i class="ti ti-trash"></i></button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+function openModalSponsor(s = null) {
+  document.getElementById('modal-sponsor').style.display = 'flex';
+  document.getElementById('modal-sponsor').style.pointerEvents = 'auto';
+  document.getElementById('m-sp-id').value = s?.id || '';
+  document.getElementById('m-sp-ditta').value = s?.ditta || '';
+  document.getElementById('m-sp-tipo').value = s?.tipo || 'offerta';
+  document.getElementById('m-sp-importo').value = s?.importo || '';
+  document.getElementById('m-sp-dettaglio').value = s?.dettaglio || '';
+  document.getElementById('m-sp-modo').value = s?.modo_pagamento || '';
+  document.getElementById('m-sp-ricevuto').checked = s?.ricevuto || false;
+  document.getElementById('m-sp-note').value = s?.note || '';
+}
+
+function closeModalSponsor() {
+  const m = document.getElementById('modal-sponsor');
+  m.style.display = 'none';
+  m.style.pointerEvents = 'none';
+}
+
+async function saveSponsor() {
+  const sagraId = getSagraId();
+  if (!sagraId) { showToast('Seleziona prima un\'edizione sagra', 'error'); return; }
+  const ditta = document.getElementById('m-sp-ditta').value.trim();
+  if (!ditta) { showToast('Nome ditta obbligatorio', 'error'); return; }
+  const payload = {
+    sagra_id: sagraId,
+    ditta,
+    tipo: document.getElementById('m-sp-tipo').value,
+    importo: parseFloat(document.getElementById('m-sp-importo').value) || null,
+    dettaglio: document.getElementById('m-sp-dettaglio').value.trim() || null,
+    modo_pagamento: document.getElementById('m-sp-modo').value.trim() || null,
+    ricevuto: document.getElementById('m-sp-ricevuto').checked,
+    note: document.getElementById('m-sp-note').value.trim() || null
+  };
+  const id = document.getElementById('m-sp-id').value;
+  let error;
+  if (id) {
+    ({ error } = await db.from('sponsor').update(payload).eq('id', id));
+  } else {
+    ({ error } = await db.from('sponsor').insert(payload));
+  }
+  if (error) { showToast('Errore: ' + error.message, 'error'); return; }
+  showToast('Sponsor salvato!', 'success');
+  closeModalSponsor();
+  loadSponsor();
+}
+
+async function eliminaSponsor(id) {
+  if (!confirm('Eliminare questo sponsor?')) return;
+  await db.from('sponsor').delete().eq('id', id);
+  showToast('Eliminato', 'success');
+  loadSponsor();
+}
