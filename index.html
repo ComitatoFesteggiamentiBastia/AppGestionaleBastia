@@ -859,6 +859,7 @@
             <option value="domenica">Domenica</option>
             <option value="entrambi">Entrambi</option>
           </select>
+          <button class="btn" onclick="copiaSpesaEdizionePrecedente()" style="background:var(--oro);color:white;border-color:var(--oro);"><i class="ti ti-copy"></i> Copia da precedente</button>
           <button class="btn btn-add" onclick="openModalSpesa()"><i class="ti ti-plus"></i> Articolo</button>
         </div>
       </div>
@@ -1025,7 +1026,11 @@
       <button onclick="closeModalSpesa()" style="background:none;border:none;cursor:pointer;font-size:20px;color:var(--testo-muted);">✕</button>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
-      <div class="form-group" style="grid-column:1/3"><label>Articolo *</label><input id="m-spesa-articolo"></div>
+      <div class="form-group" style="grid-column:1/3;position:relative;">
+        <label>Articolo *</label>
+        <input id="m-spesa-articolo" autocomplete="off">
+        <div id="autocomplete-spesa" style="display:none;position:absolute;top:100%;left:0;right:0;background:white;border:1px solid var(--border);border-radius:8px;z-index:999;max-height:240px;overflow-y:auto;box-shadow:0 4px 12px rgba(0,0,0,0.1);"></div>
+      </div>
       <div class="form-group"><label>Fornitore</label><input id="m-spesa-fornitore"></div>
       <div class="form-group">
         <label>Categoria</label>

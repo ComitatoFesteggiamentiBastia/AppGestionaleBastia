@@ -78,6 +78,12 @@ async function initApp(user) {
     document.getElementById('app-shell').style.display = 'block';
     showPage('dashboard');
 
+    // Popola catalogo spesa e carica dati iniziali
+    setTimeout(async () => {
+      await loadCatalogoSpesa();
+      await popolaCatalogoIniziale();
+    }, 1000);
+
     // Carica profilo e permessi in background
     setTimeout(async () => {
       try {
@@ -1210,6 +1216,7 @@ async function toggleSpesaAcquistata(id, checked) {
 function openModalSpesa(a = null) {
   document.getElementById('modal-spesa').style.display = 'flex';
   document.getElementById('modal-spesa').style.pointerEvents = 'auto';
+  setTimeout(() => setupAutocompleteSpesa(), 100);
   document.getElementById('m-spesa-id').value = a?.id || '';
   document.getElementById('m-spesa-articolo').value = a?.articolo || '';
   document.getElementById('m-spesa-fornitore').value = a?.fornitore || '';
@@ -1364,4 +1371,127 @@ async function savePrimaNota(stand, giorno, campo, valore) {
     primaNotaData = data || [];
     renderPrimaNota();
   }
+}
+
+// ===== CATALOGO SPESA =====
+let catalogoSpesa = [];
+
+async function loadCatalogoSpesa() {
+  const { data } = await db.from('catalogo_spesa').select('*').order('articolo');
+  catalogoSpesa = data || [];
+}
+
+async function aggiungiACatalogo(articolo, fornitore, categoria, stand, unita, prezzo_unitario, iva) {
+  if (!articolo) return;
+  await db.from('catalogo_spesa').upsert({
+    articolo, fornitore: fornitore || null, categoria: categoria || null,
+    stand: stand || null, unita: unita || null,
+    prezzo_unitario: prezzo_unitario || null, iva: iva || null
+  }, { onConflict: 'articolo' });
+}
+
+function setupAutocompleteSpesa() {
+  const input = document.getElementById('m-spesa-articolo');
+  const lista = document.getElementById('autocomplete-spesa');
+  if (!input || !lista) return;
+
+  input.addEventListener('input', () => {
+    const val = input.value.toLowerCase().trim();
+    if (!val || val.length < 2) { lista.style.display = 'none'; return; }
+    const matches = catalogoSpesa.filter(c => c.articolo.toLowerCase().includes(val)).slice(0, 8);
+    if (!matches.length) { lista.style.display = 'none'; return; }
+    lista.innerHTML = matches.map(c => `
+      <div onclick="selezionaArticoloCatalogo('${c.articolo.replace(/'/g,"\\'")}','${(c.fornitore||'').replace(/'/g,"\\'")}','${(c.categoria||'').replace(/'/g,"\\'")}','${(c.stand||'').replace(/'/g,"\\'")}','${(c.unita||'').replace(/'/g,"\\'")}',${c.prezzo_unitario||'null'},${c.iva||'null'})"
+        style="padding:8px 12px;cursor:pointer;font-size:13px;border-bottom:1px solid var(--border);"
+        onmouseover="this.style.background='#EEF2F8'" onmouseout="this.style.background='white'">
+        <div style="font-weight:500;">${c.articolo}</div>
+        <div style="font-size:11px;color:var(--testo-muted);">${c.fornitore || ''} ${c.categoria ? '· ' + c.categoria : ''}</div>
+      </div>
+    `).join('');
+    lista.style.display = 'block';
+  });
+
+  document.addEventListener('click', (e) => {
+    if (!lista.contains(e.target) && e.target !== input) lista.style.display = 'none';
+  });
+}
+
+function selezionaArticoloCatalogo(articolo, fornitore, categoria, stand, unita, prezzo, iva) {
+  document.getElementById('m-spesa-articolo').value = articolo;
+  document.getElementById('m-spesa-fornitore').value = fornitore || '';
+  document.getElementById('m-spesa-categoria').value = categoria || '';
+  document.getElementById('m-spesa-stand').value = stand || '';
+  document.getElementById('m-spesa-unita').value = unita || '';
+  document.getElementById('m-spesa-prezzo').value = prezzo !== 'null' ? prezzo : '';
+  document.getElementById('m-spesa-iva').value = iva !== 'null' ? iva : '';
+  document.getElementById('autocomplete-spesa').style.display = 'none';
+}
+
+// Override saveSpesa per aggiungere al catalogo
+const _origSaveSpesa = saveSpesa;
+async function saveSpesa() {
+  const articolo = document.getElementById('m-spesa-articolo').value.trim();
+  const fornitore = document.getElementById('m-spesa-fornitore').value.trim();
+  const categoria = document.getElementById('m-spesa-categoria').value.trim();
+  const stand = document.getElementById('m-spesa-stand').value.trim();
+  const unita = document.getElementById('m-spesa-unita').value.trim();
+  const prezzo = parseFloat(document.getElementById('m-spesa-prezzo').value) || null;
+  const iva = parseFloat(document.getElementById('m-spesa-iva').value) || null;
+  await _origSaveSpesa();
+  await aggiungiACatalogo(articolo, fornitore, categoria, stand, unita, prezzo, iva);
+  await loadCatalogoSpesa();
+}
+
+// ===== COPIA DA EDIZIONE PRECEDENTE =====
+async function copiaSpesaEdizionePrecedente() {
+  const sagraId = getSagraId();
+  if (!sagraId) { showToast('Seleziona prima un\'edizione', 'error'); return; }
+
+  // Trova edizione precedente
+  const sagreOrdinate = [...tutteSagre].sort((a, b) => b.anno - a.anno);
+  const idx = sagreOrdinate.findIndex(s => s.id === sagraId);
+  const precedente = sagreOrdinate[idx + 1];
+
+  if (!precedente) { showToast('Nessuna edizione precedente trovata', 'error'); return; }
+
+  if (!confirm(`Copiare tutti gli articoli dalla ${precedente.nome} come "Da ordinare"?`)) return;
+
+  const { data: articoli } = await db.from('lista_spesa').select('*').eq('sagra_id', precedente.id);
+  if (!articoli?.length) { showToast('Nessun articolo nella edizione precedente', 'error'); return; }
+
+  let ok = 0;
+  for (const a of articoli) {
+    const { error } = await db.from('lista_spesa').insert({
+      sagra_id: sagraId,
+      articolo: a.articolo,
+      fornitore: a.fornitore,
+      categoria: a.categoria,
+      stand: a.stand,
+      giorno: a.giorno,
+      quantita: a.quantita,
+      unita: a.unita,
+      prezzo_unitario: a.prezzo_unitario,
+      iva: a.iva,
+      stato: 'da_ordinare',
+      acquistato: false
+    });
+    if (!error) ok++;
+  }
+
+  showToast(`Copiati ${ok} articoli da ${precedente.anno}!`, 'success');
+  loadSpesa();
+}
+
+// Popola catalogo con articoli esistenti al primo avvio
+async function popolaCatalogoIniziale() {
+  const { count } = await db.from('catalogo_spesa').select('*', { count: 'exact', head: true });
+  if (count > 0) return; // già popolato
+  const { data: articoli } = await db.from('lista_spesa').select('articolo,fornitore,categoria,stand,unita,prezzo_unitario,iva');
+  if (!articoli?.length) return;
+  const unici = {};
+  articoli.forEach(a => { if (a.articolo && !unici[a.articolo]) unici[a.articolo] = a; });
+  for (const a of Object.values(unici)) {
+    await db.from('catalogo_spesa').upsert(a, { onConflict: 'articolo' });
+  }
+  await loadCatalogoSpesa();
 }
