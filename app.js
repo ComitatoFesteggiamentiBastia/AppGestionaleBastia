@@ -217,6 +217,17 @@ function statoSocio(s) {
   return parseInt(s.anno_rinnovo) === ANNO_CORRENTE ? 'attivo' : 'non_rinnovato';
 }
 
+function excelSerialToDate(val) {
+  const num = parseInt(val);
+  if (isNaN(num) || num < 1000) return null;
+  // Data seriale Excel: giorni dal 01/01/1900 (con bug leapyear 1900)
+  const date = new Date(Date.UTC(1900, 0, 1) + (num - 2) * 86400000);
+  const d = String(date.getUTCDate()).padStart(2,'0');
+  const m = String(date.getUTCMonth()+1).padStart(2,'0');
+  const y = date.getUTCFullYear();
+  return `${y}-${m}-${d}`;
+}
+
 function parseDataIT(str) {
   if (!str) return null;
   const p = str.split('/');
@@ -479,8 +490,23 @@ async function importExcel(input) {
       if (!obj.codice_fiscale || !obj.cognome || !obj.nome) { errori++; continue; }
 
       obj.codice_fiscale = obj.codice_fiscale.toUpperCase();
-      if (obj.data_nascita) obj.data_nascita = parseDataIT(obj.data_nascita);
-      if (obj.data_iscrizione) obj.data_iscrizione = parseDataIT(obj.data_iscrizione);
+      if (obj.data_nascita) {
+        // Se è numero seriale Excel convertilo, altrimenti parseDataIT
+        if (/^\d+(\.\d+)?$/.test(obj.data_nascita.trim())) {
+          obj.data_nascita = excelSerialToDate(obj.data_nascita);
+        } else {
+          obj.data_nascita = parseDataIT(obj.data_nascita);
+        }
+        if (!obj.data_nascita) delete obj.data_nascita;
+      }
+      if (obj.data_iscrizione) {
+        if (/^\d+(\.\d+)?$/.test(obj.data_iscrizione.trim())) {
+          obj.data_iscrizione = excelSerialToDate(obj.data_iscrizione);
+        } else {
+          obj.data_iscrizione = parseDataIT(obj.data_iscrizione);
+        }
+        if (!obj.data_iscrizione) delete obj.data_iscrizione;
+      }
       if (obj.anno_rinnovo) obj.anno_rinnovo = parseInt(obj.anno_rinnovo) || null;
       obj.attivo = true;
       obj.updated_at = new Date().toISOString();
