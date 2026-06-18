@@ -516,6 +516,7 @@
     <div class="s-section">
       <div class="s-label">Associazione</div>
       <div class="s-item" onclick="showPage('soci')"><i class="ti ti-users"></i> Soci</div>
+      <div class="s-item" onclick="showPage('db-avanzato')"><i class="ti ti-table"></i> DB Avanzato</div>
       <div class="s-item" onclick="showPage('quote')"><i class="ti ti-credit-card"></i> Quote annuali</div>
       <div class="s-item" onclick="showPage('cassa')"><i class="ti ti-cash"></i> Cassa generale</div>
       <div class="s-item" onclick="showPage('documenti')"><i class="ti ti-file-text"></i> Documenti</div>
@@ -594,12 +595,71 @@
     <div class="page" id="page-soci">
       <div class="page-header">
         <h2>Soci</h2>
-        <button class="btn btn-add"><i class="ti ti-plus"></i> Nuovo socio</button>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <input type="text" id="soci-search" placeholder="Cerca per nome o CF..." oninput="filterSoci()" style="padding:7px 12px;border:1px solid #D4C9BE;border-radius:7px;font-size:13px;width:220px;outline:none;">
+          <button class="btn btn-add" onclick="openModalSocio()"><i class="ti ti-plus"></i> Nuovo socio</button>
+        </div>
       </div>
-      <div class="coming-soon">
-        <i class="ti ti-users"></i>
-        <h3>Gestione soci</h3>
-        <p>Anagrafica completa con ricerca e storico quote — in arrivo</p>
+
+      <!-- Attivi -->
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+        <span style="font-size:13px;font-weight:600;color:var(--verde);">Soci attivi</span>
+        <span id="badge-attivi" style="background:var(--verde-light);color:var(--verde);font-size:11px;padding:2px 9px;border-radius:99px;font-weight:600;">0</span>
+      </div>
+      <div class="table-card" style="margin-bottom:24px;">
+        <div id="lista-attivi">
+          <div class="table-row"><span class="row-name" style="color:var(--testo-muted)">Caricamento...</span></div>
+        </div>
+      </div>
+
+      <!-- Non rinnovati -->
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+        <span style="font-size:13px;font-weight:600;color:var(--oro);">Non rinnovati</span>
+        <span id="badge-nonrinn" style="background:var(--oro-light);color:var(--oro);font-size:11px;padding:2px 9px;border-radius:99px;font-weight:600;">0</span>
+      </div>
+      <div class="table-card">
+        <div id="lista-nonrinn">
+          <div class="table-row"><span class="row-name" style="color:var(--testo-muted)">Caricamento...</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- DB AVANZATO -->
+    <div class="page" id="page-db-avanzato">
+      <div class="page-header">
+        <h2>DB Avanzato — Soci</h2>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <input type="text" id="db-search" placeholder="Cerca..." oninput="filterDB()" style="padding:7px 12px;border:1px solid #D4C9BE;border-radius:7px;font-size:13px;width:180px;outline:none;">
+          <label class="btn" style="cursor:pointer;background:white;"><i class="ti ti-upload"></i> Importa Excel<input type="file" id="import-file" accept=".xlsx" style="display:none" onchange="importExcel(this)"></label>
+          <button class="btn" onclick="exportExcel()"><i class="ti ti-download"></i> Esporta Excel</button>
+          <button class="btn btn-add" onclick="openModalSocio()"><i class="ti ti-plus"></i> Nuovo</button>
+        </div>
+      </div>
+      <div style="overflow-x:auto;">
+        <table id="db-table" style="width:100%;border-collapse:collapse;font-size:12.5px;background:white;border-radius:10px;overflow:hidden;border:1px solid var(--border);">
+          <thead>
+            <tr style="background:var(--blu-notte);color:white;">
+              <th style="padding:10px 12px;text-align:left;white-space:nowrap;font-weight:600;">CF</th>
+              <th style="padding:10px 12px;text-align:left;white-space:nowrap;">Cognome</th>
+              <th style="padding:10px 12px;text-align:left;white-space:nowrap;">Nome</th>
+              <th style="padding:10px 12px;text-align:left;white-space:nowrap;">Sesso</th>
+              <th style="padding:10px 12px;text-align:left;white-space:nowrap;">Data Nascita</th>
+              <th style="padding:10px 12px;text-align:left;white-space:nowrap;">Luogo Nascita</th>
+              <th style="padding:10px 12px;text-align:left;white-space:nowrap;">Indirizzo</th>
+              <th style="padding:10px 12px;text-align:left;white-space:nowrap;">CAP</th>
+              <th style="padding:10px 12px;text-align:left;white-space:nowrap;">Città</th>
+              <th style="padding:10px 12px;text-align:left;white-space:nowrap;">Telefono</th>
+              <th style="padding:10px 12px;text-align:left;white-space:nowrap;">Email</th>
+              <th style="padding:10px 12px;text-align:left;white-space:nowrap;">Iscrizione</th>
+              <th style="padding:10px 12px;text-align:left;white-space:nowrap;">Anno Rinnovo</th>
+              <th style="padding:10px 12px;text-align:left;white-space:nowrap;">Stato</th>
+              <th style="padding:10px 12px;text-align:center;white-space:nowrap;">Azioni</th>
+            </tr>
+          </thead>
+          <tbody id="db-tbody">
+            <tr><td colspan="15" style="padding:32px;text-align:center;color:var(--testo-muted);">Caricamento...</td></tr>
+          </tbody>
+        </table>
       </div>
     </div>
 
@@ -830,5 +890,328 @@ document.getElementById('login-password').addEventListener('keydown', e => {
   if (e.key === 'Enter') doLogin();
 });
 </script>
+
+<!-- MODALE SOCIO -->
+<div id="modal-socio" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:200;align-items:center;justify-content:center;padding:16px;">
+  <div style="background:white;border-radius:14px;width:100%;max-width:640px;max-height:90vh;overflow-y:auto;padding:24px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
+      <h3 id="modal-socio-title" style="font-size:16px;font-weight:600;color:var(--blu-notte);">Nuovo socio</h3>
+      <button onclick="closeModalSocio()" style="background:none;border:none;cursor:pointer;font-size:20px;color:var(--testo-muted);">✕</button>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+      <div class="form-group" style="grid-column:1/3"><label>Codice Fiscale *</label><input id="m-cf" style="text-transform:uppercase" maxlength="16"></div>
+      <div class="form-group"><label>Cognome *</label><input id="m-cognome"></div>
+      <div class="form-group"><label>Nome *</label><input id="m-nome"></div>
+      <div class="form-group"><label>Sesso</label>
+        <select id="m-sesso" style="width:100%;padding:9px 12px;border:1px solid #D4C9BE;border-radius:8px;font-size:14px;outline:none;">
+          <option value="">—</option><option value="M">M</option><option value="F">F</option>
+        </select>
+      </div>
+      <div class="form-group"><label>Data nascita</label><input id="m-data-nascita" placeholder="gg/mm/aaaa"></div>
+      <div class="form-group"><label>CAP nascita</label><input id="m-cap-nascita"></div>
+      <div class="form-group"><label>Comune nascita</label><input id="m-luogo-nascita"></div>
+      <div class="form-group" style="grid-column:1/3"><label>Indirizzo residenza</label><input id="m-indirizzo"></div>
+      <div class="form-group"><label>CAP</label><input id="m-cap"></div>
+      <div class="form-group"><label>Città</label><input id="m-citta"></div>
+      <div class="form-group"><label>Telefono</label><input id="m-telefono" type="tel"></div>
+      <div class="form-group"><label>Email</label><input id="m-email" type="email"></div>
+      <div class="form-group"><label>Data iscrizione</label><input id="m-data-iscrizione" placeholder="gg/mm/aaaa"></div>
+      <div class="form-group"><label>Anno rinnovo</label><input id="m-anno-rinnovo" type="number" placeholder="2025"></div>
+    </div>
+    <input type="hidden" id="m-socio-id">
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;">
+      <button class="btn" onclick="closeModalSocio()">Annulla</button>
+      <button class="btn btn-add" onclick="saveSocio()"><i class="ti ti-check"></i> Salva</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script>
+// ===== DATI SOCI =====
+let tuttiSoci = [];
+const ANNO_CORRENTE = new Date().getFullYear();
+
+function statoSocio(s) {
+  return parseInt(s.anno_rinnovo) === ANNO_CORRENTE ? 'attivo' : 'non_rinnovato';
+}
+
+function parseDataIT(str) {
+  if (!str) return null;
+  const p = str.split('/');
+  if (p.length === 3) return `${p[2]}-${p[1]}-${p[0]}`;
+  return str;
+}
+
+function formatDataIT(str) {
+  if (!str) return '';
+  const p = str.split('-');
+  if (p.length === 3) return `${p[2]}/${p[1]}/${p[0]}`;
+  return str;
+}
+
+async function loadSoci() {
+  const { data, error } = await db.from('soci').select('*').eq('attivo', true).order('cognome');
+  if (error) { console.error(error); return; }
+  tuttiSoci = data || [];
+  renderSoci(tuttiSoci);
+  renderDB(tuttiSoci);
+}
+
+function renderSoci(soci) {
+  const search = (document.getElementById('soci-search')?.value || '').toLowerCase();
+  const filtered = search
+    ? soci.filter(s => `${s.cognome} ${s.nome} ${s.codice_fiscale}`.toLowerCase().includes(search))
+    : soci;
+
+  const attivi = filtered.filter(s => statoSocio(s) === 'attivo');
+  const nonRinn = filtered.filter(s => statoSocio(s) === 'non_rinnovato');
+
+  document.getElementById('badge-attivi').textContent = attivi.length;
+  document.getElementById('badge-nonrinn').textContent = nonRinn.length;
+
+  document.getElementById('lista-attivi').innerHTML = attivi.length
+    ? attivi.map(s => rowSocio(s, 'attivo')).join('')
+    : '<div class="table-row"><span class="row-name" style="color:var(--testo-muted)">Nessun socio attivo</span></div>';
+
+  document.getElementById('lista-nonrinn').innerHTML = nonRinn.length
+    ? nonRinn.map(s => rowSocio(s, 'non_rinnovato')).join('')
+    : '<div class="table-row"><span class="row-name" style="color:var(--testo-muted)">Tutti in regola!</span></div>';
+}
+
+function rowSocio(s, stato) {
+  const badge = stato === 'attivo'
+    ? '<span class="badge badge-ok">Attivo</span>'
+    : `<span class="badge badge-no">${s.anno_rinnovo || '—'}</span>`;
+  return `<div class="table-row">
+    <div style="flex:1;">
+      <div class="row-name">${s.cognome} ${s.nome}</div>
+      <div class="row-sub">${s.codice_fiscale} · ${s.citta || ''} · ${s.telefono || ''}</div>
+    </div>
+    ${badge}
+    <button class="btn btn-sm" onclick='openModalSocio(${JSON.stringify(s)})'><i class="ti ti-edit"></i></button>
+    ${stato === 'non_rinnovato' ? `<button class="btn btn-sm" style="color:var(--verde)" onclick="rinnovaQuota('${s.id}')"><i class="ti ti-refresh"></i> Rinnova</button>` : ''}
+  </div>`;
+}
+
+function filterSoci() { renderSoci(tuttiSoci); }
+
+// ===== DB AVANZATO =====
+function renderDB(soci) {
+  const search = (document.getElementById('db-search')?.value || '').toLowerCase();
+  const filtered = search
+    ? soci.filter(s => JSON.stringify(s).toLowerCase().includes(search))
+    : soci;
+
+  const tbody = document.getElementById('db-tbody');
+  if (!filtered.length) {
+    tbody.innerHTML = '<tr><td colspan="15" style="padding:32px;text-align:center;color:var(--testo-muted);">Nessun risultato</td></tr>';
+    return;
+  }
+
+  const anno = ANNO_CORRENTE;
+  tbody.innerHTML = filtered.map((s, i) => {
+    const stato = statoSocio(s);
+    const badgeColor = stato === 'attivo' ? 'badge-ok' : 'badge-no';
+    const badgeText = stato === 'attivo' ? 'Attivo' : 'Non rinnovato';
+    const bg = i % 2 === 0 ? '' : 'background:#F5F7FB;';
+    return `<tr style="${bg}">
+      <td style="padding:7px 12px;font-family:monospace;font-size:11px;">${s.codice_fiscale || ''}</td>
+      <td style="padding:7px 12px;">${s.cognome || ''}</td>
+      <td style="padding:7px 12px;">${s.nome || ''}</td>
+      <td style="padding:7px 12px;text-align:center;">${s.sesso || ''}</td>
+      <td style="padding:7px 12px;white-space:nowrap;">${formatDataIT(s.data_nascita) || ''}</td>
+      <td style="padding:7px 12px;">${s.luogo_nascita || ''}</td>
+      <td style="padding:7px 12px;">${s.indirizzo || ''}</td>
+      <td style="padding:7px 12px;">${s.cap || ''}</td>
+      <td style="padding:7px 12px;">${s.citta || ''}</td>
+      <td style="padding:7px 12px;white-space:nowrap;">${s.telefono || ''}</td>
+      <td style="padding:7px 12px;font-size:11px;">${s.email || ''}</td>
+      <td style="padding:7px 12px;white-space:nowrap;">${formatDataIT(s.data_iscrizione) || ''}</td>
+      <td style="padding:7px 12px;text-align:center;font-weight:600;">${s.anno_rinnovo || ''}</td>
+      <td style="padding:7px 12px;"><span class="badge ${badgeColor}">${badgeText}</span></td>
+      <td style="padding:7px 12px;text-align:center;white-space:nowrap;">
+        <button class="btn btn-sm" onclick='openModalSocio(${JSON.stringify(s)})'><i class="ti ti-edit"></i></button>
+        <button class="btn btn-sm" style="color:#991B1B" onclick="eliminaSocio('${s.id}','${s.cognome} ${s.nome}')"><i class="ti ti-trash"></i></button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function filterDB() { renderDB(tuttiSoci); }
+
+// ===== MODALE SOCIO =====
+function openModalSocio(s = null) {
+  const modal = document.getElementById('modal-socio');
+  modal.style.display = 'flex';
+  document.getElementById('modal-socio-title').textContent = s ? 'Modifica socio' : 'Nuovo socio';
+  document.getElementById('m-socio-id').value = s?.id || '';
+  document.getElementById('m-cf').value = s?.codice_fiscale || '';
+  document.getElementById('m-cognome').value = s?.cognome || '';
+  document.getElementById('m-nome').value = s?.nome || '';
+  document.getElementById('m-sesso').value = s?.sesso || '';
+  document.getElementById('m-data-nascita').value = formatDataIT(s?.data_nascita) || '';
+  document.getElementById('m-cap-nascita').value = s?.cap_nascita || '';
+  document.getElementById('m-luogo-nascita').value = s?.luogo_nascita || '';
+  document.getElementById('m-indirizzo').value = s?.indirizzo || '';
+  document.getElementById('m-cap').value = s?.cap || '';
+  document.getElementById('m-citta').value = s?.citta || '';
+  document.getElementById('m-telefono').value = s?.telefono || '';
+  document.getElementById('m-email').value = s?.email || '';
+  document.getElementById('m-data-iscrizione').value = formatDataIT(s?.data_iscrizione) || '';
+  document.getElementById('m-anno-rinnovo').value = s?.anno_rinnovo || ANNO_CORRENTE;
+}
+
+function closeModalSocio() {
+  document.getElementById('modal-socio').style.display = 'none';
+}
+
+async function saveSocio() {
+  const cf = document.getElementById('m-cf').value.trim().toUpperCase();
+  const cognome = document.getElementById('m-cognome').value.trim();
+  const nome = document.getElementById('m-nome').value.trim();
+  if (!cf || !cognome || !nome) { showToast('CF, cognome e nome sono obbligatori', 'error'); return; }
+
+  const payload = {
+    codice_fiscale: cf,
+    cognome, nome,
+    sesso: document.getElementById('m-sesso').value || null,
+    data_nascita: parseDataIT(document.getElementById('m-data-nascita').value) || null,
+    cap_nascita: document.getElementById('m-cap-nascita').value.trim() || null,
+    luogo_nascita: document.getElementById('m-luogo-nascita').value.trim() || null,
+    indirizzo: document.getElementById('m-indirizzo').value.trim() || null,
+    cap: document.getElementById('m-cap').value.trim() || null,
+    citta: document.getElementById('m-citta').value.trim() || null,
+    telefono: document.getElementById('m-telefono').value.trim() || null,
+    email: document.getElementById('m-email').value.trim() || null,
+    data_iscrizione: parseDataIT(document.getElementById('m-data-iscrizione').value) || null,
+    anno_rinnovo: parseInt(document.getElementById('m-anno-rinnovo').value) || null,
+    attivo: true,
+    updated_at: new Date().toISOString()
+  };
+
+  const id = document.getElementById('m-socio-id').value;
+  let error;
+  if (id) {
+    ({ error } = await db.from('soci').update(payload).eq('id', id));
+  } else {
+    ({ error } = await db.from('soci').insert(payload));
+  }
+
+  if (error) { showToast('Errore: ' + error.message, 'error'); return; }
+  showToast(id ? 'Socio aggiornato' : 'Socio aggiunto', 'success');
+  closeModalSocio();
+  loadSoci();
+}
+
+async function eliminaSocio(id, nome) {
+  if (!confirm(`Eliminare ${nome}?`)) return;
+  const { error } = await db.from('soci').update({ attivo: false }).eq('id', id);
+  if (error) { showToast('Errore', 'error'); return; }
+  showToast('Socio rimosso', 'success');
+  loadSoci();
+}
+
+async function rinnovaQuota(id) {
+  const { error } = await db.from('soci').update({ anno_rinnovo: ANNO_CORRENTE, updated_at: new Date().toISOString() }).eq('id', id);
+  if (error) { showToast('Errore', 'error'); return; }
+  // Registra anche in tabella quote
+  const { data: socio } = await db.from('soci').select('id').eq('id', id).single();
+  await db.from('quote').upsert({ socio_id: id, anno: ANNO_CORRENTE, pagato: true, data_pagamento: new Date().toISOString().split('T')[0], importo: 0 }, { onConflict: 'socio_id,anno' });
+  showToast('Quota rinnovata!', 'success');
+  loadSoci();
+}
+
+// ===== IMPORT EXCEL =====
+async function importExcel(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = async (e) => {
+    const wb = XLSX.read(e.target.result, { type: 'array' });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+
+    // Trova riga header (quella con codice_fiscale o Codice Fiscale)
+    let headerRow = -1;
+    for (let i = 0; i < Math.min(rows.length, 5); i++) {
+      const r = rows[i].map(c => String(c).toLowerCase());
+      if (r.some(c => c.includes('codice') || c.includes('fiscale') || c === 'codice_fiscale')) {
+        headerRow = i; break;
+      }
+    }
+    if (headerRow < 0) { showToast('Intestazioni non trovate', 'error'); return; }
+
+    const rawHeaders = rows[headerRow].map(c => String(c).toLowerCase().trim()
+      .replace(/\s+/g,'_').replace(/[*]/g,'').replace('codice_fiscale','codice_fiscale')
+      .replace('è','e').replace('à','a').replace('ì','i').replace('ò','o').replace('ù','u'));
+
+    const keyMap = {
+      'codice_fiscale': 'codice_fiscale', 'cognome': 'cognome', 'nome': 'nome',
+      'sesso_(m/f)': 'sesso', 'sesso': 'sesso',
+      'data_nascita_(gg/mm/aaaa)': 'data_nascita', 'data_nascita': 'data_nascita',
+      'cap_nascita': 'cap_nascita', 'comune_nascita': 'luogo_nascita', 'luogo_nascita': 'luogo_nascita',
+      'indirizzo_residenza': 'indirizzo', 'indirizzo': 'indirizzo',
+      'cap': 'cap', 'citta': 'citta', 'città': 'citta',
+      'cellulare': 'telefono', 'telefono': 'telefono',
+      'email': 'email',
+      'data_iscrizione_(gg/mm/aaaa)': 'data_iscrizione', 'data_iscrizione': 'data_iscrizione',
+      'anno_rinnovo': 'anno_rinnovo'
+    };
+
+    const dataRows = rows.slice(headerRow + 1).filter(r => r.some(c => c !== ''));
+    let importati = 0, errori = 0;
+
+    for (const row of dataRows) {
+      const obj = {};
+      rawHeaders.forEach((h, i) => { if (keyMap[h]) obj[keyMap[h]] = String(row[i] || '').trim(); });
+      if (!obj.codice_fiscale || !obj.cognome || !obj.nome) { errori++; continue; }
+
+      obj.codice_fiscale = obj.codice_fiscale.toUpperCase();
+      if (obj.data_nascita) obj.data_nascita = parseDataIT(obj.data_nascita);
+      if (obj.data_iscrizione) obj.data_iscrizione = parseDataIT(obj.data_iscrizione);
+      if (obj.anno_rinnovo) obj.anno_rinnovo = parseInt(obj.anno_rinnovo) || null;
+      obj.attivo = true;
+      obj.updated_at = new Date().toISOString();
+
+      const { error } = await db.from('soci').upsert(obj, { onConflict: 'codice_fiscale' });
+      if (error) errori++; else importati++;
+    }
+
+    showToast(`Importati: ${importati} | Errori: ${errori}`, importati > 0 ? 'success' : 'error');
+    input.value = '';
+    loadSoci();
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+// ===== EXPORT EXCEL =====
+function exportExcel() {
+  const anno = ANNO_CORRENTE;
+  const rows = [
+    ['codice_fiscale','cognome','nome','sesso','data_nascita','cap_nascita','luogo_nascita','indirizzo','cap','citta','telefono','email','data_iscrizione','anno_rinnovo'],
+    ...tuttiSoci.map(s => [
+      s.codice_fiscale, s.cognome, s.nome, s.sesso,
+      formatDataIT(s.data_nascita), s.cap_nascita, s.luogo_nascita,
+      s.indirizzo, s.cap, s.citta,
+      s.telefono, s.email,
+      formatDataIT(s.data_iscrizione), s.anno_rinnovo
+    ])
+  ];
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'SOCI');
+  XLSX.writeFile(wb, `soci_export_${anno}.xlsx`);
+  showToast('Export completato!', 'success');
+}
+
+// Carica soci quando si apre la pagina
+const _origShowPage = showPage;
+function showPage(pageId) {
+  _origShowPage(pageId);
+  if (pageId === 'soci' || pageId === 'db-avanzato') loadSoci();
+}
+</script>
+
 </body>
 </html>
