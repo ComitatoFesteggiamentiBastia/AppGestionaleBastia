@@ -130,6 +130,7 @@ function showPage(pageId) {
   if (pageId === 'sponsor') loadSponsor();
   if (pageId === 'spesa') loadSpesa();
   if (pageId === 'prima-nota') loadPrimaNota();
+  if (pageId === 'inventario') loadInventario();
 }
 
 function toggleSidebar() {
@@ -1494,4 +1495,143 @@ async function popolaCatalogoIniziale() {
     await db.from('catalogo_spesa').upsert(a, { onConflict: 'articolo' });
   }
   await loadCatalogoSpesa();
+}
+
+// ===== INVENTARIO =====
+let tuttoInventario = [];
+let categorieInventario = [];
+
+async function loadInventario() {
+  const { data } = await db.from('inventario').select('*').order('categoria').order('nome');
+  tuttoInventario = data || [];
+  categorieInventario = [...new Set(tuttoInventario.map(i => i.categoria).filter(Boolean))].sort();
+  renderInventario();
+  aggiornaStatsInventario();
+}
+
+function renderInventario() {
+  const search = (document.getElementById('inv-search')?.value || '').toLowerCase();
+  const filtroCategoria = document.getElementById('inv-filtro-cat')?.value || 'tutti';
+  const filtroStato = document.getElementById('inv-filtro-stato')?.value || 'tutti';
+
+  let lista = tuttoInventario;
+  if (search) lista = lista.filter(i => JSON.stringify(i).toLowerCase().includes(search));
+  if (filtroCategoria !== 'tutti') lista = lista.filter(i => i.categoria === filtroCategoria);
+  if (filtroStato !== 'tutti') lista = lista.filter(i => i.stato === filtroStato);
+
+  // Aggiorna select categorie
+  const sel = document.getElementById('inv-filtro-cat');
+  if (sel) {
+    const curr = sel.value;
+    sel.innerHTML = '<option value="tutti">Tutte le categorie</option>' +
+      categorieInventario.map(c => `<option value="${c}" ${c===curr?'selected':''}>${c}</option>`).join('');
+  }
+
+  const container = document.getElementById('inventario-list');
+  if (!container) return;
+
+  if (!lista.length) {
+    container.innerHTML = '<div style="padding:32px;text-align:center;color:var(--testo-muted);">Nessun articolo trovato</div>';
+    return;
+  }
+
+  // Raggruppa per categoria
+  const gruppi = {};
+  lista.forEach(i => {
+    const cat = i.categoria || 'Senza categoria';
+    if (!gruppi[cat]) gruppi[cat] = [];
+    gruppi[cat].push(i);
+  });
+
+  const statoColor = { ottimo: 'badge-ok', buono: 'badge-ok', da_revisionare: 'badge-no', fuori_uso: 'badge-pietra' };
+  const statoLabel = { ottimo: 'Ottimo', buono: 'Buono', da_revisionare: 'Da revisionare', fuori_uso: 'Fuori uso' };
+
+  container.innerHTML = Object.entries(gruppi).map(([cat, articoli]) => `
+    <div style="margin-bottom:16px;">
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--testo-muted);padding:6px 16px;background:#F2EDE4;display:flex;align-items:center;justify-content:space-between;">
+        <span>${cat}</span>
+        <span>${articoli.length} articoli</span>
+      </div>
+      ${articoli.map(i => `
+        <div class="table-row">
+          <div style="flex:1;">
+            <div class="row-name">${i.nome}</div>
+            <div class="row-sub">${i.posizione ? '📍 ' + i.posizione + ' · ' : ''}Q: <strong>${i.quantita} ${i.unita || 'pz'}</strong>${i.note ? ' · ' + i.note : ''}</div>
+          </div>
+          <span class="badge ${statoColor[i.stato] || 'badge-ok'}">${statoLabel[i.stato] || i.stato || 'Buono'}</span>
+          <button class="btn btn-sm" onclick='openModalInventario(${JSON.stringify(i).replace(/"/g,"&quot;")})'><i class="ti ti-edit"></i></button>
+          <button class="btn btn-sm" style="color:#991B1B" onclick="eliminaInventario('${i.id}')"><i class="ti ti-trash"></i></button>
+        </div>
+      `).join('')}
+    </div>
+  `).join('');
+}
+
+function aggiornaStatsInventario() {
+  const tot = tuttoInventario.length;
+  const daRev = tuttoInventario.filter(i => i.stato === 'da_revisionare').length;
+  const fuoriUso = tuttoInventario.filter(i => i.stato === 'fuori_uso').length;
+  const categorie = categorieInventario.length;
+  if (document.getElementById('inv-stat-tot')) document.getElementById('inv-stat-tot').textContent = tot;
+  if (document.getElementById('inv-stat-cat')) document.getElementById('inv-stat-cat').textContent = categorie;
+  if (document.getElementById('inv-stat-rev')) document.getElementById('inv-stat-rev').textContent = daRev;
+  if (document.getElementById('inv-stat-fuori')) document.getElementById('inv-stat-fuori').textContent = fuoriUso;
+}
+
+function openModalInventario(i = null) {
+  document.getElementById('modal-inventario').style.display = 'flex';
+  document.getElementById('modal-inventario').style.pointerEvents = 'auto';
+  document.getElementById('m-inv-id').value = i?.id || '';
+  document.getElementById('m-inv-nome').value = i?.nome || '';
+  document.getElementById('m-inv-categoria').value = i?.categoria || '';
+  document.getElementById('m-inv-quantita').value = i?.quantita ?? '';
+  document.getElementById('m-inv-unita').value = i?.unita || 'pz';
+  document.getElementById('m-inv-stato').value = i?.stato || 'buono';
+  document.getElementById('m-inv-posizione').value = i?.posizione || '';
+  document.getElementById('m-inv-note').value = i?.note || '';
+  // Aggiorna datalist categorie
+  const dl = document.getElementById('inv-categorie-list');
+  if (dl) dl.innerHTML = categorieInventario.map(c => `<option value="${c}">`).join('');
+}
+
+function closeModalInventario() {
+  const m = document.getElementById('modal-inventario');
+  m.style.display = 'none';
+  m.style.pointerEvents = 'none';
+}
+
+async function saveInventario() {
+  const nome = document.getElementById('m-inv-nome').value.trim();
+  const quantita = parseInt(document.getElementById('m-inv-quantita').value);
+  if (!nome || isNaN(quantita)) { showToast('Nome e quantità obbligatori', 'error'); return; }
+
+  const payload = {
+    nome,
+    categoria: document.getElementById('m-inv-categoria').value.trim() || null,
+    quantita,
+    unita: document.getElementById('m-inv-unita').value.trim() || 'pz',
+    stato: document.getElementById('m-inv-stato').value,
+    posizione: document.getElementById('m-inv-posizione').value.trim() || null,
+    note: document.getElementById('m-inv-note').value.trim() || null,
+    updated_at: new Date().toISOString()
+  };
+
+  const id = document.getElementById('m-inv-id').value;
+  let error;
+  if (id) {
+    ({ error } = await db.from('inventario').update(payload).eq('id', id));
+  } else {
+    ({ error } = await db.from('inventario').insert(payload));
+  }
+  if (error) { showToast('Errore: ' + error.message, 'error'); return; }
+  showToast('Salvato!', 'success');
+  closeModalInventario();
+  loadInventario();
+}
+
+async function eliminaInventario(id) {
+  if (!confirm('Eliminare questo articolo?')) return;
+  await db.from('inventario').delete().eq('id', id);
+  showToast('Eliminato', 'success');
+  loadInventario();
 }

@@ -876,8 +876,31 @@
 
     <!-- INVENTARIO -->
     <div class="page" id="page-inventario">
-      <div class="page-header"><h2>Inventario</h2><button class="btn btn-add"><i class="ti ti-plus"></i> Articolo</button></div>
-      <div class="coming-soon"><i class="ti ti-box"></i><h3>Inventario</h3><p>Attrezzature e materiali dell'associazione</p></div>
+      <div class="page-header">
+        <h2>Inventario</h2>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <input type="text" id="inv-search" placeholder="Cerca..." oninput="renderInventario()" style="padding:7px 12px;border:1px solid #D4C9BE;border-radius:7px;font-size:13px;width:140px;outline:none;">
+          <select id="inv-filtro-cat" onchange="renderInventario()" style="padding:7px 10px;border:1px solid #D4C9BE;border-radius:7px;font-size:13px;outline:none;">
+            <option value="tutti">Tutte le categorie</option>
+          </select>
+          <select id="inv-filtro-stato" onchange="renderInventario()" style="padding:7px 10px;border:1px solid #D4C9BE;border-radius:7px;font-size:13px;outline:none;">
+            <option value="tutti">Tutti gli stati</option>
+            <option value="ottimo">Ottimo</option>
+            <option value="buono">Buono</option>
+            <option value="da_revisionare">Da revisionare</option>
+            <option value="fuori_uso">Fuori uso</option>
+          </select>
+          <button class="btn btn-add" onclick="openModalInventario()"><i class="ti ti-plus"></i> Articolo</button>
+        </div>
+      </div>
+      <!-- Stats -->
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:20px;">
+        <div class="stat-card" style="cursor:default;"><i class="ti ti-box"></i><div class="stat-val" id="inv-stat-tot" style="font-size:22px;">0</div><div class="stat-lbl">Articoli totali</div></div>
+        <div class="stat-card" style="cursor:default;"><i class="ti ti-category"></i><div class="stat-val" id="inv-stat-cat" style="font-size:22px;">0</div><div class="stat-lbl">Categorie</div></div>
+        <div class="stat-card" style="border-top-color:var(--oro);cursor:default;"><i class="ti ti-tool" style="color:var(--oro);"></i><div class="stat-val" id="inv-stat-rev" style="font-size:22px;color:var(--oro);">0</div><div class="stat-lbl">Da revisionare</div></div>
+        <div class="stat-card" style="border-top-color:#991B1B;cursor:default;"><i class="ti ti-alert-circle" style="color:#991B1B;"></i><div class="stat-val" id="inv-stat-fuori" style="font-size:22px;color:#991B1B;">0</div><div class="stat-lbl">Fuori uso</div></div>
+      </div>
+      <div id="inventario-list"><div style="padding:32px;text-align:center;color:var(--testo-muted);">Caricamento...</div></div>
     </div>
 
     <!-- PRIMA NOTA -->
@@ -1018,6 +1041,42 @@
 
 
 <script src="app.js"></script>
+<!-- MODALE INVENTARIO -->
+<div id="modal-inventario" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:200;align-items:center;justify-content:center;padding:16px;pointer-events:none;">
+  <div style="background:white;border-radius:14px;width:100%;max-width:480px;max-height:90vh;overflow-y:auto;padding:24px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
+      <h3 style="font-size:16px;font-weight:600;color:var(--blu-notte);">Articolo inventario</h3>
+      <button onclick="closeModalInventario()" style="background:none;border:none;cursor:pointer;font-size:20px;color:var(--testo-muted);">✕</button>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+      <div class="form-group" style="grid-column:1/3"><label>Nome *</label><input id="m-inv-nome"></div>
+      <div class="form-group" style="grid-column:1/3">
+        <label>Categoria</label>
+        <input id="m-inv-categoria" list="inv-categorie-list" placeholder="Es. Attrezzature, Alimentari...">
+        <datalist id="inv-categorie-list"></datalist>
+      </div>
+      <div class="form-group"><label>Quantità *</label><input id="m-inv-quantita" type="number" min="0"></div>
+      <div class="form-group"><label>Unità</label><input id="m-inv-unita" placeholder="pz, kg, lt..."></div>
+      <div class="form-group">
+        <label>Stato</label>
+        <select id="m-inv-stato" style="width:100%;padding:9px 12px;border:1px solid #D4C9BE;border-radius:8px;font-size:14px;outline:none;">
+          <option value="ottimo">Ottimo</option>
+          <option value="buono">Buono</option>
+          <option value="da_revisionare">Da revisionare</option>
+          <option value="fuori_uso">Fuori uso</option>
+        </select>
+      </div>
+      <div class="form-group"><label>Posizione</label><input id="m-inv-posizione" placeholder="Es. Magazzino, Cucina..."></div>
+      <div class="form-group" style="grid-column:1/3"><label>Note</label><input id="m-inv-note"></div>
+    </div>
+    <input type="hidden" id="m-inv-id">
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;">
+      <button class="btn" onclick="closeModalInventario()">Annulla</button>
+      <button class="btn btn-add" onclick="saveInventario()"><i class="ti ti-check"></i> Salva</button>
+    </div>
+  </div>
+</div>
+
 <!-- MODALE SPESA -->
 <div id="modal-spesa" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:200;align-items:center;justify-content:center;padding:16px;pointer-events:none;">
   <div style="background:white;border-radius:14px;width:100%;max-width:520px;max-height:90vh;overflow-y:auto;padding:24px;">
