@@ -575,6 +575,7 @@
       <div class="s-item" onclick="showPage('turni')"><i class="ti ti-calendar"></i> Turni</div>
       <div class="s-item" onclick="showPage('spesa')"><i class="ti ti-shopping-cart"></i> Lista spesa</div>
       <div class="s-item" onclick="showPage('sponsor')"><i class="ti ti-award"></i> Sponsor</div>
+      <div class="s-item" onclick="showPage('prima-nota')"><i class="ti ti-calculator"></i> Prima Nota</div>
     </div>
     <div class="s-section">
       <div class="s-label">Risorse</div>
@@ -839,14 +840,84 @@
 
     <!-- SPESA -->
     <div class="page" id="page-spesa">
-      <div class="page-header"><h2>Lista spesa</h2><button class="btn btn-add"><i class="ti ti-plus"></i> Articolo</button></div>
-      <div class="coming-soon"><i class="ti ti-shopping-cart"></i><h3>Lista della spesa</h3><p>Spesa per stand e per edizione sagra</p></div>
+      <div class="page-header">
+        <div>
+          <h2>Lista spesa</h2>
+          <div id="spesa-sagra-header" style="font-size:12px;color:var(--testo-muted);margin-top:2px;"></div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <input type="text" id="spesa-search" placeholder="Cerca..." oninput="renderSpesa()" style="padding:7px 12px;border:1px solid #D4C9BE;border-radius:7px;font-size:13px;width:140px;outline:none;">
+          <select id="spesa-filtro-stato" onchange="renderSpesa()" style="padding:7px 10px;border:1px solid #D4C9BE;border-radius:7px;font-size:13px;outline:none;">
+            <option value="tutti">Tutti</option>
+            <option value="da_ordinare">Da ordinare</option>
+            <option value="ordinato">Ordinati</option>
+            <option value="comprato">Comprati</option>
+          </select>
+          <select id="spesa-filtro-giorno" onchange="renderSpesa()" style="padding:7px 10px;border:1px solid #D4C9BE;border-radius:7px;font-size:13px;outline:none;">
+            <option value="tutti">Tutti i giorni</option>
+            <option value="sabato">Sabato</option>
+            <option value="domenica">Domenica</option>
+            <option value="entrambi">Entrambi</option>
+          </select>
+          <button class="btn btn-add" onclick="openModalSpesa()"><i class="ti ti-plus"></i> Articolo</button>
+        </div>
+      </div>
+      <!-- Stats -->
+      <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:20px;">
+        <div class="stat-card" style="cursor:default;"><i class="ti ti-list"></i><div class="stat-val" id="spesa-stat-tot" style="font-size:20px;">0</div><div class="stat-lbl">Totale</div></div>
+        <div class="stat-card verde" style="cursor:default;"><i class="ti ti-check"></i><div class="stat-val" id="spesa-stat-comprati" style="font-size:20px;">0</div><div class="stat-lbl">Comprati</div></div>
+        <div class="stat-card pietra" style="cursor:default;"><i class="ti ti-clock"></i><div class="stat-val" id="spesa-stat-ordinati" style="font-size:20px;">0</div><div class="stat-lbl">Ordinati</div></div>
+        <div class="stat-card" style="border-top-color:#991B1B;cursor:default;"><i class="ti ti-alert-circle" style="color:#991B1B;"></i><div class="stat-val" id="spesa-stat-da-ordinare" style="font-size:20px;color:#991B1B;">0</div><div class="stat-lbl">Da ordinare</div></div>
+        <div class="stat-card oro" style="cursor:default;"><i class="ti ti-cash"></i><div class="stat-val" id="spesa-stat-costo" style="font-size:16px;">€ 0</div><div class="stat-lbl">Costo totale</div></div>
+      </div>
+      <div class="table-card"><div id="spesa-list"><div style="padding:24px;text-align:center;color:var(--testo-muted);">Caricamento...</div></div></div>
     </div>
 
     <!-- INVENTARIO -->
     <div class="page" id="page-inventario">
       <div class="page-header"><h2>Inventario</h2><button class="btn btn-add"><i class="ti ti-plus"></i> Articolo</button></div>
       <div class="coming-soon"><i class="ti ti-box"></i><h3>Inventario</h3><p>Attrezzature e materiali dell'associazione</p></div>
+    </div>
+
+    <!-- PRIMA NOTA -->
+    <div class="page" id="page-prima-nota">
+      <div class="page-header">
+        <div>
+          <h2>Prima Nota Casse</h2>
+          <div id="pn-sagra-header" style="font-size:12px;color:var(--testo-muted);margin-top:2px;"></div>
+        </div>
+        <select id="pn-giorno-tab" onchange="renderPrimaNota()" style="padding:7px 12px;border:1px solid #D4C9BE;border-radius:8px;font-size:13px;outline:none;">
+          <option value="venerdi">Venerdì</option>
+          <option value="sabato" selected>Sabato</option>
+          <option value="domenica">Domenica</option>
+        </select>
+      </div>
+      <!-- Riepilogo -->
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:20px;">
+        <div class="stat-card" style="cursor:default;"><i class="ti ti-cash"></i><div class="stat-val" id="pn-tot-incasso" style="font-size:18px;">—</div><div class="stat-lbl">Totale battuto</div></div>
+        <div class="stat-card verde" style="cursor:default;"><i class="ti ti-wallet"></i><div class="stat-val" id="pn-tot-contanti" style="font-size:18px;">—</div><div class="stat-lbl">Contanti</div></div>
+        <div class="stat-card oro" style="cursor:default;"><i class="ti ti-credit-card"></i><div class="stat-val" id="pn-tot-pos" style="font-size:18px;">—</div><div class="stat-lbl">POS</div></div>
+      </div>
+      <!-- Tabella casse -->
+      <div style="overflow-x:auto;">
+        <table style="width:100%;border-collapse:collapse;font-size:13px;background:white;border-radius:10px;overflow:hidden;border:1px solid var(--border);">
+          <thead>
+            <tr style="background:var(--blu-notte);color:white;">
+              <th style="padding:10px 12px;text-align:left;">Stand</th>
+              <th style="padding:10px 12px;text-align:right;">Battuto</th>
+              <th style="padding:10px 12px;text-align:right;">Contanti</th>
+              <th style="padding:10px 12px;text-align:right;">POS</th>
+              <th style="padding:10px 12px;text-align:right;">Prelievi</th>
+              <th style="padding:10px 12px;text-align:right;">Arrotondato</th>
+              <th style="padding:10px 12px;text-align:right;">Totale</th>
+            </tr>
+          </thead>
+          <tbody id="prima-nota-container">
+            <tr><td colspan="7" style="padding:24px;text-align:center;color:var(--testo-muted);">Caricamento...</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div style="margin-top:10px;font-size:12px;color:var(--testo-muted);padding:0 4px;">I dati vengono salvati automaticamente alla modifica di ogni campo.</div>
     </div>
 
     <!-- IMPOSTAZIONI ANNO -->
@@ -946,6 +1017,54 @@
 
 
 <script src="app.js"></script>
+<!-- MODALE SPESA -->
+<div id="modal-spesa" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:200;align-items:center;justify-content:center;padding:16px;pointer-events:none;">
+  <div style="background:white;border-radius:14px;width:100%;max-width:520px;max-height:90vh;overflow-y:auto;padding:24px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
+      <h3 style="font-size:16px;font-weight:600;color:var(--blu-notte);">Articolo spesa</h3>
+      <button onclick="closeModalSpesa()" style="background:none;border:none;cursor:pointer;font-size:20px;color:var(--testo-muted);">✕</button>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+      <div class="form-group" style="grid-column:1/3"><label>Articolo *</label><input id="m-spesa-articolo"></div>
+      <div class="form-group"><label>Fornitore</label><input id="m-spesa-fornitore"></div>
+      <div class="form-group">
+        <label>Categoria</label>
+        <select id="m-spesa-categoria" style="width:100%;padding:9px 12px;border:1px solid #D4C9BE;border-radius:8px;font-size:14px;outline:none;">
+          <option value="">—</option>
+          <option>CUCINA</option><option>BAR</option><option>PULIZIE</option><option>ALTRO</option>
+        </select>
+      </div>
+      <div class="form-group"><label>Stand</label><input id="m-spesa-stand" placeholder="Es. Cucina, Bar..."></div>
+      <div class="form-group">
+        <label>Giorno</label>
+        <select id="m-spesa-giorno" style="width:100%;padding:9px 12px;border:1px solid #D4C9BE;border-radius:8px;font-size:14px;outline:none;">
+          <option value="entrambi">Entrambi</option>
+          <option value="sabato">Sabato</option>
+          <option value="domenica">Domenica</option>
+        </select>
+      </div>
+      <div class="form-group"><label>Quantità</label><input id="m-spesa-qta" type="number" step="0.01"></div>
+      <div class="form-group"><label>Unità</label><input id="m-spesa-unita" placeholder="pz, kg, lt..."></div>
+      <div class="form-group"><label>Prezzo unitario (€)</label><input id="m-spesa-prezzo" type="number" step="0.01"></div>
+      <div class="form-group"><label>IVA (es. 0.22)</label><input id="m-spesa-iva" type="number" step="0.01"></div>
+      <div class="form-group">
+        <label>Stato</label>
+        <select id="m-spesa-stato" style="width:100%;padding:9px 12px;border:1px solid #D4C9BE;border-radius:8px;font-size:14px;outline:none;">
+          <option value="da_ordinare">Da ordinare</option>
+          <option value="ordinato">Ordinato</option>
+          <option value="comprato">Comprato</option>
+        </select>
+      </div>
+      <div class="form-group" style="grid-column:1/3"><label>Note</label><input id="m-spesa-note"></div>
+    </div>
+    <input type="hidden" id="m-spesa-id">
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;">
+      <button class="btn" onclick="closeModalSpesa()">Annulla</button>
+      <button class="btn btn-add" onclick="saveSpesa()"><i class="ti ti-check"></i> Salva</button>
+    </div>
+  </div>
+</div>
+
 <!-- MODALE SAGRA -->
 <div id="modal-sagra" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:200;align-items:center;justify-content:center;padding:16px;pointer-events:none;">
   <div style="background:white;border-radius:14px;width:100%;max-width:440px;padding:24px;">

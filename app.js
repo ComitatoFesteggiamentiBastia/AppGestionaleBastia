@@ -122,6 +122,8 @@ function showPage(pageId) {
   if (pageId === 'sagra') loadSagre();
   if (pageId === 'movimenti-sagra') loadMovimentiSagra();
   if (pageId === 'sponsor') loadSponsor();
+  if (pageId === 'spesa') loadSpesa();
+  if (pageId === 'prima-nota') loadPrimaNota();
 }
 
 function toggleSidebar() {
@@ -1120,4 +1122,246 @@ async function eliminaSponsor(id) {
   await db.from('sponsor').delete().eq('id', id);
   showToast('Eliminato', 'success');
   loadSponsor();
+}
+
+// ===== LISTA SPESA =====
+let tuttiArticoliSpesa = [];
+
+async function loadSpesa() {
+  const sagraId = getSagraId();
+  aggiornaHeaderSagra('spesa-sagra-header');
+  if (!sagraId) return;
+  const { data } = await db.from('lista_spesa').select('*').eq('sagra_id', sagraId).order('stand').order('categoria');
+  tuttiArticoliSpesa = data || [];
+  renderSpesa();
+  aggiornaStatsSpesa();
+}
+
+function renderSpesa() {
+  const search = (document.getElementById('spesa-search')?.value || '').toLowerCase();
+  const filtroStato = document.getElementById('spesa-filtro-stato')?.value || 'tutti';
+  const filtroGiorno = document.getElementById('spesa-filtro-giorno')?.value || 'tutti';
+
+  let lista = tuttiArticoliSpesa;
+  if (search) lista = lista.filter(a => JSON.stringify(a).toLowerCase().includes(search));
+  if (filtroStato !== 'tutti') lista = lista.filter(a => a.stato === filtroStato);
+  if (filtroGiorno !== 'tutti') lista = lista.filter(a => a.giorno === filtroGiorno);
+
+  const container = document.getElementById('spesa-list');
+  if (!container) return;
+
+  if (!lista.length) {
+    container.innerHTML = '<div style="padding:24px;text-align:center;color:var(--testo-muted);">Nessun articolo trovato</div>';
+    return;
+  }
+
+  // Raggruppa per stand/categoria
+  const gruppi = {};
+  lista.forEach(a => {
+    const key = (a.stand || 'Generico') + ' — ' + (a.categoria || 'Vario');
+    if (!gruppi[key]) gruppi[key] = [];
+    gruppi[key].push(a);
+  });
+
+  container.innerHTML = Object.entries(gruppi).map(([gruppo, articoli]) => `
+    <div style="margin-bottom:16px;">
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--testo-muted);padding:6px 16px;background:#F2EDE4;">${gruppo}</div>
+      ${articoli.map(a => rowSpesa(a)).join('')}
+    </div>
+  `).join('');
+}
+
+function rowSpesa(a) {
+  const statoColor = { da_ordinare: 'badge-no', ordinato: 'badge-pietra', comprato: 'badge-ok' };
+  const statoLabel = { da_ordinare: 'Da ordinare', ordinato: 'Ordinato', comprato: 'Comprato' };
+  const giornoLabel = { sabato: 'Sab', domenica: 'Dom', entrambi: 'Entrambi' };
+  return `<div class="table-row">
+    <input type="checkbox" ${a.stato === 'comprato' ? 'checked' : ''} onchange="toggleSpesaAcquistata('${a.id}', this.checked)"
+      style="width:16px;height:16px;accent-color:var(--verde);cursor:pointer;margin-right:4px;">
+    <div style="flex:1;">
+      <div class="row-name" style="${a.stato === 'comprato' ? 'text-decoration:line-through;opacity:0.6;' : ''}">${a.articolo}</div>
+      <div class="row-sub">${a.fornitore || ''} ${a.quantita ? '· Q: ' + a.quantita + (a.unita ? ' ' + a.unita : '') : ''} ${a.prezzo_totale ? '· € ' + parseFloat(a.prezzo_totale).toFixed(2) : ''} ${a.giorno ? '· ' + (giornoLabel[a.giorno] || a.giorno) : ''}</div>
+    </div>
+    <span class="badge ${statoColor[a.stato] || 'badge-no'}">${statoLabel[a.stato] || a.stato}</span>
+    <button class="btn btn-sm" onclick='openModalSpesa(${JSON.stringify(a).replace(/"/g,"&quot;")})'><i class="ti ti-edit"></i></button>
+    <button class="btn btn-sm" style="color:#991B1B" onclick="eliminaSpesa('${a.id}')"><i class="ti ti-trash"></i></button>
+  </div>`;
+}
+
+function aggiornaStatsSpesa() {
+  const tot = tuttiArticoliSpesa.length;
+  const comprati = tuttiArticoliSpesa.filter(a => a.stato === 'comprato').length;
+  const ordinati = tuttiArticoliSpesa.filter(a => a.stato === 'ordinato').length;
+  const daOrdinare = tuttiArticoliSpesa.filter(a => a.stato === 'da_ordinare').length;
+  const totSpesa = tuttiArticoliSpesa.filter(a => a.prezzo_totale).reduce((s, a) => s + parseFloat(a.prezzo_totale), 0);
+  if (document.getElementById('spesa-stat-tot')) document.getElementById('spesa-stat-tot').textContent = tot;
+  if (document.getElementById('spesa-stat-comprati')) document.getElementById('spesa-stat-comprati').textContent = comprati;
+  if (document.getElementById('spesa-stat-ordinati')) document.getElementById('spesa-stat-ordinati').textContent = ordinati;
+  if (document.getElementById('spesa-stat-da-ordinare')) document.getElementById('spesa-stat-da-ordinare').textContent = daOrdinare;
+  if (document.getElementById('spesa-stat-costo')) document.getElementById('spesa-stat-costo').textContent = '€ ' + totSpesa.toFixed(2);
+}
+
+async function toggleSpesaAcquistata(id, checked) {
+  const stato = checked ? 'comprato' : 'ordinato';
+  await db.from('lista_spesa').update({ stato, acquistato: checked, data_acquisto: checked ? new Date().toISOString().split('T')[0] : null }).eq('id', id);
+  loadSpesa();
+}
+
+function openModalSpesa(a = null) {
+  document.getElementById('modal-spesa').style.display = 'flex';
+  document.getElementById('modal-spesa').style.pointerEvents = 'auto';
+  document.getElementById('m-spesa-id').value = a?.id || '';
+  document.getElementById('m-spesa-articolo').value = a?.articolo || '';
+  document.getElementById('m-spesa-fornitore').value = a?.fornitore || '';
+  document.getElementById('m-spesa-categoria').value = a?.categoria || '';
+  document.getElementById('m-spesa-stand').value = a?.stand || '';
+  document.getElementById('m-spesa-giorno').value = a?.giorno || 'entrambi';
+  document.getElementById('m-spesa-qta').value = a?.quantita || '';
+  document.getElementById('m-spesa-unita').value = a?.unita || 'pz';
+  document.getElementById('m-spesa-prezzo').value = a?.prezzo_unitario || '';
+  document.getElementById('m-spesa-iva').value = a?.iva || '';
+  document.getElementById('m-spesa-stato').value = a?.stato || 'da_ordinare';
+  document.getElementById('m-spesa-note').value = a?.note || '';
+}
+
+function closeModalSpesa() {
+  const m = document.getElementById('modal-spesa');
+  m.style.display = 'none';
+  m.style.pointerEvents = 'none';
+}
+
+async function saveSpesa() {
+  const sagraId = getSagraId();
+  if (!sagraId) { showToast('Seleziona prima un\'edizione sagra', 'error'); return; }
+  const articolo = document.getElementById('m-spesa-articolo').value.trim();
+  if (!articolo) { showToast('Articolo obbligatorio', 'error'); return; }
+
+  const qta = parseFloat(document.getElementById('m-spesa-qta').value) || null;
+  const prezzo = parseFloat(document.getElementById('m-spesa-prezzo').value) || null;
+  const iva = parseFloat(document.getElementById('m-spesa-iva').value) || null;
+  const prezzoTot = (qta && prezzo) ? (iva ? qta * prezzo * (1 + iva) : qta * prezzo) : null;
+
+  const payload = {
+    sagra_id: sagraId,
+    articolo,
+    fornitore: document.getElementById('m-spesa-fornitore').value.trim() || null,
+    categoria: document.getElementById('m-spesa-categoria').value.trim() || null,
+    stand: document.getElementById('m-spesa-stand').value.trim() || null,
+    giorno: document.getElementById('m-spesa-giorno').value || null,
+    quantita: qta,
+    unita: document.getElementById('m-spesa-unita').value || null,
+    prezzo_unitario: prezzo,
+    iva,
+    prezzo_totale: prezzoTot ? parseFloat(prezzoTot.toFixed(2)) : null,
+    stato: document.getElementById('m-spesa-stato').value,
+    note: document.getElementById('m-spesa-note').value.trim() || null,
+    acquistato: document.getElementById('m-spesa-stato').value === 'comprato'
+  };
+
+  const id = document.getElementById('m-spesa-id').value;
+  let error;
+  if (id) {
+    ({ error } = await db.from('lista_spesa').update(payload).eq('id', id));
+  } else {
+    ({ error } = await db.from('lista_spesa').insert(payload));
+  }
+  if (error) { showToast('Errore: ' + error.message, 'error'); return; }
+  showToast('Salvato!', 'success');
+  closeModalSpesa();
+  loadSpesa();
+}
+
+async function eliminaSpesa(id) {
+  if (!confirm('Eliminare questo articolo?')) return;
+  await db.from('lista_spesa').delete().eq('id', id);
+  showToast('Eliminato', 'success');
+  loadSpesa();
+}
+
+// ===== PRIMA NOTA =====
+let primaNotaData = [];
+const STANDS_PRIMA_NOTA = ['CASSA CENTRALE', 'RISTORANTE SABATO', 'RISTORANTE DOMENICA', 'BAR', 'TORTE', 'LOTTERIA'];
+const GIORNI_PRIMA_NOTA = ['venerdi', 'sabato', 'domenica'];
+
+async function loadPrimaNota() {
+  const sagraId = getSagraId();
+  aggiornaHeaderSagra('pn-sagra-header');
+  if (!sagraId) return;
+  const { data } = await db.from('prima_nota').select('*').eq('sagra_id', sagraId);
+  primaNotaData = data || [];
+  renderPrimaNota();
+}
+
+function getPrimaNota(stand, giorno) {
+  return primaNotaData.find(p => p.stand === stand && p.giorno === giorno) || null;
+}
+
+function renderPrimaNota() {
+  const container = document.getElementById('prima-nota-container');
+  if (!container) return;
+
+  const giornoAttivo = document.getElementById('pn-giorno-tab')?.value || 'sabato';
+
+  let html = '';
+  let totBattuto = 0, totContanti = 0, totPos = 0, totPrelievi = 0, totArrotondato = 0;
+
+  STANDS_PRIMA_NOTA.forEach(stand => {
+    const pn = getPrimaNota(stand, giornoAttivo);
+    const battuto = pn?.battuto || 0;
+    const contanti = pn?.contanti || 0;
+    const pos = pn?.pos || 0;
+    const prelievi = pn?.prelievi || 0;
+    const arrotondato = pn?.arrotondato || 0;
+    totBattuto += battuto; totContanti += contanti; totPos += pos;
+    totPrelievi += prelievi; totArrotondato += arrotondato;
+
+    html += `<tr style="border-bottom:1px solid var(--border);">
+      <td style="padding:8px 12px;font-weight:600;white-space:nowrap;">${stand}</td>
+      ${['battuto','contanti','pos','prelievi','arrotondato'].map(campo => `
+        <td style="padding:4px 6px;">
+          <input type="number" step="0.01" value="${pn?.[campo] || ''}" placeholder="0"
+            onchange="savePrimaNota('${stand}','${giornoAttivo}','${campo}',this.value)"
+            style="width:90px;padding:5px 8px;border:1px solid #D4C9BE;border-radius:6px;font-size:13px;text-align:right;outline:none;">
+        </td>
+      `).join('')}
+      <td style="padding:8px 12px;font-weight:600;color:var(--verde);text-align:right;">${(contanti + pos).toFixed(2)}</td>
+    </tr>`;
+  });
+
+  html += `<tr style="background:#F2EDE4;font-weight:700;">
+    <td style="padding:10px 12px;">TOTALE</td>
+    <td style="padding:10px 12px;text-align:right;">${totBattuto.toFixed(2)}</td>
+    <td style="padding:10px 12px;text-align:right;">${totContanti.toFixed(2)}</td>
+    <td style="padding:10px 12px;text-align:right;">${totPos.toFixed(2)}</td>
+    <td style="padding:10px 12px;text-align:right;">${totPrelievi.toFixed(2)}</td>
+    <td style="padding:10px 12px;text-align:right;">${totArrotondato.toFixed(2)}</td>
+    <td style="padding:10px 12px;text-align:right;color:var(--verde);">${(totContanti + totPos).toFixed(2)}</td>
+  </tr>`;
+
+  container.innerHTML = html;
+
+  // Aggiorna riepilogo
+  if (document.getElementById('pn-tot-incasso')) {
+    document.getElementById('pn-tot-incasso').textContent = '€ ' + totBattuto.toFixed(2);
+    document.getElementById('pn-tot-contanti').textContent = '€ ' + totContanti.toFixed(2);
+    document.getElementById('pn-tot-pos').textContent = '€ ' + totPos.toFixed(2);
+  }
+}
+
+async function savePrimaNota(stand, giorno, campo, valore) {
+  const sagraId = getSagraId();
+  if (!sagraId) return;
+  const existing = getPrimaNota(stand, giorno);
+  const val = parseFloat(valore) || 0;
+  let error;
+  if (existing?.id) {
+    ({ error } = await db.from('prima_nota').update({ [campo]: val }).eq('id', existing.id));
+  } else {
+    ({ error } = await db.from('prima_nota').insert({ sagra_id: sagraId, stand, giorno, [campo]: val }));
+  }
+  if (!error) {
+    const { data } = await db.from('prima_nota').select('*').eq('sagra_id', sagraId);
+    primaNotaData = data || [];
+    renderPrimaNota();
+  }
 }
