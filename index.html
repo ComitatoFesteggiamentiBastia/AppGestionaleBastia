@@ -749,16 +749,33 @@ async function doLogin() {
   btn.textContent = 'Accesso in corso...';
   err.style.display = 'none';
 
-  const { data, error } = await db.auth.signInWithPassword({ email, password });
+  try {
+    // Forza logout sessione precedente
+    await db.auth.signOut();
 
-  if (error) {
-    showLoginError('Credenziali non valide');
+    const { data, error } = await db.auth.signInWithPassword({ email, password });
+
+    if (error) {
+      showLoginError('Errore: ' + error.message);
+      btn.disabled = false;
+      btn.textContent = 'Accedi';
+      return;
+    }
+
+    if (!data?.user) {
+      showLoginError('Nessun utente ricevuto, riprova');
+      btn.disabled = false;
+      btn.textContent = 'Accedi';
+      return;
+    }
+
+    await initApp(data.user);
+
+  } catch(e) {
+    showLoginError('Errore di connessione: ' + e.message);
     btn.disabled = false;
     btn.textContent = 'Accedi';
-    return;
   }
-
-  await initApp(data.user);
 }
 
 function showLoginError(msg) {
@@ -883,8 +900,31 @@ function showToast(msg, type = '') {
 }
 
 db.auth.onAuthStateChange(async (event, session) => {
-  if (session?.user && !currentUser) await initApp(session.user);
+  if (event === 'SIGNED_IN' && session?.user && !currentUser) {
+    await initApp(session.user);
+  }
+  if (event === 'SIGNED_OUT') {
+    currentUser = null;
+    currentProfile = null;
+  }
 });
+
+// All'avvio: controlla se c'è già una sessione valida
+(async () => {
+  try {
+    const { data: { session }, error } = await db.auth.getSession();
+    if (error) throw error;
+    if (session?.user && !currentUser) {
+      await initApp(session.user);
+    }
+  } catch(e) {
+    // Sessione corrotta: pulisci tutto e mostra login
+    Object.keys(localStorage).forEach(k => {
+      if (k.startsWith('sb-')) localStorage.removeItem(k);
+    });
+    await db.auth.signOut();
+  }
+})();
 
 document.getElementById('login-password').addEventListener('keydown', e => {
   if (e.key === 'Enter') doLogin();
@@ -892,7 +932,7 @@ document.getElementById('login-password').addEventListener('keydown', e => {
 </script>
 
 <!-- MODALE SOCIO -->
-<div id="modal-socio" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:200;align-items:center;justify-content:center;padding:16px;">
+<div id="modal-socio" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:200;align-items:center;justify-content:center;padding:16px;pointer-events:none;">
   <div style="background:white;border-radius:14px;width:100%;max-width:640px;max-height:90vh;overflow-y:auto;padding:24px;">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
       <h3 id="modal-socio-title" style="font-size:16px;font-weight:600;color:var(--blu-notte);">Nuovo socio</h3>
@@ -1044,6 +1084,7 @@ function filterDB() { renderDB(tuttiSoci); }
 function openModalSocio(s = null) {
   const modal = document.getElementById('modal-socio');
   modal.style.display = 'flex';
+  modal.style.pointerEvents = 'auto';
   document.getElementById('modal-socio-title').textContent = s ? 'Modifica socio' : 'Nuovo socio';
   document.getElementById('m-socio-id').value = s?.id || '';
   document.getElementById('m-cf').value = s?.codice_fiscale || '';
@@ -1063,7 +1104,9 @@ function openModalSocio(s = null) {
 }
 
 function closeModalSocio() {
-  document.getElementById('modal-socio').style.display = 'none';
+  const m = document.getElementById('modal-socio');
+  m.style.display = 'none';
+  m.style.pointerEvents = 'none';
 }
 
 async function saveSocio() {
