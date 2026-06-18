@@ -1,0 +1,778 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="theme-color" content="#8B1A1A">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<title>Gestionale Bastia</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root {
+    --rosso: #8B1A1A;
+    --rosso-scuro: #6B1212;
+    --rosso-chiaro: #B22222;
+    --oro: #C9A84C;
+    --oro-chiaro: #E8C96A;
+    --bianco: #FAFAF8;
+    --grigio-chiaro: #F2EDE8;
+    --grigio: #D4C9BE;
+    --grigio-scuro: #6B6058;
+    --testo: #2A1F1A;
+    --sidebar-w: 240px;
+    --header-h: 56px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    background: var(--grigio-chiaro);
+    color: var(--testo);
+    min-height: 100vh;
+  }
+
+  /* ---- LOGIN ---- */
+  #login-screen {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, var(--rosso-scuro) 0%, var(--rosso) 60%, #A0522D 100%);
+  }
+
+  .login-card {
+    background: var(--bianco);
+    border-radius: 16px;
+    padding: 40px 36px 36px;
+    width: 100%;
+    max-width: 380px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+  }
+
+  .login-logo {
+    text-align: center;
+    margin-bottom: 28px;
+  }
+
+  .login-logo .emblema {
+    width: 64px;
+    height: 64px;
+    background: var(--rosso);
+    border-radius: 50%;
+    margin: 0 auto 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 28px;
+  }
+
+  .login-logo h1 {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--rosso);
+    line-height: 1.2;
+  }
+
+  .login-logo p {
+    font-size: 12px;
+    color: var(--grigio-scuro);
+    margin-top: 4px;
+  }
+
+  .form-group {
+    margin-bottom: 16px;
+  }
+
+  .form-group label {
+    display: block;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--grigio-scuro);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 6px;
+  }
+
+  .form-group input {
+    width: 100%;
+    padding: 10px 14px;
+    border: 1.5px solid var(--grigio);
+    border-radius: 8px;
+    font-size: 15px;
+    background: white;
+    color: var(--testo);
+    transition: border-color 0.2s;
+    outline: none;
+  }
+
+  .form-group input:focus {
+    border-color: var(--rosso);
+  }
+
+  .btn-primary {
+    width: 100%;
+    padding: 12px;
+    background: var(--rosso);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s;
+    margin-top: 8px;
+  }
+
+  .btn-primary:hover { background: var(--rosso-scuro); }
+  .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
+
+  .login-error {
+    background: #FEE2E2;
+    color: #991B1B;
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-size: 13px;
+    margin-top: 12px;
+    display: none;
+  }
+
+  /* ---- APP SHELL ---- */
+  #app-shell { display: none; }
+
+  /* Header */
+  .header {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    height: var(--header-h);
+    background: var(--rosso);
+    color: white;
+    display: flex;
+    align-items: center;
+    padding: 0 16px;
+    gap: 12px;
+    z-index: 100;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+  }
+
+  .header-burger {
+    background: none;
+    border: none;
+    color: white;
+    cursor: pointer;
+    padding: 6px;
+    border-radius: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .header-burger span {
+    display: block;
+    width: 22px;
+    height: 2px;
+    background: white;
+    border-radius: 2px;
+    transition: all 0.3s;
+  }
+
+  .header-title {
+    flex: 1;
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+  }
+
+  .header-user {
+    font-size: 13px;
+    opacity: 0.85;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .btn-logout {
+    background: rgba(255,255,255,0.15);
+    border: none;
+    color: white;
+    padding: 5px 10px;
+    border-radius: 6px;
+    font-size: 12px;
+    cursor: pointer;
+  }
+
+  .btn-logout:hover { background: rgba(255,255,255,0.25); }
+
+  /* Sidebar */
+  .sidebar {
+    position: fixed;
+    top: var(--header-h);
+    left: 0;
+    bottom: 0;
+    width: var(--sidebar-w);
+    background: white;
+    border-right: 1px solid var(--grigio);
+    overflow-y: auto;
+    transform: translateX(-100%);
+    transition: transform 0.25s ease;
+    z-index: 90;
+  }
+
+  .sidebar.open { transform: translateX(0); }
+
+  @media (min-width: 768px) {
+    .sidebar { transform: translateX(0); }
+    .main-content { margin-left: var(--sidebar-w); }
+    .header-burger { display: none; }
+    .sidebar-overlay { display: none !important; }
+  }
+
+  .sidebar-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.4);
+    z-index: 80;
+    top: var(--header-h);
+  }
+
+  .sidebar-overlay.show { display: block; }
+
+  .sidebar-section {
+    padding: 12px 0 4px;
+  }
+
+  .sidebar-section-label {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--grigio-scuro);
+    padding: 0 16px 6px;
+  }
+
+  .sidebar-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 16px;
+    cursor: pointer;
+    font-size: 14px;
+    color: var(--testo);
+    border-left: 3px solid transparent;
+    transition: all 0.15s;
+    text-decoration: none;
+  }
+
+  .sidebar-item:hover {
+    background: var(--grigio-chiaro);
+    color: var(--rosso);
+  }
+
+  .sidebar-item.active {
+    background: #FEF0F0;
+    color: var(--rosso);
+    border-left-color: var(--rosso);
+    font-weight: 600;
+  }
+
+  .sidebar-item .icon { font-size: 18px; width: 24px; text-align: center; }
+
+  /* Main content */
+  .main-content {
+    margin-top: var(--header-h);
+    padding: 24px 20px;
+    min-height: calc(100vh - var(--header-h));
+  }
+
+  /* Page */
+  .page { display: none; }
+  .page.active { display: block; }
+
+  /* Dashboard cards */
+  .dashboard-header {
+    margin-bottom: 24px;
+  }
+
+  .dashboard-header h2 {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--rosso);
+  }
+
+  .dashboard-header p {
+    font-size: 14px;
+    color: var(--grigio-scuro);
+    margin-top: 4px;
+  }
+
+  .cards-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 14px;
+    margin-bottom: 28px;
+  }
+
+  .stat-card {
+    background: white;
+    border-radius: 12px;
+    padding: 18px 16px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+    border-top: 3px solid var(--rosso);
+    cursor: pointer;
+    transition: transform 0.15s, box-shadow 0.15s;
+  }
+
+  .stat-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.12); }
+
+  .stat-card .card-icon { font-size: 24px; margin-bottom: 8px; }
+  .stat-card .card-value { font-size: 28px; font-weight: 700; color: var(--rosso); }
+  .stat-card .card-label { font-size: 12px; color: var(--grigio-scuro); margin-top: 2px; }
+
+  .stat-card.oro { border-top-color: var(--oro); }
+  .stat-card.oro .card-value { color: #8B6914; }
+
+  /* Placeholder pagine */
+  .page-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .page-header h2 {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--rosso);
+  }
+
+  .btn {
+    padding: 8px 16px;
+    border-radius: 8px;
+    border: none;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+
+  .btn-add {
+    background: var(--rosso);
+    color: white;
+  }
+
+  .btn-add:hover { background: var(--rosso-scuro); }
+
+  .coming-soon {
+    background: white;
+    border-radius: 12px;
+    padding: 48px 24px;
+    text-align: center;
+    color: var(--grigio-scuro);
+    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+  }
+
+  .coming-soon .cs-icon { font-size: 48px; margin-bottom: 16px; }
+  .coming-soon h3 { font-size: 16px; font-weight: 600; color: var(--testo); margin-bottom: 6px; }
+  .coming-soon p { font-size: 14px; }
+
+  /* Toast */
+  .toast {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%) translateY(80px);
+    background: #1A1A1A;
+    color: white;
+    padding: 10px 20px;
+    border-radius: 8px;
+    font-size: 14px;
+    z-index: 999;
+    transition: transform 0.3s;
+    white-space: nowrap;
+  }
+
+  .toast.show { transform: translateX(-50%) translateY(0); }
+  .toast.success { background: #166534; }
+  .toast.error { background: #991B1B; }
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="login-screen">
+  <div class="login-card">
+    <div class="login-logo">
+      <div class="emblema">⛪</div>
+      <h1>Comitato Festeggiamenti<br>N.S. della Bastia</h1>
+      <p>Gestionale APS — Busalla (GE)</p>
+    </div>
+    <div class="form-group">
+      <label>Email</label>
+      <input type="email" id="login-email" placeholder="nome@sagradellabastia.it" autocomplete="email">
+    </div>
+    <div class="form-group">
+      <label>Password</label>
+      <input type="password" id="login-password" placeholder="••••••••" autocomplete="current-password">
+    </div>
+    <button class="btn-primary" id="login-btn" onclick="doLogin()">Accedi</button>
+    <div class="login-error" id="login-error"></div>
+  </div>
+</div>
+
+<!-- APP SHELL -->
+<div id="app-shell">
+
+  <!-- Header -->
+  <header class="header">
+    <button class="header-burger" onclick="toggleSidebar()" aria-label="Menu">
+      <span></span><span></span><span></span>
+    </button>
+    <div class="header-title">🏘️ Gestionale Bastia</div>
+    <div class="header-user">
+      <span id="header-user-name"></span>
+      <button class="btn-logout" onclick="doLogout()">Esci</button>
+    </div>
+  </header>
+
+  <!-- Overlay mobile -->
+  <div class="sidebar-overlay" id="sidebar-overlay" onclick="closeSidebar()"></div>
+
+  <!-- Sidebar -->
+  <nav class="sidebar" id="sidebar">
+    <div class="sidebar-section">
+      <div class="sidebar-section-label">Generale</div>
+      <a class="sidebar-item active" onclick="showPage('dashboard')">
+        <span class="icon">🏠</span> Dashboard
+      </a>
+    </div>
+    <div class="sidebar-section">
+      <div class="sidebar-section-label">Associazione</div>
+      <a class="sidebar-item" onclick="showPage('soci')">
+        <span class="icon">👥</span> Soci
+      </a>
+      <a class="sidebar-item" onclick="showPage('quote')">
+        <span class="icon">💳</span> Quote annuali
+      </a>
+      <a class="sidebar-item" onclick="showPage('cassa')">
+        <span class="icon">💰</span> Cassa generale
+      </a>
+      <a class="sidebar-item" onclick="showPage('documenti')">
+        <span class="icon">📄</span> Documenti
+      </a>
+    </div>
+    <div class="sidebar-section">
+      <div class="sidebar-section-label">Sagra della Bastia</div>
+      <a class="sidebar-item" onclick="showPage('sagra')">
+        <span class="icon">🎪</span> Edizioni sagra
+      </a>
+      <a class="sidebar-item" onclick="showPage('movimenti-sagra')">
+        <span class="icon">📊</span> Entrate / Uscite
+      </a>
+      <a class="sidebar-item" onclick="showPage('volontari')">
+        <span class="icon">🙋</span> Volontari
+      </a>
+      <a class="sidebar-item" onclick="showPage('turni')">
+        <span class="icon">📅</span> Turni
+      </a>
+      <a class="sidebar-item" onclick="showPage('spesa')">
+        <span class="icon">🛒</span> Lista spesa
+      </a>
+    </div>
+    <div class="sidebar-section">
+      <div class="sidebar-section-label">Risorse</div>
+      <a class="sidebar-item" onclick="showPage('inventario')">
+        <span class="icon">📦</span> Inventario
+      </a>
+    </div>
+    <div class="sidebar-section" id="admin-section" style="display:none">
+      <div class="sidebar-section-label">Amministrazione</div>
+      <a class="sidebar-item" onclick="showPage('utenti')">
+        <span class="icon">⚙️</span> Utenti
+      </a>
+    </div>
+  </nav>
+
+  <!-- Main content -->
+  <main class="main-content">
+
+    <!-- DASHBOARD -->
+    <div class="page active" id="page-dashboard">
+      <div class="dashboard-header">
+        <h2>Benvenuto/a 👋</h2>
+        <p id="dash-subtitle">Caricamento dati...</p>
+      </div>
+      <div class="cards-grid">
+        <div class="stat-card" onclick="showPage('soci')">
+          <div class="card-icon">👥</div>
+          <div class="card-value" id="dash-soci">—</div>
+          <div class="card-label">Soci attivi</div>
+        </div>
+        <div class="stat-card oro" onclick="showPage('quote')">
+          <div class="card-icon">💳</div>
+          <div class="card-value" id="dash-quote-pagate">—</div>
+          <div class="card-label">Quote pagate <span id="dash-anno"></span></div>
+        </div>
+        <div class="stat-card" onclick="showPage('quote')">
+          <div class="card-icon">⏳</div>
+          <div class="card-value" id="dash-quote-da-pagare">—</div>
+          <div class="card-label">Quote da pagare</div>
+        </div>
+        <div class="stat-card oro" onclick="showPage('cassa')">
+          <div class="card-icon">💰</div>
+          <div class="card-value" id="dash-saldo">—</div>
+          <div class="card-label">Saldo cassa (€)</div>
+        </div>
+        <div class="stat-card" onclick="showPage('volontari')">
+          <div class="card-icon">🙋</div>
+          <div class="card-value" id="dash-volontari">—</div>
+          <div class="card-label">Volontari attivi</div>
+        </div>
+        <div class="stat-card" onclick="showPage('inventario')">
+          <div class="card-icon">📦</div>
+          <div class="card-value" id="dash-inventario">—</div>
+          <div class="card-label">Articoli inventario</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SOCI -->
+    <div class="page" id="page-soci">
+      <div class="page-header">
+        <h2>👥 Soci</h2>
+        <button class="btn btn-add">+ Nuovo socio</button>
+      </div>
+      <div class="coming-soon">
+        <div class="cs-icon">👥</div>
+        <h3>Gestione soci</h3>
+        <p>Anagrafica, ricerca e storico quote — in arrivo nel prossimo aggiornamento</p>
+      </div>
+    </div>
+
+    <!-- QUOTE -->
+    <div class="page" id="page-quote">
+      <div class="page-header"><h2>💳 Quote annuali</h2></div>
+      <div class="coming-soon"><div class="cs-icon">💳</div><h3>Quote annuali</h3><p>Storico pagamenti per anno e per socio</p></div>
+    </div>
+
+    <!-- CASSA -->
+    <div class="page" id="page-cassa">
+      <div class="page-header"><h2>💰 Cassa generale</h2><button class="btn btn-add">+ Movimento</button></div>
+      <div class="coming-soon"><div class="cs-icon">💰</div><h3>Cassa generale</h3><p>Entrate e uscite dell'associazione</p></div>
+    </div>
+
+    <!-- DOCUMENTI -->
+    <div class="page" id="page-documenti">
+      <div class="page-header"><h2>📄 Documenti</h2><button class="btn btn-add">+ Carica</button></div>
+      <div class="coming-soon"><div class="cs-icon">📄</div><h3>Documenti</h3><p>Verbali assemblee, statuto e atti</p></div>
+    </div>
+
+    <!-- SAGRA -->
+    <div class="page" id="page-sagra">
+      <div class="page-header"><h2>🎪 Edizioni sagra</h2><button class="btn btn-add">+ Nuova edizione</button></div>
+      <div class="coming-soon"><div class="cs-icon">🎪</div><h3>Edizioni della Sagra della Bastia</h3><p>Gestione delle edizioni annuali</p></div>
+    </div>
+
+    <!-- MOVIMENTI SAGRA -->
+    <div class="page" id="page-movimenti-sagra">
+      <div class="page-header"><h2>📊 Entrate / Uscite sagra</h2><button class="btn btn-add">+ Movimento</button></div>
+      <div class="coming-soon"><div class="cs-icon">📊</div><h3>Contabilità sagra</h3><p>Entrate e uscite per edizione e per stand</p></div>
+    </div>
+
+    <!-- VOLONTARI -->
+    <div class="page" id="page-volontari">
+      <div class="page-header"><h2>🙋 Volontari</h2><button class="btn btn-add">+ Nuovo volontario</button></div>
+      <div class="coming-soon"><div class="cs-icon">🙋</div><h3>Volontari</h3><p>Anagrafica volontari della sagra</p></div>
+    </div>
+
+    <!-- TURNI -->
+    <div class="page" id="page-turni">
+      <div class="page-header"><h2>📅 Turni</h2><button class="btn btn-add">+ Nuovo turno</button></div>
+      <div class="coming-soon"><div class="cs-icon">📅</div><h3>Turni sagra</h3><p>Assegnazione turni per stand e per volontario</p></div>
+    </div>
+
+    <!-- SPESA -->
+    <div class="page" id="page-spesa">
+      <div class="page-header"><h2>🛒 Lista spesa</h2><button class="btn btn-add">+ Articolo</button></div>
+      <div class="coming-soon"><div class="cs-icon">🛒</div><h3>Lista della spesa</h3><p>Spesa per stand e per edizione sagra</p></div>
+    </div>
+
+    <!-- INVENTARIO -->
+    <div class="page" id="page-inventario">
+      <div class="page-header"><h2>📦 Inventario</h2><button class="btn btn-add">+ Articolo</button></div>
+      <div class="coming-soon"><div class="cs-icon">📦</div><h3>Inventario</h3><p>Attrezzature e materiali dell'associazione</p></div>
+    </div>
+
+    <!-- UTENTI (admin) -->
+    <div class="page" id="page-utenti">
+      <div class="page-header"><h2>⚙️ Utenti</h2></div>
+      <div class="coming-soon"><div class="cs-icon">⚙️</div><h3>Gestione utenti</h3><p>Creazione e gestione accessi al gestionale</p></div>
+    </div>
+
+  </main>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script>
+const SUPABASE_URL = 'https://nwpuiwfptkswloauphzn.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im53cHVpd2ZwdGtzd2xvYXVwaHpuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE4MDY5OTEsImV4cCI6MjA5NzM4Mjk5MX0.kOcnfzbxI2xoSRsM26LiyesE8SszyPJ4eBkLRDKgQPc';
+const { createClient } = supabase;
+const db = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+let currentUser = null;
+let currentProfile = null;
+
+// ---- AUTH ----
+async function doLogin() {
+  const email = document.getElementById('login-email').value.trim();
+  const password = document.getElementById('login-password').value;
+  const btn = document.getElementById('login-btn');
+  const err = document.getElementById('login-error');
+
+  if (!email || !password) { showError('Inserisci email e password'); return; }
+
+  btn.disabled = true;
+  btn.textContent = 'Accesso in corso...';
+  err.style.display = 'none';
+
+  const { data, error } = await db.auth.signInWithPassword({ email, password });
+
+  if (error) {
+    showError('Credenziali non valide');
+    btn.disabled = false;
+    btn.textContent = 'Accedi';
+    return;
+  }
+
+  await initApp(data.user);
+}
+
+function showError(msg) {
+  const err = document.getElementById('login-error');
+  err.textContent = msg;
+  err.style.display = 'block';
+}
+
+async function doLogout() {
+  await db.auth.signOut();
+  document.getElementById('app-shell').style.display = 'none';
+  document.getElementById('login-screen').style.display = 'flex';
+  document.getElementById('login-btn').disabled = false;
+  document.getElementById('login-btn').textContent = 'Accedi';
+  document.getElementById('login-password').value = '';
+}
+
+async function initApp(user) {
+  currentUser = user;
+
+  // Carica profilo
+  const { data: profile } = await db.from('profiles').select('*').eq('id', user.id).single();
+  currentProfile = profile;
+
+  // Header
+  document.getElementById('header-user-name').textContent =
+    profile ? `${profile.nome} ${profile.cognome}` : user.email;
+
+  // Mostra sezione admin se admin
+  if (profile?.ruolo === 'admin') {
+    document.getElementById('admin-section').style.display = 'block';
+  }
+
+  // Mostra app
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('app-shell').style.display = 'block';
+
+  showPage('dashboard');
+  loadDashboard();
+}
+
+// ---- NAVIGAZIONE ----
+function showPage(pageId) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.sidebar-item').forEach(i => i.classList.remove('active'));
+
+  const page = document.getElementById('page-' + pageId);
+  if (page) page.classList.add('active');
+
+  document.querySelectorAll('.sidebar-item').forEach(item => {
+    if (item.getAttribute('onclick')?.includes(`'${pageId}'`)) {
+      item.classList.add('active');
+    }
+  });
+
+  closeSidebar();
+}
+
+// ---- SIDEBAR MOBILE ----
+function toggleSidebar() {
+  const sidebar = document.getElementById('sidebar');
+  const overlay = document.getElementById('sidebar-overlay');
+  sidebar.classList.toggle('open');
+  overlay.classList.toggle('show');
+}
+
+function closeSidebar() {
+  document.getElementById('sidebar').classList.remove('open');
+  document.getElementById('sidebar-overlay').classList.remove('show');
+}
+
+// ---- DASHBOARD ----
+async function loadDashboard() {
+  const anno = new Date().getFullYear();
+  document.getElementById('dash-anno').textContent = anno;
+  document.getElementById('dash-subtitle').textContent =
+    `Anno ${anno} — ${currentProfile?.nome || ''} (${currentProfile?.ruolo || ''})`;
+
+  // Soci attivi
+  const { count: nSoci } = await db.from('soci').select('*', { count: 'exact', head: true }).eq('attivo', true);
+  document.getElementById('dash-soci').textContent = nSoci ?? 0;
+
+  // Quote anno corrente
+  const { data: quote } = await db.from('quote').select('pagato').eq('anno', anno);
+  const pagate = quote?.filter(q => q.pagato).length ?? 0;
+  const daPagare = (quote?.length ?? 0) - pagate;
+  document.getElementById('dash-quote-pagate').textContent = pagate;
+  document.getElementById('dash-quote-da-pagare').textContent = daPagare;
+
+  // Saldo cassa
+  const { data: movimenti } = await db.from('movimenti_cassa').select('tipo, importo');
+  let saldo = 0;
+  movimenti?.forEach(m => { saldo += m.tipo === 'entrata' ? +m.importo : -m.importo; });
+  document.getElementById('dash-saldo').textContent = saldo.toFixed(2);
+
+  // Volontari attivi
+  const { count: nVol } = await db.from('volontari').select('*', { count: 'exact', head: true }).eq('attivo', true);
+  document.getElementById('dash-volontari').textContent = nVol ?? 0;
+
+  // Inventario
+  const { count: nInv } = await db.from('inventario').select('*', { count: 'exact', head: true });
+  document.getElementById('dash-inventario').textContent = nInv ?? 0;
+}
+
+// ---- TOAST ----
+function showToast(msg, type = '') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast show' + (type ? ' ' + type : '');
+  setTimeout(() => { t.className = 'toast'; }, 3000);
+}
+
+// ---- SESSIONE PERSISTENTE ----
+db.auth.onAuthStateChange(async (event, session) => {
+  if (session?.user && !currentUser) {
+    await initApp(session.user);
+  }
+});
+
+// ---- ENTER su login ----
+document.getElementById('login-password').addEventListener('keydown', e => {
+  if (e.key === 'Enter') doLogin();
+});
+</script>
+</body>
+</html>
