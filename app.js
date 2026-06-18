@@ -476,7 +476,11 @@ async function importExcel(input) {
         const key = keyMap[h] || keyMap[normalized];
         if (key) obj[key] = String(row[i] || '').trim();
       });
-      if (!obj.codice_fiscale || !obj.cognome || !obj.nome) { errori++; continue; }
+      if (!obj.codice_fiscale || !obj.cognome || !obj.nome) {
+        console.warn('Riga saltata - dati mancanti:', obj, 'raw headers:', rawHeaders, 'row:', row);
+        errori++; continue;
+      }
+      console.log('Import row:', JSON.stringify(obj));
 
       obj.codice_fiscale = obj.codice_fiscale.toUpperCase();
       if (obj.data_nascita) obj.data_nascita = parseDataIT(obj.data_nascita);
