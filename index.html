@@ -795,27 +795,48 @@ async function doLogout() {
   document.getElementById('login-password').value = '';
 }
 
+function debugLog(msg) {
+  const err = document.getElementById('login-error');
+  err.style.display = 'block';
+  err.style.background = '#EEF2F8';
+  err.style.color = '#1E2D47';
+  err.textContent = '⏳ ' + msg;
+}
+
 async function initApp(user) {
-  currentUser = user;
-  const { data: profile } = await db.from('profiles').select('*').eq('id', user.id).single();
-  currentProfile = profile;
+  try {
+    debugLog('Utente ricevuto: ' + user.email);
+    currentUser = user;
 
-  const nome = profile ? profile.nome : user.email.split('@')[0];
-  const cognome = profile ? profile.cognome : '';
-  const iniziali = (nome[0] + (cognome[0] || '')).toUpperCase();
+    debugLog('Carico profilo...');
+    const { data: profile, error: profErr } = await db.from('profiles').select('*').eq('id', user.id).single();
+    if (profErr) debugLog('Errore profilo: ' + profErr.message);
 
-  document.getElementById('header-avatar').textContent = iniziali;
-  document.getElementById('header-user-name').textContent = nome + (cognome ? ' ' + cognome : '');
+    currentProfile = profile;
+    debugLog('Profilo OK: ' + JSON.stringify(profile?.ruolo));
 
-  if (profile?.ruolo === 'admin') {
-    document.getElementById('admin-section').style.display = 'block';
+    const nome = profile?.nome || user.email.split('@')[0];
+    const cognome = profile?.cognome || '';
+    const iniziali = ((nome[0] || '') + (cognome[0] || '')).toUpperCase() || '?';
+
+    document.getElementById('header-avatar').textContent = iniziali;
+    document.getElementById('header-user-name').textContent = nome + (cognome ? ' ' + cognome : '');
+
+    if (profile?.ruolo === 'admin') {
+      document.getElementById('admin-section').style.display = 'block';
+    }
+
+    debugLog('Mostro app...');
+    document.getElementById('login-screen').style.display = 'none';
+    document.getElementById('app-shell').style.display = 'block';
+
+    showPage('dashboard');
+    loadDashboard();
+  } catch(e) {
+    debugLog('ERRORE initApp: ' + e.message);
+    document.getElementById('login-btn').disabled = false;
+    document.getElementById('login-btn').textContent = 'Accedi';
   }
-
-  document.getElementById('login-screen').style.display = 'none';
-  document.getElementById('app-shell').style.display = 'block';
-
-  showPage('dashboard');
-  loadDashboard();
 }
 
 function showPage(pageId) {
