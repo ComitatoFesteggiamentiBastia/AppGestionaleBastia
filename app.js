@@ -78,7 +78,7 @@ async function initApp(user) {
     document.getElementById('app-shell').style.display = 'block';
     showPage('dashboard');
 
-    // Carica profilo in background dopo che l'app è visibile
+    // Carica profilo e permessi in background
     setTimeout(async () => {
       try {
         const { data: profile } = await db.from('profiles').select('*').eq('id', user.id).single();
@@ -93,6 +93,7 @@ async function initApp(user) {
             document.getElementById('admin-section').style.display = 'block';
           }
         }
+        await applicaPermessi(user.id);
         loadDashboard();
       } catch(e) {
         loadDashboard();
@@ -117,6 +118,7 @@ function showPage(pageId) {
   closeSidebar();
   if (pageId === 'soci' || pageId === 'db-avanzato') loadSoci();
   if (pageId === 'impostazioni-anno') loadImpostazioniAnno();
+  if (pageId === 'utenti') loadUtenti();
 }
 
 function toggleSidebar() {
@@ -214,6 +216,23 @@ document.getElementById('login-password').addEventListener('keydown', e => {
 let tuttiSoci = [];
 let impostazioniAnno = [];
 const ANNO_CORRENTE = new Date().getFullYear();
+
+const PAGINE_DISPONIBILI = [
+  { id: 'dashboard',         label: 'Dashboard',           gruppo: 'Generale' },
+  { id: 'soci',              label: 'Soci',                gruppo: 'Associazione' },
+  { id: 'db-avanzato',       label: 'DB Avanzato',         gruppo: 'Associazione' },
+  { id: 'quote',             label: 'Quote annuali',       gruppo: 'Associazione' },
+  { id: 'cassa',             label: 'Cassa generale',      gruppo: 'Associazione' },
+  { id: 'documenti',         label: 'Documenti',           gruppo: 'Associazione' },
+  { id: 'sagra',             label: 'Edizioni sagra',      gruppo: 'Sagra' },
+  { id: 'movimenti-sagra',   label: 'Entrate / Uscite',    gruppo: 'Sagra' },
+  { id: 'volontari',         label: 'Volontari',           gruppo: 'Sagra' },
+  { id: 'turni',             label: 'Turni',               gruppo: 'Sagra' },
+  { id: 'spesa',             label: 'Lista spesa',         gruppo: 'Sagra' },
+  { id: 'inventario',        label: 'Inventario',          gruppo: 'Risorse' },
+  { id: 'impostazioni-anno', label: 'Anni e quote',        gruppo: 'Amministrazione' },
+  { id: 'utenti',            label: 'Utenti',              gruppo: 'Amministrazione' },
+];
 
 function statoSocio(s) {
   return parseInt(s.anno_rinnovo) === ANNO_CORRENTE ? 'attivo' : 'non_rinnovato';
@@ -670,6 +689,137 @@ async function rinnovaMassivo() {
   showToast(`Rinnovati: ${ok}${err ? ' | Errori: ' + err : ''}`, ok > 0 ? 'success' : 'error');
   document.getElementById('barra-rinnovo').style.display = 'none';
   loadSoci();
+}
+
+// ===== GESTIONE UTENTI =====
+let tuttiUtenti = [];
+
+async function loadUtenti() {
+  const { data: profili, error: e1 } = await db.from('profiles').select('*').order('cognome');
+  const { data: permessi, error: e2 } = await db.from('utenti_permessi').select('*');
+  console.log('profili:', profili, 'error:', e1);
+  console.log('permessi:', permessi, 'error:', e2);
+  tuttiUtenti = (profili || []).map(p => ({
+    ...p,
+    permessi: permessi?.find(x => x.user_id === p.id)?.permessi || {}
+  }));
+  renderUtenti();
+}
+
+function renderUtenti() {
+  const tbody = document.getElementById('utenti-tbody');
+  if (!tbody) return;
+  if (!tuttiUtenti.length) {
+    tbody.innerHTML = '<tr><td colspan="4" style="padding:24px;text-align:center;color:var(--testo-muted);">Nessun utente</td></tr>';
+    return;
+  }
+  tbody.innerHTML = tuttiUtenti.map(u => {
+    const nPagine = Object.values(u.permessi).filter(Boolean).length;
+    const isMe = u.id === currentUser?.id;
+    return `<tr style="border-bottom:1px solid var(--border);">
+      <td style="padding:10px 16px;">
+        <div style="font-weight:500;">${u.cognome || ''} ${u.nome || ''}</div>
+        <div style="font-size:11px;color:var(--testo-muted);">${u.email}</div>
+      </td>
+      <td style="padding:10px 16px;">
+        <span class="badge ${u.attivo ? 'badge-ok' : 'badge-no'}">${u.attivo ? 'Attivo' : 'Disattivo'}</span>
+      </td>
+      <td style="padding:10px 16px;font-size:13px;color:var(--testo-muted);">
+        ${nPagine === PAGINE_DISPONIBILI.length ? 'Tutte le pagine' : nPagine + ' pagine'}
+      </td>
+      <td style="padding:10px 16px;text-align:center;">
+        <button class="btn btn-sm" onclick="openModalUtente('${u.id}')"><i class="ti ti-edit"></i> Permessi</button>
+        ${!isMe ? `<button class="btn btn-sm" style="color:#991B1B" onclick="toggleAttivoUtente('${u.id}',${u.attivo})">${u.attivo ? '<i class="ti ti-user-off"></i>' : '<i class="ti ti-user-check"></i>'}</button>` : ''}
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function openModalUtente(userId) {
+  const u = tuttiUtenti.find(x => x.id === userId);
+  if (!u) return;
+
+  document.getElementById('modal-utente-title').textContent = `${u.cognome || ''} ${u.nome || ''} — Permessi`;
+  document.getElementById('m-utente-id').value = userId;
+
+  // Raggruppa pagine per gruppo
+  const gruppi = [...new Set(PAGINE_DISPONIBILI.map(p => p.gruppo))];
+  let html = '';
+  for (const gruppo of gruppi) {
+    const pagine = PAGINE_DISPONIBILI.filter(p => p.gruppo === gruppo);
+    html += `<div style="margin-bottom:16px;">
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--testo-muted);margin-bottom:8px;">${gruppo}</div>
+      ${pagine.map(p => `
+        <label style="display:flex;align-items:center;gap:10px;padding:6px 0;cursor:pointer;font-size:13px;">
+          <input type="checkbox" class="perm-checkbox" data-page="${p.id}"
+            ${u.permessi[p.id] !== false && (u.permessi[p.id] === true || Object.keys(u.permessi).length === 0) ? 'checked' : ''}
+            style="width:16px;height:16px;accent-color:var(--blu);cursor:pointer;">
+          ${p.label}
+        </label>
+      `).join('')}
+    </div>`;
+  }
+
+  document.getElementById('permessi-container').innerHTML = html;
+  document.getElementById('modal-utente').style.display = 'flex';
+  document.getElementById('modal-utente').style.pointerEvents = 'auto';
+}
+
+function closeModalUtente() {
+  const m = document.getElementById('modal-utente');
+  m.style.display = 'none';
+  m.style.pointerEvents = 'none';
+}
+
+function selezionaTuttiPermessi(checked) {
+  document.querySelectorAll('.perm-checkbox').forEach(cb => cb.checked = checked);
+}
+
+async function savePermessi() {
+  const userId = document.getElementById('m-utente-id').value;
+  const permessi = {};
+  document.querySelectorAll('.perm-checkbox').forEach(cb => {
+    permessi[cb.dataset.page] = cb.checked;
+  });
+
+  // Upsert permessi
+  const { data: existing } = await db.from('utenti_permessi').select('id').eq('user_id', userId).single();
+  let error;
+  if (existing?.id) {
+    ({ error } = await db.from('utenti_permessi').update({ permessi, updated_at: new Date().toISOString() }).eq('user_id', userId));
+  } else {
+    ({ error } = await db.from('utenti_permessi').insert({ user_id: userId, permessi }));
+  }
+
+  if (error) { showToast('Errore: ' + error.message, 'error'); return; }
+  showToast('Permessi salvati!', 'success');
+  closeModalUtente();
+  loadUtenti();
+}
+
+async function toggleAttivoUtente(userId, attivo) {
+  const { error } = await db.from('profiles').update({ attivo: !attivo }).eq('id', userId);
+  if (error) { showToast('Errore', 'error'); return; }
+  showToast(attivo ? 'Utente disattivato' : 'Utente attivato', 'success');
+  loadUtenti();
+}
+
+// Applica permessi al menu dopo il login
+async function applicaPermessi(userId) {
+  const { data } = await db.from('utenti_permessi').select('permessi').eq('user_id', userId).single();
+  if (!data) return; // nessun permesso configurato = vede tutto
+
+  const permessi = data.permessi;
+  // Nascondi voci sidebar non permesse
+  document.querySelectorAll('.s-item').forEach(item => {
+    const onclick = item.getAttribute('onclick') || '';
+    const match = onclick.match(/'([^']+)'/);
+    if (match) {
+      const pageId = match[1];
+      const permesso = permessi[pageId];
+      if (permesso === false) item.style.display = 'none';
+    }
+  });
 }
 
 // Il caricamento soci è gestito direttamente in showPage
