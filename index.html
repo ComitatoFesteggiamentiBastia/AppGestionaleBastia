@@ -571,8 +571,6 @@
       <div class="s-label">Sagra della Bastia</div>
       <div class="s-item" onclick="showPage('sagra')"><i class="ti ti-tent"></i> Edizioni sagra</div>
       <div class="s-item" onclick="showPage('movimenti-sagra')"><i class="ti ti-chart-bar"></i> Entrate / Uscite</div>
-      <div class="s-item" onclick="showPage('volontari')"><i class="ti ti-hand-stop"></i> Volontari</div>
-      <div class="s-item" onclick="showPage('turni')"><i class="ti ti-calendar"></i> Turni</div>
       <div class="s-item" onclick="showPage('spesa')"><i class="ti ti-shopping-cart"></i> Lista spesa</div>
       <div class="s-item" onclick="showPage('sponsor')"><i class="ti ti-award"></i> Sponsor</div>
       <div class="s-item" onclick="showPage('prima-nota')"><i class="ti ti-calculator"></i> Prima Nota</div>
@@ -1124,6 +1122,13 @@
     <div class="form-group"><label>Data inizio</label><input id="m-sagra-inizio" type="date"></div>
     <div class="form-group"><label>Data fine</label><input id="m-sagra-fine" type="date"></div>
     <div class="form-group"><label>Note</label><input id="m-sagra-note"></div>
+    <div class="form-group">
+      <label>Stato</label>
+      <select id="m-sagra-stato" style="width:100%;padding:9px 12px;border:1px solid #D4C9BE;border-radius:8px;font-size:14px;outline:none;">
+        <option value="aperta">Aperta</option>
+        <option value="chiusa">Chiusa</option>
+      </select>
+    </div>
     <input type="hidden" id="m-sagra-id">
     <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;">
       <button class="btn" onclick="closeModalSagra()">Annulla</button>

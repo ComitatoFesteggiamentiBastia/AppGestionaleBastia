@@ -874,6 +874,7 @@ function openModalSagra(s = null) {
   document.getElementById('m-sagra-inizio').value = s?.data_inizio || '';
   document.getElementById('m-sagra-fine').value = s?.data_fine || '';
   document.getElementById('m-sagra-note').value = s?.note || '';
+  document.getElementById('m-sagra-stato').value = s?.chiusa ? 'chiusa' : 'aperta';
 }
 
 function closeModalSagra() {
@@ -890,7 +891,8 @@ async function saveSagra() {
     anno, nome,
     data_inizio: document.getElementById('m-sagra-inizio').value || null,
     data_fine: document.getElementById('m-sagra-fine').value || null,
-    note: document.getElementById('m-sagra-note').value.trim() || null
+    note: document.getElementById('m-sagra-note').value.trim() || null,
+    chiusa: document.getElementById('m-sagra-stato').value === 'chiusa'
   };
   const id = document.getElementById('m-sagra-id').value;
   let error;
