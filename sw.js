@@ -1,10 +1,10 @@
-const CACHE = 'gestionale-bastia-v1';
+const CACHE = 'gestionale-bastia-v2';
 const FILES = [
-  '/AppGestionaleBastia/',
-  '/AppGestionaleBastia/index.html',
-  '/AppGestionaleBastia/app.js',
-  '/AppGestionaleBastia/logo.jpg',
-  '/AppGestionaleBastia/manifest.json'
+  './',
+  './index.html',
+  './app.js',
+  './logo.jpg',
+  './manifest.json'
 ];
 
 self.addEventListener('install', e => {
@@ -22,7 +22,6 @@ self.addEventListener('activate', e => {
 });
 
 self.addEventListener('fetch', e => {
-  // Solo GET, non intercettare chiamate Supabase
   if (e.request.method !== 'GET') return;
   if (e.request.url.includes('supabase.co')) return;
 
@@ -34,7 +33,7 @@ self.addEventListener('fetch', e => {
         const clone = resp.clone();
         caches.open(CACHE).then(c => c.put(e.request, clone));
         return resp;
-      }).catch(() => caches.match('/AppGestionaleBastia/index.html'));
+      }).catch(() => caches.match('./index.html'));
     })
   );
 });
