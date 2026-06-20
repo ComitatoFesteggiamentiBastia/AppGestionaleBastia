@@ -1,10 +1,13 @@
-const CACHE = 'gestionale-bastia-v2';
+const CACHE = 'gestionale-bastia-v4';
 const FILES = [
   './',
   './index.html',
   './app.js',
   './logo.jpg',
-  './manifest.json'
+  './manifest.json',
+  './icon-192.png',
+  './icon-512.png',
+  './apple-touch-icon.png'
 ];
 
 self.addEventListener('install', e => {
