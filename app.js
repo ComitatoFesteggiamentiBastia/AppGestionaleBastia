@@ -1787,34 +1787,37 @@ async function generaTessera(socioId) {
   apriAnteprimaTessera(socio, numeroTessera);
 }
 
-function apriAnteprimaTessera(socio, numero) {
+function htmlTesseraSocio(socio, numero) {
   const numeroFormattato = String(numero).padStart(4, '0');
-  const html = `
-    <div id="tessera-stampa" style="width:340px;height:214px;background:linear-gradient(135deg,#1E2D47 0%,#2C4A7C 100%);border-radius:14px;padding:20px;color:white;font-family:'Segoe UI',sans-serif;position:relative;overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,0.3);">
-      <div style="position:absolute;top:-30px;right:-30px;width:140px;height:140px;background:rgba(201,160,48,0.15);border-radius:50%;"></div>
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:18px;">
-        <img src="logo.jpg" style="width:36px;height:36px;object-fit:cover;border-radius:6px;background:white;">
-        <div>
-          <div style="font-size:11px;font-weight:700;letter-spacing:0.04em;color:#C9A030;">COMITATO FESTEGGIAMENTI</div>
-          <div style="font-size:10px;color:#C8D8F0;">N.S. DELLA BASTIA — BUSALLA</div>
-        </div>
+  return `
+    <div class="tessera-card" style="width:340px;height:214px;background:#F0EDE8;border-radius:14px;padding:0;font-family:'Segoe UI',sans-serif;position:relative;overflow:hidden;box-sizing:border-box;border:1px solid #D4C9BE;">
+      <div style="position:absolute;top:0;left:0;width:100%;height:6px;background:#1E2D47;"></div>
+      <div style="position:absolute;right:-25px;top:50%;transform:translateY(-50%);width:230px;height:330px;opacity:0.16;overflow:hidden;">
+        <img src="logo.jpg" style="width:100%;height:100%;object-fit:cover;object-position:top;filter:grayscale(1);">
       </div>
-      <div style="font-size:10px;color:#8AAAD4;letter-spacing:0.08em;margin-bottom:2px;">TESSERA SOCIO</div>
-      <div style="font-size:20px;font-weight:700;margin-bottom:14px;">${socio.cognome} ${socio.nome}</div>
-      <div style="display:flex;justify-content:space-between;align-items:flex-end;">
-        <div>
-          <div style="font-size:9px;color:#8AAAD4;">CODICE FISCALE</div>
-          <div style="font-size:11px;font-family:monospace;letter-spacing:0.03em;">${socio.codice_fiscale}</div>
+      <div style="position:relative;padding:16px 18px 0 18px;">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+          <div style="width:46px;height:46px;border-radius:8px;background:white;border:1.5px solid #D4C9BE;display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0;">
+            <img src="logo.jpg" style="width:88%;height:88%;object-fit:contain;">
+          </div>
+          <div style="font-size:13px;font-weight:700;color:#1E2D47;line-height:1.2;">Comitato Festeggiamenti N. S. della Bastia</div>
         </div>
-        <div style="text-align:right;">
-          <div style="font-size:9px;color:#8AAAD4;">N° TESSERA</div>
-          <div style="font-size:22px;font-weight:700;color:#C9A030;letter-spacing:0.05em;">${numeroFormattato}</div>
-        </div>
+        <div style="border-top:1px solid #D4C9BE;margin-bottom:10px;"></div>
+        <div style="font-size:10px;font-weight:700;letter-spacing:0.06em;color:#B8901A;margin-bottom:4px;">TESSERA SOCIO</div>
+        <div style="font-size:25px;font-weight:700;color:#1E2D47;margin-bottom:10px;">${socio.cognome} ${socio.nome}</div>
+        <div style="font-size:9px;font-weight:700;letter-spacing:0.04em;color:#7A6548;">CODICE FISCALE</div>
+        <div style="font-size:13px;font-family:monospace;color:#1E2D47;">${socio.codice_fiscale}</div>
+      </div>
+      <div style="position:absolute;bottom:14px;right:18px;background:#1E2D47;border-radius:10px;padding:8px 16px;text-align:left;">
+        <div style="font-size:9px;font-weight:700;letter-spacing:0.04em;color:#8AAAD4;">N° TESSERA</div>
+        <div style="font-size:24px;font-weight:700;color:#C9A030;">${numeroFormattato}</div>
       </div>
     </div>
   `;
+}
 
-  document.getElementById('tessera-modal-body').innerHTML = html;
+function apriAnteprimaTessera(socio, numero) {
+  document.getElementById('tessera-modal-body').innerHTML = `<div id="tessera-stampa">${htmlTesseraSocio(socio, numero)}</div>`;
   document.getElementById('modal-tessera').style.display = 'flex';
   document.getElementById('modal-tessera').style.pointerEvents = 'auto';
   document.getElementById('m-tessera-socio-id').value = socio.id;
@@ -1846,6 +1849,83 @@ function caricaHtml2Canvas() {
     if (window.html2canvas) return resolve();
     const script = document.createElement('script');
     script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+    script.onload = resolve;
+    document.head.appendChild(script);
+  });
+}
+
+// ===== STAMPA MASSIVA TESSERE =====
+async function stampaTessereSelezionate() {
+  const checkboxes = document.querySelectorAll('.socio-checkbox:checked');
+  const ids = Array.from(checkboxes).map(cb => cb.dataset.id);
+  if (!ids.length) { showToast('Seleziona almeno un socio', 'error'); return; }
+
+  showToast('Genero il PDF...', '');
+
+  // Assicura che tutti abbiano un numero tessera
+  for (const id of ids) {
+    const socio = tuttiSoci.find(s => s.id === id);
+    if (socio && !socio.numero_tessera) {
+      const num = await assegnaNumeroTessera(id);
+      socio.numero_tessera = num;
+    }
+  }
+
+  const sociSelezionati = ids.map(id => tuttiSoci.find(s => s.id === id)).filter(Boolean);
+
+  if (!window.jspdf) await caricaJsPDF();
+  await caricaHtml2Canvas();
+
+  const { jsPDF } = window.jspdf;
+  const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+
+  const CARD_W = 85.6, CARD_H = 54; // standard tessera
+  const MARGIN_X = (210 - CARD_W * 2) / 3;
+  const MARGIN_Y = (297 - CARD_H * 4) / 5;
+  const COLS = 2, ROWS = 4;
+  const PER_PAGE = COLS * ROWS;
+
+  // Container temporaneo fuori schermo per renderizzare ogni tessera
+  const tempContainer = document.createElement('div');
+  tempContainer.style.position = 'fixed';
+  tempContainer.style.left = '-9999px';
+  tempContainer.style.top = '0';
+  document.body.appendChild(tempContainer);
+
+  for (let i = 0; i < sociSelezionati.length; i++) {
+    const socio = sociSelezionati[i];
+    const posInPage = i % PER_PAGE;
+    if (i > 0 && posInPage === 0) pdf.addPage();
+
+    const col = posInPage % COLS;
+    const row = Math.floor(posInPage / COLS);
+    const x = MARGIN_X + col * (CARD_W + MARGIN_X);
+    const y = MARGIN_Y + row * (CARD_H + MARGIN_Y);
+
+    tempContainer.innerHTML = htmlTesseraSocio(socio, socio.numero_tessera);
+
+    await new Promise(r => setTimeout(r, 50)); // attende il rendering del logo
+
+    const canvas = await html2canvas(tempContainer.firstElementChild, { scale: 3, backgroundColor: null });
+    const imgData = canvas.toDataURL('image/png');
+    pdf.addImage(imgData, 'PNG', x, y, CARD_W, CARD_H);
+
+    // Linee guida per il ritaglio (tratteggiate, leggere)
+    pdf.setDrawColor(200, 200, 200);
+    pdf.setLineDashPattern([1, 1], 0);
+    pdf.rect(x, y, CARD_W, CARD_H);
+  }
+
+  document.body.removeChild(tempContainer);
+  pdf.save(`tessere_soci_${new Date().toISOString().split('T')[0]}.pdf`);
+  showToast(`PDF generato: ${sociSelezionati.length} tessere`, 'success');
+}
+
+function caricaJsPDF() {
+  return new Promise((resolve) => {
+    if (window.jspdf) return resolve();
+    const script = document.createElement('script');
+    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
     script.onload = resolve;
     document.head.appendChild(script);
   });
