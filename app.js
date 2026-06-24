@@ -1629,3 +1629,135 @@ async function eliminaInventario(id) {
   showToast('Eliminato', 'success');
   loadInventario();
 }
+
+// ===== MARIELLO — AI ASSISTANT =====
+const MARIELLO_PROXY_URL = 'https://beautiful-chebakia-4ed63e.netlify.app/api/chat';
+let marielloMessages = [];
+let marielloAperto = false;
+
+const MARIELLO_SYSTEM_PROMPT = `Sei Mariello, un personaggio molto preciso e devi restarci fedele in OGNI risposta.
+
+CHI SEI:
+Hai 60 anni, sei di Camarza (entroterra genovese), di mestiere fai l'impresario edile. Ti presti da una vita al volontariato per il Comitato Festeggiamenti N.S. della Bastia. Sei un uomo all'antica nei modi ma con la testa sul futuro — vai d'accordo coi giovani, capisci la tecnologia (anche se la chiami "questo computer qui"), e non hai problemi a usare una webapp. Hai la battuta sempre pronta, a volte tagliente, mai stucchevole. Sei diretto, pieno di grinta, schietto fino all'osso. Non hai paura di dire le cose come stanno, anche se a qualcuno non piace.
+
+COME PARLI:
+- Parli SEMPRE con un forte accento e cadenza genovese, anche quando l'argomento è serio (bilanci, soci, conti).
+- Usi intercalari genovesi in abbondanza: "belin", "figeu", "a-a gh'è...", "ma vatte a piggiâ...", "cribbio", "madonna ca brûggia", "porco cane", "öh", "saciu mi", "voscià" (per rispetto, raramente), "zeneise" quando ti riferisci a te stesso.
+- Quando vuoi dire "stupido" a qualcuno (sempre in modo scherzoso e mai davvero offensivo), usi "stüpido" o "stüpidón" (pronuncia genovese, con la u alla francese) oppure "belinón" — sono i TUOI modi preferiti di dare dello sciocco a qualcuno, li usi spesso e con affetto, mai con cattiveria vera.
+- NON usi MAI bestemmie o imprecazioni blasfeme — usi solo le imprecazioni colorite del dialetto laico (belin, cribbio, porco cane, madonna ca brûggia, ecc).
+- Le tue battute sono pungenti ma mai cattive — sei un brontolone con il cuore d'oro.
+- Quando dai un dato numerico (saldi, soci, sponsor) lo dici con precisione, ma sempre nel tuo modo di parlare — non diventi "neutro" solo perché parli di numeri.
+
+COSA FAI:
+Hai accesso completo ai dati del Comitato Festeggiamenti N.S. della Bastia: soci, quote associative, edizioni della sagra, entrate e uscite, sponsor, lista spesa, inventario, prima nota casse. Rispondi a QUALSIASI domanda su questi dati con precisione, basandoti SOLO sui dati che ti vengono forniti nel contesto — non inventare numeri.
+
+Se non hai il dato richiesto nel contesto fornito, dillo chiaramente (sempre nel tuo stile) invece di inventarlo.
+
+Sei breve e concreto nelle risposte — non fai sermoni, vai dritto al punto come un vero genovese che non vuole perdere tempo.`;
+
+async function loadContestoMariello() {
+  const [soci, quote, sagre, movimenti, sponsorData, spesa, inventario, primaNota] = await Promise.all([
+    db.from('soci').select('*').eq('attivo', true),
+    db.from('quote').select('*'),
+    db.from('sagre').select('*'),
+    db.from('movimenti_sagra').select('*'),
+    db.from('sponsor').select('*'),
+    db.from('lista_spesa').select('*'),
+    db.from('inventario').select('*'),
+    db.from('prima_nota').select('*')
+  ]);
+
+  return {
+    data_oggi: new Date().toISOString().split('T')[0],
+    soci: soci.data || [],
+    quote: quote.data || [],
+    sagre: sagre.data || [],
+    movimenti_sagra: movimenti.data || [],
+    sponsor: sponsorData.data || [],
+    lista_spesa: spesa.data || [],
+    inventario: inventario.data || [],
+    prima_nota: primaNota.data || []
+  };
+}
+
+function toggleMariello() {
+  marielloAperto = !marielloAperto;
+  const panel = document.getElementById('mariello-panel');
+  panel.style.display = marielloAperto ? 'flex' : 'none';
+  if (marielloAperto && marielloMessages.length === 0) {
+    aggiungiMessaggioMariello('assistant', 'Öh, belin, eccomi qui! Sò Mariello, da Camarza, e sò chì pe\' deve ti seu in sce tutto: soci, ballanci, sponsor, magazén... Spera ben de no fâmi perde tempo, che de lou da fâ ghe n\'è sempre! Dimme cose ti veu savei.');
+  }
+}
+
+function aggiungiMessaggioMariello(ruolo, testo) {
+  const container = document.getElementById('mariello-messages');
+  const bubble = document.createElement('div');
+  bubble.style.cssText = `
+    max-width: 85%;
+    padding: 10px 14px;
+    border-radius: 14px;
+    font-size: 13px;
+    line-height: 1.4;
+    margin-bottom: 8px;
+    white-space: pre-wrap;
+    ${ruolo === 'user'
+      ? 'background:var(--blu-notte);color:white;align-self:flex-end;border-bottom-right-radius:4px;'
+      : 'background:#F2EDE4;color:var(--testo);align-self:flex-start;border-bottom-left-radius:4px;'}
+  `;
+  bubble.textContent = testo;
+  container.appendChild(bubble);
+  container.scrollTop = container.scrollHeight;
+}
+
+async function inviaMessaggioMariello() {
+  const input = document.getElementById('mariello-input');
+  const testo = input.value.trim();
+  if (!testo) return;
+
+  input.value = '';
+  input.disabled = true;
+  aggiungiMessaggioMariello('user', testo);
+  marielloMessages.push({ role: 'user', content: testo });
+
+  // Indicatore "sta scrivendo"
+  const container = document.getElementById('mariello-messages');
+  const typing = document.createElement('div');
+  typing.id = 'mariello-typing';
+  typing.style.cssText = 'align-self:flex-start;font-size:13px;color:var(--testo-muted);padding:6px 14px;font-style:italic;';
+  typing.textContent = 'Mariello sta scrivendo...';
+  container.appendChild(typing);
+  container.scrollTop = container.scrollHeight;
+
+  try {
+    const contesto = await loadContestoMariello();
+    const systemCompleto = MARIELLO_SYSTEM_PROMPT + '\n\nDATI ATTUALI DEL COMITATO (JSON):\n' + JSON.stringify(contesto);
+
+    const response = await fetch(MARIELLO_PROXY_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        system: systemCompleto,
+        messages: marielloMessages.slice(-10) // ultimi 10 messaggi per non gonfiare troppo
+      })
+    });
+
+    const data = await response.json();
+    document.getElementById('mariello-typing')?.remove();
+
+    if (data.error) {
+      aggiungiMessaggioMariello('assistant', 'Öh belin, gh\'è quarche problema co\' a connesción. Riprova tra un po\'.');
+      console.error('Mariello error:', data.error);
+    } else {
+      const risposta = data.content?.[0]?.text || 'Scusa figeu, no g\'ho capio ben. Repeti?';
+      aggiungiMessaggioMariello('assistant', risposta);
+      marielloMessages.push({ role: 'assistant', content: risposta });
+    }
+  } catch (e) {
+    document.getElementById('mariello-typing')?.remove();
+    aggiungiMessaggioMariello('assistant', 'Madonna ca brûggia, no riesco a conetteme! Contrlla a connesción e riprova.');
+    console.error(e);
+  }
+
+  input.disabled = false;
+  input.focus();
+}

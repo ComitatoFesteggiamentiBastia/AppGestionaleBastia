@@ -1,4 +1,4 @@
-const CACHE = 'gestionale-bastia-v4';
+const CACHE = 'gestionale-bastia-v6';
 const FILES = [
   './',
   './index.html',
@@ -27,6 +27,7 @@ self.addEventListener('activate', e => {
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;
   if (e.request.url.includes('supabase.co')) return;
+  if (e.request.url.includes('netlify.app')) return;
 
   e.respondWith(
     caches.match(e.request).then(cached => {
