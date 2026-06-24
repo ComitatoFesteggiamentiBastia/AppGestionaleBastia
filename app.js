@@ -323,6 +323,7 @@ function rowSocio(s, stato) {
       <div class="row-sub">${s.codice_fiscale} · ${s.citta || ''} · ${s.telefono || ''}</div>
     </div>
     ${badge}
+    <button class="btn btn-sm" onclick="generaTessera('${s.id}')" title="Tessera"><i class="ti ti-id"></i></button>
     <button class="btn btn-sm" onclick='openModalSocio(${JSON.stringify(s)})'><i class="ti ti-edit"></i></button>
     ${stato === 'non_rinnovato' ? `<button class="btn btn-sm" style="color:var(--verde)" onclick="rinnovaQuota('${s.id}')"><i class="ti ti-refresh"></i> Rinnova</button>` : ''}
   </div>`;
@@ -365,6 +366,7 @@ function renderDB(soci) {
       <td style="padding:7px 12px;text-align:center;font-weight:600;">${s.anno_rinnovo || ''}</td>
       <td style="padding:7px 12px;"><span class="badge ${badgeColor}">${badgeText}</span></td>
       <td style="padding:7px 12px;text-align:center;white-space:nowrap;">
+        <button class="btn btn-sm" onclick="generaTessera('${s.id}')" title="Tessera"><i class="ti ti-id"></i></button>
         <button class="btn btn-sm" onclick='openModalSocio(${JSON.stringify(s)})'><i class="ti ti-edit"></i></button>
         <button class="btn btn-sm" style="color:#991B1B" onclick="eliminaSocio('${s.id}','${s.cognome} ${s.nome}')"><i class="ti ti-trash"></i></button>
       </td>
@@ -1760,4 +1762,91 @@ async function inviaMessaggioMariello() {
 
   input.disabled = false;
   input.focus();
+}
+
+// ===== TESSERA SOCIO =====
+async function assegnaNumeroTessera(socioId) {
+  // Trova il massimo numero tessera esistente
+  const { data } = await db.from('soci').select('numero_tessera').not('numero_tessera', 'is', null).order('numero_tessera', { ascending: false }).limit(1);
+  const prossimo = (data?.[0]?.numero_tessera || 0) + 1;
+  await db.from('soci').update({ numero_tessera: prossimo }).eq('id', socioId);
+  return prossimo;
+}
+
+async function generaTessera(socioId) {
+  const socio = tuttiSoci.find(s => s.id === socioId);
+  if (!socio) { showToast('Socio non trovato', 'error'); return; }
+
+  let numeroTessera = socio.numero_tessera;
+  if (!numeroTessera) {
+    numeroTessera = await assegnaNumeroTessera(socioId);
+    socio.numero_tessera = numeroTessera;
+  }
+
+  // Genera HTML tessera e lo renderizza su canvas per scaricarlo come immagine/PDF
+  apriAnteprimaTessera(socio, numeroTessera);
+}
+
+function apriAnteprimaTessera(socio, numero) {
+  const numeroFormattato = String(numero).padStart(4, '0');
+  const html = `
+    <div id="tessera-stampa" style="width:340px;height:214px;background:linear-gradient(135deg,#1E2D47 0%,#2C4A7C 100%);border-radius:14px;padding:20px;color:white;font-family:'Segoe UI',sans-serif;position:relative;overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,0.3);">
+      <div style="position:absolute;top:-30px;right:-30px;width:140px;height:140px;background:rgba(201,160,48,0.15);border-radius:50%;"></div>
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:18px;">
+        <img src="logo.jpg" style="width:36px;height:36px;object-fit:cover;border-radius:6px;background:white;">
+        <div>
+          <div style="font-size:11px;font-weight:700;letter-spacing:0.04em;color:#C9A030;">COMITATO FESTEGGIAMENTI</div>
+          <div style="font-size:10px;color:#C8D8F0;">N.S. DELLA BASTIA — BUSALLA</div>
+        </div>
+      </div>
+      <div style="font-size:10px;color:#8AAAD4;letter-spacing:0.08em;margin-bottom:2px;">TESSERA SOCIO</div>
+      <div style="font-size:20px;font-weight:700;margin-bottom:14px;">${socio.cognome} ${socio.nome}</div>
+      <div style="display:flex;justify-content:space-between;align-items:flex-end;">
+        <div>
+          <div style="font-size:9px;color:#8AAAD4;">CODICE FISCALE</div>
+          <div style="font-size:11px;font-family:monospace;letter-spacing:0.03em;">${socio.codice_fiscale}</div>
+        </div>
+        <div style="text-align:right;">
+          <div style="font-size:9px;color:#8AAAD4;">N° TESSERA</div>
+          <div style="font-size:22px;font-weight:700;color:#C9A030;letter-spacing:0.05em;">${numeroFormattato}</div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.getElementById('tessera-modal-body').innerHTML = html;
+  document.getElementById('modal-tessera').style.display = 'flex';
+  document.getElementById('modal-tessera').style.pointerEvents = 'auto';
+  document.getElementById('m-tessera-socio-id').value = socio.id;
+}
+
+function closeModalTessera() {
+  const m = document.getElementById('modal-tessera');
+  m.style.display = 'none';
+  m.style.pointerEvents = 'none';
+}
+
+async function scaricaTesseraPNG() {
+  const tessera = document.getElementById('tessera-stampa');
+  if (!window.html2canvas) {
+    showToast('Caricamento libreria...', '');
+    await caricaHtml2Canvas();
+  }
+  const canvas = await html2canvas(tessera, { scale: 3, backgroundColor: null });
+  const link = document.createElement('a');
+  const socioId = document.getElementById('m-tessera-socio-id').value;
+  const socio = tuttiSoci.find(s => s.id === socioId);
+  link.download = `tessera_${socio?.cognome || 'socio'}_${socio?.nome || ''}.png`.replace(/\s+/g, '_');
+  link.href = canvas.toDataURL('image/png');
+  link.click();
+}
+
+function caricaHtml2Canvas() {
+  return new Promise((resolve) => {
+    if (window.html2canvas) return resolve();
+    const script = document.createElement('script');
+    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+    script.onload = resolve;
+    document.head.appendChild(script);
+  });
 }
