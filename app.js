@@ -1790,27 +1790,27 @@ async function generaTessera(socioId) {
 function htmlTesseraSocio(socio, numero) {
   const numeroFormattato = String(numero).padStart(4, '0');
   return `
-    <div class="tessera-card" style="width:340px;height:214px;background:#F0EDE8;border-radius:14px;padding:0;font-family:'Segoe UI',sans-serif;position:relative;overflow:hidden;box-sizing:border-box;border:1px solid #D4C9BE;">
-      <div style="position:absolute;top:0;left:0;width:100%;height:6px;background:#1E2D47;"></div>
-      <div style="position:absolute;right:-25px;top:50%;transform:translateY(-50%);width:230px;height:330px;opacity:0.16;overflow:hidden;">
-        <img src="logo.jpg" style="width:100%;height:100%;object-fit:cover;object-position:top;filter:grayscale(1);">
-      </div>
-      <div style="position:relative;padding:16px 18px 0 18px;">
-        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
-          <div style="width:46px;height:46px;border-radius:8px;background:white;border:1.5px solid #D4C9BE;display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0;">
-            <img src="logo.jpg" style="width:88%;height:88%;object-fit:contain;">
+    <div class="tessera-card" style="width:340px;height:214px;background:#F0EDE8;font-family:'Segoe UI',sans-serif;position:relative;overflow:hidden;box-sizing:border-box;border:1px solid #D4C9BE;border-radius:14px;">
+      <div style="position:absolute;inset:0;border-radius:14px;overflow:hidden;">
+        <div style="position:absolute;top:0;left:0;width:100%;height:6px;background:#1E2D47;"></div>
+        <img src="logo-bg.png" style="position:absolute;right:-30px;top:-20px;height:260px;width:auto;opacity:0.13;">
+        <div style="position:relative;padding:14px 16px 0 16px;height:100%;box-sizing:border-box;">
+          <div style="display:flex;align-items:center;gap:9px;margin-bottom:8px;">
+            <div style="width:42px;height:42px;border-radius:8px;background:white;border:1.5px solid #D4C9BE;display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0;">
+              <img src="logo.jpg" style="width:88%;height:88%;object-fit:contain;">
+            </div>
+            <div style="font-size:12.5px;font-weight:700;color:#1E2D47;line-height:1.15;white-space:nowrap;">Comitato Festeggiamenti N. S. della Bastia</div>
           </div>
-          <div style="font-size:13px;font-weight:700;color:#1E2D47;line-height:1.2;">Comitato Festeggiamenti N. S. della Bastia</div>
+          <div style="border-top:1px solid #D4C9BE;margin-bottom:8px;"></div>
+          <div style="font-size:10px;font-weight:700;letter-spacing:0.06em;color:#B8901A;margin-bottom:3px;">TESSERA SOCIO</div>
+          <div style="font-size:24px;font-weight:700;color:#1E2D47;margin-bottom:8px;white-space:nowrap;">${socio.cognome} ${socio.nome}</div>
+          <div style="font-size:9px;font-weight:700;letter-spacing:0.04em;color:#7A6548;">CODICE FISCALE</div>
+          <div style="font-size:13px;font-family:monospace;color:#1E2D47;">${socio.codice_fiscale}</div>
         </div>
-        <div style="border-top:1px solid #D4C9BE;margin-bottom:10px;"></div>
-        <div style="font-size:10px;font-weight:700;letter-spacing:0.06em;color:#B8901A;margin-bottom:4px;">TESSERA SOCIO</div>
-        <div style="font-size:25px;font-weight:700;color:#1E2D47;margin-bottom:10px;">${socio.cognome} ${socio.nome}</div>
-        <div style="font-size:9px;font-weight:700;letter-spacing:0.04em;color:#7A6548;">CODICE FISCALE</div>
-        <div style="font-size:13px;font-family:monospace;color:#1E2D47;">${socio.codice_fiscale}</div>
-      </div>
-      <div style="position:absolute;bottom:14px;right:18px;background:#1E2D47;border-radius:10px;padding:8px 16px;text-align:left;">
-        <div style="font-size:9px;font-weight:700;letter-spacing:0.04em;color:#8AAAD4;">N° TESSERA</div>
-        <div style="font-size:24px;font-weight:700;color:#C9A030;">${numeroFormattato}</div>
+        <div style="position:absolute;bottom:12px;right:16px;background:#1E2D47;border-radius:10px;padding:6px 14px;text-align:left;">
+          <div style="font-size:9px;font-weight:700;letter-spacing:0.04em;color:#8AAAD4;">N° TESSERA</div>
+          <div style="font-size:22px;font-weight:700;color:#C9A030;">${numeroFormattato}</div>
+        </div>
       </div>
     </div>
   `;
