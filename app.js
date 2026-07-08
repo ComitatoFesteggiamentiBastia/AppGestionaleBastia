@@ -136,6 +136,8 @@ function showPage(pageId) {
   if (pageId === 'spesa') loadSpesa();
   if (pageId === 'prima-nota') loadPrimaNota();
   if (pageId === 'inventario') loadInventario();
+  if (pageId === 'menu-sagra') loadMenuSagra();
+  if (pageId === 'storico-prezzi') loadStoricoPrezzi();
 }
 
 function toggleSidebar() {
@@ -2884,4 +2886,273 @@ async function scaricaPDFTotale() {
 
   pdf.save(`spesa_totale_${sagraNome.replace(/\s+/g,'_')}.pdf`);
   showToast('PDF totale generato!', 'success');
+}
+
+
+// ===== MENU SAGRA =====
+let tuttoMenu = [];
+
+async function loadMenuSagra() {
+  await assicuraSagreCaricate();
+  const sagraId = getSagraId();
+  aggiornaHeaderSagra('menu-sagra-header');
+  if (!sagraId) return;
+  const { data } = await db.from('menu_sagra').select('*').eq('sagra_id', sagraId).order('sezione').order('piatto');
+  tuttoMenu = data || [];
+  renderMenu();
+}
+
+const _menuCollassati = new Set();
+
+function renderMenu() {
+  const search = (document.getElementById('menu-search')?.value || '').toLowerCase();
+  const filtroGiorno = document.getElementById('menu-filtro-giorno')?.value || 'tutti';
+
+  let lista = tuttoMenu;
+  if (search) lista = lista.filter(m => m.piatto.toLowerCase().includes(search));
+  if (filtroGiorno === 'sabato') lista = lista.filter(m => m.sezione.includes('SABATO') || m.sezione === 'BAR');
+  if (filtroGiorno === 'domenica') lista = lista.filter(m => m.sezione.includes('DOMENICA') || m.sezione === 'BAR');
+
+  const container = document.getElementById('menu-list');
+  if (!container) return;
+
+  if (!lista.length) {
+    container.innerHTML = '<div style="padding:24px;text-align:center;color:var(--testo-muted);">Nessuna voce menu</div>';
+    return;
+  }
+
+  const gruppi = {};
+  lista.forEach(m => {
+    if (!gruppi[m.sezione]) gruppi[m.sezione] = [];
+    gruppi[m.sezione].push(m);
+  });
+
+  container.innerHTML = Object.entries(gruppi).map(([sez, voci]) => {
+    const gId = 'msez_' + sez.replace(/[^a-zA-Z0-9]/g,'_');
+    const collassato = _menuCollassati.has(gId);
+    return `
+    <div style="margin-bottom:10px;border-radius:10px;overflow:hidden;border:1px solid var(--border);">
+      <div onclick="toggleMenuSezione('${gId}')" style="display:flex;align-items:center;justify-content:space-between;padding:10px 16px;background:var(--blu-notte);cursor:pointer;user-select:none;">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <i class="ti ti-chevron-${collassato?'right':'down'}" id="ico-${gId}" style="font-size:14px;color:rgba(255,255,255,0.6);"></i>
+          <span style="font-weight:700;color:white;font-size:14px;">${sez}</span>
+          <span style="font-size:12px;color:rgba(255,255,255,0.5);">${voci.length} voci</span>
+        </div>
+        <button class="btn btn-sm" onclick="event.stopPropagation();openModalMenuVoce(null,'${sez}')" style="background:rgba(255,255,255,0.15);color:white;border-color:rgba(255,255,255,0.2);">
+          <i class="ti ti-plus"></i>
+        </button>
+      </div>
+      <div id="${gId}" style="display:${collassato?'none':'block'};">
+        ${voci.map(v => `
+          <div class="table-row" style="${!v.disponibile?'opacity:0.5;':''}">
+            <div style="flex:1;">
+              <div class="row-name">${v.piatto}</div>
+              ${v.note ? `<div class="row-sub">${v.note}</div>` : ''}
+            </div>
+            <span style="font-weight:600;color:var(--blu-notte);white-space:nowrap;">${v.prezzo ? '€ '+parseFloat(v.prezzo).toFixed(2) : '—'}</span>
+            <span class="badge ${v.disponibile?'badge-ok':'badge-no'}">${v.disponibile?'Disponibile':'Non disp.'}</span>
+            <button class="btn btn-sm" onclick='openModalMenuVoce(${JSON.stringify(v).replace(/"/g,"&quot;")})'><i class="ti ti-edit"></i></button>
+            <button class="btn btn-sm" style="color:#991B1B" onclick="eliminaMenuVoce('${v.id}')"><i class="ti ti-trash"></i></button>
+          </div>
+        `).join('')}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function toggleMenuSezione(id) {
+  const el = document.getElementById(id);
+  const ico = document.getElementById('ico-'+id);
+  if (!el) return;
+  const aperto = el.style.display !== 'none';
+  el.style.display = aperto ? 'none' : 'block';
+  if (ico) ico.className = `ti ti-chevron-${aperto?'right':'down'}`;
+  if (aperto) _menuCollassati.add(id); else _menuCollassati.delete(id);
+}
+
+function openModalMenuVoce(v = null, sezioneDefault = '') {
+  document.getElementById('modal-menu-voce').style.display = 'flex';
+  document.getElementById('modal-menu-voce').style.pointerEvents = 'auto';
+  document.getElementById('m-menu-id').value = v?.id || '';
+  document.getElementById('m-menu-sezione').value = v?.sezione || sezioneDefault;
+  document.getElementById('m-menu-piatto').value = v?.piatto || '';
+  document.getElementById('m-menu-prezzo').value = v?.prezzo || '';
+  document.getElementById('m-menu-note').value = v?.note || '';
+  document.getElementById('m-menu-disponibile').checked = v ? (v.disponibile !== false) : true;
+}
+
+function closeModalMenuVoce() {
+  const m = document.getElementById('modal-menu-voce');
+  m.style.display = 'none';
+  m.style.pointerEvents = 'none';
+}
+
+async function saveMenuVoce() {
+  await assicuraSagreCaricate();
+  const sagraId = getSagraId();
+  const piatto = document.getElementById('m-menu-piatto').value.trim();
+  const sezione = document.getElementById('m-menu-sezione').value.trim();
+  if (!piatto || !sezione) { showToast('Piatto e sezione obbligatori', 'error'); return; }
+
+  const payload = {
+    sagra_id: sagraId,
+    sezione,
+    piatto,
+    prezzo: parseFloat(document.getElementById('m-menu-prezzo').value) || null,
+    note: document.getElementById('m-menu-note').value.trim() || null,
+    disponibile: document.getElementById('m-menu-disponibile').checked
+  };
+
+  const id = document.getElementById('m-menu-id').value;
+  let error;
+  if (id) {
+    ({ error } = await db.from('menu_sagra').update(payload).eq('id', id));
+  } else {
+    ({ error } = await db.from('menu_sagra').insert(payload));
+  }
+  if (error) { showToast('Errore: ' + error.message, 'error'); return; }
+  showToast('Salvato!', 'success');
+  closeModalMenuVoce();
+  loadMenuSagra();
+}
+
+async function eliminaMenuVoce(id) {
+  if (!confirm('Eliminare questa voce?')) return;
+  await db.from('menu_sagra').delete().eq('id', id);
+  showToast('Eliminato', 'success');
+  loadMenuSagra();
+}
+
+async function scaricaPDFMenu(giorno) {
+  await caricaJsPDF();
+  const { jsPDF } = window.jspdf;
+  const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+
+  const sezioni = giorno === 'sabato'
+    ? tuttoMenu.filter(m => m.sezione.includes('SABATO') || m.sezione === 'BAR')
+    : tuttoMenu.filter(m => m.sezione.includes('DOMENICA') || m.sezione === 'BAR');
+
+  const gruppi = {};
+  sezioni.filter(m => m.disponibile).forEach(m => {
+    if (!gruppi[m.sezione]) gruppi[m.sezione] = [];
+    gruppi[m.sezione].push(m);
+  });
+
+  const sagraNome = sagraSelezionata?.nome || 'Sagra della Bastia';
+  const giornoLabel = giorno === 'sabato' ? 'SABATO' : 'DOMENICA';
+
+  // Header
+  pdf.setFillColor(30, 45, 71);
+  pdf.rect(0, 0, 210, 35, 'F');
+  pdf.setFontSize(22);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(201, 160, 48);
+  pdf.text(sagraNome.toUpperCase(), 105, 14, { align: 'center' });
+  pdf.setFontSize(14);
+  pdf.setTextColor(200, 216, 240);
+  pdf.text('IL MENU — ' + giornoLabel, 105, 26, { align: 'center' });
+
+  let y = 44;
+  for (const [sez, voci] of Object.entries(gruppi)) {
+    if (y > 260) { pdf.addPage(); y = 20; }
+
+    // Header sezione
+    pdf.setFillColor(242, 237, 232);
+    pdf.rect(14, y-4, 182, 9, 'F');
+    pdf.setFontSize(11);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(30, 45, 71);
+    pdf.text(sez, 105, y+2, { align: 'center' });
+    y += 10;
+
+    for (const v of voci) {
+      if (y > 275) { pdf.addPage(); y = 20; }
+      pdf.setFontSize(10);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(26, 26, 26);
+      pdf.text(v.piatto, 18, y);
+      if (v.prezzo) {
+        pdf.setFont('helvetica', 'bold');
+        pdf.text('€ ' + parseFloat(v.prezzo).toFixed(2), 192, y, { align: 'right' });
+        pdf.setFont('helvetica', 'normal');
+      }
+      pdf.setDrawColor(212, 201, 190);
+      pdf.line(18, y+2, 192, y+2);
+      y += 7;
+    }
+    y += 4;
+  }
+
+  // Footer
+  pdf.setFontSize(7);
+  pdf.setTextColor(150, 150, 150);
+  pdf.text('* Le pietanze contrassegnate possono contenere allergeni. I prodotti sottolineati sono congelati.', 105, 287, { align: 'center' });
+
+  pdf.save(`menu_${giornoLabel.toLowerCase()}_${sagraNome.replace(/\s+/g,'_')}.pdf`);
+  showToast('PDF menu generato!', 'success');
+}
+
+// ===== STORICO PREZZI =====
+let tuttoStorico = [];
+
+async function loadStoricoPrezzi() {
+  const { data } = await db.from('storico_prezzi').select('*').order('articolo').order('anno', { ascending: false });
+  tuttoStorico = data || [];
+  renderStoricoPrezzi();
+}
+
+function renderStoricoPrezzi() {
+  const search = (document.getElementById('storico-search')?.value || '').toLowerCase();
+  const filtroAnno = document.getElementById('storico-filtro-anno')?.value || 'tutti';
+
+  let lista = tuttoStorico;
+  if (search) lista = lista.filter(s => s.articolo.toLowerCase().includes(search) || (s.fornitore||'').toLowerCase().includes(search));
+  if (filtroAnno !== 'tutti') lista = lista.filter(s => String(s.anno) === filtroAnno);
+
+  // Aggiorna select anni
+  const anni = [...new Set(tuttoStorico.map(s => s.anno))].sort((a,b) => b-a);
+  const sel = document.getElementById('storico-filtro-anno');
+  if (sel) {
+    const curr = sel.value;
+    sel.innerHTML = '<option value="tutti">Tutti gli anni</option>' + anni.map(a => `<option value="${a}" ${String(a)===curr?'selected':''}>${a}</option>`).join('');
+  }
+
+  const tbody = document.getElementById('storico-tbody');
+  if (!tbody) return;
+
+  if (!lista.length) {
+    tbody.innerHTML = '<tr><td colspan="6" style="padding:24px;text-align:center;color:var(--testo-muted);">Nessun dato</td></tr>';
+    return;
+  }
+
+  // Raggruppa per articolo
+  const gruppi = {};
+  lista.forEach(s => {
+    if (!gruppi[s.articolo]) gruppi[s.articolo] = [];
+    gruppi[s.articolo].push(s);
+  });
+
+  tbody.innerHTML = Object.entries(gruppi).map(([art, storico]) => `
+    <tr style="background:#F2EDE4;">
+      <td colspan="6" style="padding:8px 14px;font-weight:700;font-size:13px;color:var(--blu-notte);">${art}</td>
+    </tr>
+    ${storico.map((s,i) => `
+    <tr style="${i%2===0?'':'background:#F9F7F5;'}border-bottom:1px solid var(--border);">
+      <td style="padding:7px 14px;padding-left:28px;color:var(--testo-muted);">${s.anno}</td>
+      <td style="padding:7px 14px;">${s.fornitore || '—'}</td>
+      <td style="padding:7px 14px;">${s.quantita ? parseFloat(s.quantita) : '—'}</td>
+      <td style="padding:7px 14px;font-weight:500;">€ ${s.prezzo_unitario ? parseFloat(s.prezzo_unitario).toFixed(2) : '—'}</td>
+      <td style="padding:7px 14px;color:var(--testo-muted);">€ ${s.prezzo_totale ? parseFloat(s.prezzo_totale).toFixed(2) : '—'}</td>
+      <td style="padding:7px 14px;text-align:center;">
+        <button class="btn btn-sm" style="color:#991B1B" onclick="eliminaStorico('${s.id}')"><i class="ti ti-trash"></i></button>
+      </td>
+    </tr>`).join('')}
+  `).join('');
+}
+
+async function eliminaStorico(id) {
+  if (!confirm('Eliminare questo record storico?')) return;
+  await db.from('storico_prezzi').delete().eq('id', id);
+  showToast('Eliminato', 'success');
+  loadStoricoPrezzi();
 }
