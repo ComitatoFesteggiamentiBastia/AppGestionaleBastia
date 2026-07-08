@@ -949,13 +949,29 @@ function selezionaSagra(id) {
 }
 
 function getSagraId() {
-  return sagraSelezionata?.id || tutteSagre[0]?.id || null;
+  if (sagraSelezionata?.id) return sagraSelezionata.id;
+  // Carica sagre se non ancora caricate
+  if (!tutteSagre.length) return null;
+  // Usa la più recente (anno più alto)
+  const piu_recente = [...tutteSagre].sort((a,b) => b.anno - a.anno)[0];
+  return piu_recente?.id || null;
+}
+
+async function assicuraSagreCaricate() {
+  if (!tutteSagre.length) {
+    const { data } = await db.from('sagre').select('*').order('anno', { ascending: false });
+    tutteSagre = data || [];
+    if (tutteSagre.length && !sagraSelezionata) {
+      sagraSelezionata = tutteSagre[0];
+    }
+  }
 }
 
 // ===== MOVIMENTI SAGRA =====
 let tuttiMovimenti = [];
 
 async function loadMovimentiSagra() {
+  await assicuraSagreCaricate();
   const sagraId = getSagraId();
   aggiornaHeaderSagra('ms-sagra-header');
   if (!sagraId) {
@@ -1084,12 +1100,30 @@ async function eliminaMovimento(id) {
 let tuttiSponsor = [];
 
 async function loadSponsor() {
+  await assicuraSagreCaricate();
   const sagraId = getSagraId();
   aggiornaHeaderSagra('sp-sagra-header');
-  if (!sagraId) return;
+  if (!sagraId) {
+    document.getElementById('sponsor-tbody').innerHTML = '<tr><td colspan="6" style="padding:24px;text-align:center;color:var(--testo-muted);">Crea prima un'edizione sagra</td></tr>';
+    return;
+  }
   const { data } = await db.from('sponsor').select('*').eq('sagra_id', sagraId).order('ditta');
   tuttiSponsor = data || [];
   renderSponsor();
+  // Carica storico sponsor per autocomplete
+  loadStoricoSponsor();
+}
+
+let storicoSponsor = [];
+async function loadStoricoSponsor() {
+  const { data } = await db.from('sponsor').select('ditta,tipo,importo,dettaglio').order('ditta');
+  // Deduplica per ditta
+  const map = {};
+  (data || []).forEach(s => { if (!map[s.ditta]) map[s.ditta] = s; });
+  storicoSponsor = Object.values(map);
+  // Aggiorna datalist
+  const dl = document.getElementById('sponsor-storico-list');
+  if (dl) dl.innerHTML = storicoSponsor.map(s => `<option value="${s.ditta}">`).join('');
 }
 
 function renderSponsor() {
@@ -1126,6 +1160,24 @@ function openModalSponsor(s = null) {
   document.getElementById('m-sp-modo').value = s?.modo_pagamento || '';
   document.getElementById('m-sp-ricevuto').checked = s?.ricevuto || false;
   document.getElementById('m-sp-note').value = s?.note || '';
+  // Setup autocomplete storico
+  setTimeout(() => setupAutocompleteSponsor(), 100);
+}
+
+function setupAutocompleteSponsor() {
+  const input = document.getElementById('m-sp-ditta');
+  if (!input || input._sponsorSetup) return;
+  input._sponsorSetup = true;
+  input.addEventListener('change', () => {
+    const match = storicoSponsor.find(s => s.ditta === input.value);
+    if (match && !document.getElementById('m-sp-id').value) {
+      // Precompila con dati storici se è un nuovo sponsor
+      if (match.tipo) document.getElementById('m-sp-tipo').value = match.tipo;
+      if (match.importo) document.getElementById('m-sp-importo').value = match.importo;
+      if (match.dettaglio) document.getElementById('m-sp-dettaglio').value = match.dettaglio;
+      showToast('Dati precompilati dallo storico — verifica e aggiorna', '');
+    }
+  });
 }
 
 function closeModalSponsor() {
@@ -1173,6 +1225,7 @@ async function eliminaSponsor(id) {
 let tuttiArticoliSpesa = [];
 
 async function loadSpesa() {
+  await assicuraSagreCaricate();
   const sagraId = getSagraId();
   aggiornaHeaderSagra('spesa-sagra-header');
   if (!sagraId) return;
@@ -1330,6 +1383,7 @@ const STANDS_PRIMA_NOTA = ['CASSA CENTRALE', 'RISTORANTE SABATO', 'RISTORANTE DO
 const GIORNI_PRIMA_NOTA = ['venerdi', 'sabato', 'domenica'];
 
 async function loadPrimaNota() {
+  await assicuraSagreCaricate();
   const sagraId = getSagraId();
   aggiornaHeaderSagra('pn-sagra-header');
   if (!sagraId) return;

@@ -1457,7 +1457,7 @@
       <h3 style="font-size:16px;font-weight:600;color:var(--blu-notte);">Sponsor</h3>
       <button onclick="closeModalSponsor()" style="background:none;border:none;cursor:pointer;font-size:20px;color:var(--testo-muted);">✕</button>
     </div>
-    <div class="form-group"><label>Ditta *</label><input id="m-sp-ditta"></div>
+    <div class="form-group"><label>Ditta *</label><input id="m-sp-ditta" list="sponsor-storico-list" autocomplete="off"><datalist id="sponsor-storico-list"></datalist><div style="font-size:11px;color:var(--testo-muted);margin-top:3px;">Se la ditta è già presente nello storico, i campi si precompilano automaticamente</div></div>
     <div class="form-group">
       <label>Tipo contributo</label>
       <select id="m-sp-tipo" style="width:100%;padding:9px 12px;border:1px solid #D4C9BE;border-radius:8px;font-size:14px;outline:none;">
