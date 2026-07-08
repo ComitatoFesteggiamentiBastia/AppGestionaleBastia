@@ -1241,7 +1241,7 @@ async function saveSponsor() {
       descrizione,
       importo,
       data: oggi,
-      metodo_pagamento: modo || 'contanti',
+      metodo_pagamento: (modo || 'contanti').toLowerCase(),
       pagato: true,
       offerta: false,
       a_bilancio: true
@@ -1254,7 +1254,7 @@ async function saveSponsor() {
       descrizione,
       importo,
       data: oggi,
-      metodo_pagamento: modo || 'contanti',
+      metodo_pagamento: (modo || 'contanti').toLowerCase(),
       collegato_sagra: false
     });
     if (eCassa) console.error('Errore movimenti_cassa:', eCassa.message, eCassa.details);
