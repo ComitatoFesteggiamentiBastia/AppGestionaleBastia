@@ -1,3 +1,4 @@
+
 const SUPABASE_URL = 'https://nwpuiwfptkswloauphzn.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im53cHVpd2ZwdGtzd2xvYXVwaHpuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE4MDY5OTEsImV4cCI6MjA5NzM4Mjk5MX0.kOcnfzbxI2xoSRsM26LiyesE8SszyPJ4eBkLRDKgQPc';
 const { createClient } = supabase;
@@ -1617,7 +1618,7 @@ function openModalSpesa(a = null) {
   document.getElementById('m-spesa-stand').value = a?.stand || '';
   document.getElementById('m-spesa-giorno').value = a?.giorno || 'entrambi';
   document.getElementById('m-spesa-qta').value = a?.quantita || '';
-  document.getElementById('m-spesa-unita').value = a?.unita || 'pz';
+  document.getElementById('m-spesa-unita').value = a?.unita || '';
   document.getElementById('m-spesa-prezzo').value = a?.prezzo_unitario || '';
   document.getElementById('m-spesa-iva').value = a?.iva || '';
   document.getElementById('m-spesa-stato').value = a?.stato || 'da_ordinare';
@@ -2018,7 +2019,7 @@ async function saveInventario() {
     nome,
     categoria: document.getElementById('m-inv-categoria').value.trim() || null,
     quantita,
-    unita: document.getElementById('m-inv-unita').value.trim() || 'pz',
+    unita: document.getElementById('m-inv-unita').value.trim() || null,
     note: document.getElementById('m-inv-note').value.trim() || null,
     updated_at: new Date().toISOString()
   };
