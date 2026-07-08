@@ -1116,6 +1116,7 @@ async function loadSponsor() {
   }
   const { data } = await db.from('sponsor').select('*').eq('sagra_id', sagraId).order('ditta');
   tuttiSponsor = data || [];
+  await loadSponsorPrecedente();
   renderSponsor();
   // Carica storico sponsor per autocomplete
   loadStoricoSponsor();
@@ -1251,19 +1252,8 @@ async function saveSponsor() {
     });
     if (eSagra) console.error('Errore movimenti_sagra:', eSagra.message, eSagra.details);
 
-    const { error: eCassa } = await db.from('movimenti_cassa').insert({
-      tipo: 'entrata',
-      categoria: 'Sponsor',
-      descrizione,
-      importo,
-      data: oggi,
-      metodo_pagamento: (modo || 'contanti').toLowerCase(),
-      collegato_sagra: false
-    });
-    if (eCassa) console.error('Errore movimenti_cassa:', eCassa.message, eCassa.details);
-
-    if (!eSagra && !eCassa) {
-      showToast('Sponsor salvato e registrato in cassa e sagra!', 'success');
+    if (!eSagra) {
+      showToast('Sponsor salvato e registrato nelle entrate sagra!', 'success');
     } else {
       showToast('Sponsor salvato ma errore registrazione movimenti', 'error');
     }
@@ -1326,6 +1316,8 @@ async function aggiungiFornitoireSeNuovo(nome) {
   if (!nome || tuttiFornitori.find(f => f.nome === nome)) return;
   await db.from('fornitori').insert({ nome });
   await loadFornitori();
+  // Aggiorna tabella fornitori nelle impostazioni se visibile
+  renderFornitoriTabella();
 }
 
 // ===== PDF LISTA SPESA PER FORNITORE =====
@@ -2003,7 +1995,7 @@ function closeModalInventario() {
 
 async function saveInventario() {
   const nome = document.getElementById('m-inv-nome').value.trim();
-  const quantita = parseInt(document.getElementById('m-inv-quantita').value);
+  const quantita = parseFloat(document.getElementById('m-inv-quantita').value);
   if (!nome || isNaN(quantita)) { showToast('Nome e quantità obbligatori', 'error'); return; }
 
   const payload = {
@@ -2602,6 +2594,73 @@ async function loadImpostazioni() {
   renderImpostazioni();
   await loadFornitori();
   await loadCatalogoCompleto();
+  await loadUnitaStand();
+  renderUnitaStand();
+}
+
+let tutteUnita = [];
+let tuttiStand = [];
+
+async function loadUnitaStand() {
+  const [u, s] = await Promise.all([
+    db.from('unita_misura').select('*').order('nome'),
+    db.from('stand_sagra').select('*').order('nome')
+  ]);
+  tutteUnita = u.data || [];
+  tuttiStand = s.data || [];
+}
+
+function renderUnitaStand() {
+  const tbodyU = document.getElementById('unita-tbody');
+  if (tbodyU) tbodyU.innerHTML = tutteUnita.map(u => `
+    <tr style="border-bottom:1px solid var(--border);">
+      <td style="padding:8px 14px;font-weight:500;">${u.nome}</td>
+      <td style="padding:8px 14px;text-align:center;">
+        <button class="btn btn-sm" style="color:#991B1B" onclick="eliminaUnita('${u.id}')"><i class="ti ti-trash"></i></button>
+      </td>
+    </tr>`).join('') || '<tr><td colspan="2" style="padding:12px;text-align:center;color:var(--testo-muted);">Nessuna unità</td></tr>';
+
+  const tbodyS = document.getElementById('stand-tbody');
+  if (tbodyS) tbodyS.innerHTML = tuttiStand.map(s => `
+    <tr style="border-bottom:1px solid var(--border);">
+      <td style="padding:8px 14px;font-weight:500;">${s.nome}</td>
+      <td style="padding:8px 14px;text-align:center;">
+        <button class="btn btn-sm" style="color:#991B1B" onclick="eliminaStand('${s.id}')"><i class="ti ti-trash"></i></button>
+      </td>
+    </tr>`).join('') || '<tr><td colspan="2" style="padding:12px;text-align:center;color:var(--testo-muted);">Nessuno stand</td></tr>';
+}
+
+async function aggiungiUnitaImp() {
+  const nome = document.getElementById('unita-input-imp').value.trim();
+  if (!nome) return;
+  await db.from('unita_misura').insert({ nome });
+  document.getElementById('unita-input-imp').value = '';
+  await loadUnitaStand();
+  renderUnitaStand();
+  await loadSpesa();
+  showToast('Unità aggiunta!', 'success');
+}
+
+async function eliminaUnita(id) {
+  await db.from('unita_misura').delete().eq('id', id);
+  await loadUnitaStand();
+  renderUnitaStand();
+}
+
+async function aggiungiStandImp() {
+  const nome = document.getElementById('stand-input-imp').value.trim();
+  if (!nome) return;
+  await db.from('stand_sagra').insert({ nome });
+  document.getElementById('stand-input-imp').value = '';
+  await loadUnitaStand();
+  renderUnitaStand();
+  showToast('Stand aggiunto!', 'success');
+}
+
+async function eliminaStand(id) {
+  await db.from('stand_sagra').delete().eq('id', id);
+  await loadUnitaStand();
+  renderUnitaStand();
 }
 
 function toggleSezioneImp(id) {

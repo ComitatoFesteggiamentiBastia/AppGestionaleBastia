@@ -889,6 +889,7 @@
         <table style="width:100%;border-collapse:collapse;font-size:13px;background:white;border-radius:10px;overflow:hidden;border:1px solid var(--border);">
           <thead>
             <tr style="background:var(--blu-notte);color:white;">
+              <th style="padding:10px 12px;text-align:left;opacity:0.6;">Anno prec.</th>
               <th style="padding:10px 12px;text-align:left;">Ditta</th>
               <th style="padding:10px 12px;text-align:left;">Tipo</th>
               <th style="padding:10px 12px;text-align:left;">Importo</th>
@@ -1404,7 +1405,7 @@
       <button onclick="closeModalInventario()" style="background:none;border:none;cursor:pointer;font-size:20px;color:var(--testo-muted);">✕</button>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
-      <div class="form-group" style="grid-column:1/3"><label>Nome *</label><input id="m-inv-nome"></div>
+      <div class="form-group" style="grid-column:1/3"><label>Nome *</label><input id="m-inv-nome" list="inv-articoli-list" autocomplete="off"><datalist id="inv-articoli-list"></datalist></div>
       <div class="form-group" style="grid-column:1/3">
         <label>Categoria</label>
         <input id="m-inv-categoria" list="inv-categorie-list" placeholder="Es. Attrezzature, Alimentari...">
