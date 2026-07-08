@@ -100,6 +100,7 @@ async function initApp(user) {
           }
         }
         await applicaPermessi(user.id);
+        await loadCategorie();
         loadDashboard();
       } catch(e) {
         loadDashboard();
@@ -2286,8 +2287,4 @@ function openModalMovimento(m = null) {
 }
 
 // Carica categorie all'avvio app
-const _origLoadDashboard = loadDashboard;
-async function loadDashboard() {
-  await loadCategorie();
-  await _origLoadDashboard();
-}
+// categorie caricate in initApp
