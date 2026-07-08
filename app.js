@@ -452,11 +452,27 @@ async function eliminaSocio(id, nome) {
 }
 
 async function rinnovaQuota(id) {
+  const socio = tuttiSoci.find(s => s.id === id);
+  const quota = getQuotaAnnoCorrente();
+  const oggi = new Date().toISOString().split('T')[0];
+
   const { error } = await db.from('soci').update({ anno_rinnovo: ANNO_CORRENTE, updated_at: new Date().toISOString() }).eq('id', id);
   if (error) { showToast('Errore', 'error'); return; }
-  // Registra anche in tabella quote
-  const { data: socio } = await db.from('soci').select('id').eq('id', id).single();
-  await db.from('quote').upsert({ socio_id: id, anno: ANNO_CORRENTE, pagato: true, data_pagamento: new Date().toISOString().split('T')[0], importo: 0 }, { onConflict: 'socio_id,anno' });
+
+  // Registra in quote
+  await db.from('quote').insert({ socio_id: id, anno: ANNO_CORRENTE, pagato: true, data_pagamento: oggi, importo: quota });
+
+  // Registra entrata in cassa generale
+  const nomeSocio = socio ? `${socio.cognome} ${socio.nome}` : 'Socio';
+  await db.from('movimenti_cassa').insert({
+    tipo: 'entrata',
+    categoria: 'Quote associative',
+    descrizione: `Quota ${ANNO_CORRENTE} — ${nomeSocio}`,
+    importo: quota,
+    data: oggi,
+    metodo_pagamento: 'contanti'
+  });
+
   showToast('Quota rinnovata!', 'success');
   loadSoci();
 }
@@ -695,9 +711,23 @@ async function rinnovaMassivo() {
 
   let ok = 0, err = 0;
   for (const id of ids) {
+    const socio = tuttiSoci.find(s => s.id === id);
+    const nomeSocio = socio ? `${socio.cognome} ${socio.nome}` : 'Socio';
+
     const { error: e1 } = await db.from('soci').update({ anno_rinnovo: ANNO_CORRENTE, updated_at: new Date().toISOString() }).eq('id', id);
     const { error: e2 } = await db.from('quote').insert({ socio_id: id, anno: ANNO_CORRENTE, importo: quota, pagato: true, data_pagamento: oggi });
-    if (e1 || e2) err++; else ok++;
+
+    // Entrata in cassa generale
+    const { error: e3 } = await db.from('movimenti_cassa').insert({
+      tipo: 'entrata',
+      categoria: 'Quote associative',
+      descrizione: `Quota ${ANNO_CORRENTE} — ${nomeSocio}`,
+      importo: quota,
+      data: oggi,
+      metodo_pagamento: 'contanti'
+    });
+
+    if (e1 || e2 || e3) err++; else ok++;
   }
 
   showToast(`Rinnovati: ${ok}${err ? ' | Errori: ' + err : ''}`, ok > 0 ? 'success' : 'error');
