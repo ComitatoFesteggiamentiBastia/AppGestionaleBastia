@@ -101,6 +101,7 @@ async function initApp(user) {
         }
         await applicaPermessi(user.id);
         await loadCategorie();
+        await assicuraSagreCaricate();
         loadDashboard();
       } catch(e) {
         loadDashboard();
@@ -950,20 +951,23 @@ function selezionaSagra(id) {
 
 function getSagraId() {
   if (sagraSelezionata?.id) return sagraSelezionata.id;
-  // Carica sagre se non ancora caricate
   if (!tutteSagre.length) return null;
-  // Usa la più recente (anno più alto)
-  const piu_recente = [...tutteSagre].sort((a,b) => b.anno - a.anno)[0];
-  return piu_recente?.id || null;
+  // Preferisci la più recente NON chiusa
+  const aperte = tutteSagre.filter(s => !s.chiusa).sort((a,b) => b.anno - a.anno);
+  if (aperte.length) return aperte[0].id;
+  // Altrimenti la più recente in assoluto
+  return [...tutteSagre].sort((a,b) => b.anno - a.anno)[0]?.id || null;
 }
 
 async function assicuraSagreCaricate() {
   if (!tutteSagre.length) {
     const { data } = await db.from('sagre').select('*').order('anno', { ascending: false });
     tutteSagre = data || [];
-    if (tutteSagre.length && !sagraSelezionata) {
-      sagraSelezionata = tutteSagre[0];
-    }
+  }
+  // Imposta sempre la sagra corrente se non selezionata
+  if (!sagraSelezionata && tutteSagre.length) {
+    const aperte = tutteSagre.filter(s => !s.chiusa).sort((a,b) => b.anno - a.anno);
+    sagraSelezionata = aperte.length ? aperte[0] : tutteSagre[0];
   }
 }
 
