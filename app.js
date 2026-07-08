@@ -1,4 +1,3 @@
-
 const SUPABASE_URL = 'https://nwpuiwfptkswloauphzn.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im53cHVpd2ZwdGtzd2xvYXVwaHpuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE4MDY5OTEsImV4cCI6MjA5NzM4Mjk5MX0.kOcnfzbxI2xoSRsM26LiyesE8SszyPJ4eBkLRDKgQPc';
 const { createClient } = supabase;
@@ -1996,7 +1995,7 @@ function openModalInventario(i = null) {
   document.getElementById('m-inv-nome').value = i?.nome || '';
   document.getElementById('m-inv-categoria').value = i?.categoria || '';
   document.getElementById('m-inv-quantita').value = i?.quantita ?? '';
-  document.getElementById('m-inv-unita').value = i?.unita || 'pz';
+  document.getElementById('m-inv-unita').value = i?.unita || '';
 
   document.getElementById('m-inv-note').value = i?.note || '';
   // Aggiorna datalist categorie
