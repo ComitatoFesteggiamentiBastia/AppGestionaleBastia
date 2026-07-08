@@ -126,6 +126,7 @@ function showPage(pageId) {
   if (pageId === 'quote') loadQuote();
   if (pageId === 'cassa') loadCassa();
   if (pageId === 'impostazioni-anno') loadImpostazioniAnno();
+  if (pageId === 'impostazioni') loadImpostazioni();
   if (pageId === 'utenti') loadUtenti();
   if (pageId === 'sagra') loadSagre();
   if (pageId === 'movimenti-sagra') loadMovimentiSagra();
@@ -2165,4 +2166,91 @@ async function eliminaMovimentoCassa(id) {
   await db.from('movimenti_cassa').delete().eq('id', id);
   showToast('Eliminato', 'success');
   loadCassa();
+}
+
+
+// ===== CATEGORIE + IMPOSTAZIONI =====
+let categorieCassa = [];
+let categorieSagra = [];
+
+async function loadCategorie() {
+  const { data } = await db.from('categorie').select('*').order('nome');
+  categorieCassa = (data || []).filter(c => c.tipo === 'cassa');
+  categorieSagra = (data || []).filter(c => c.tipo === 'sagra');
+}
+
+function buildCategorieSelect(selectId, tipo) {
+  const sel = document.getElementById(selectId);
+  if (!sel) return;
+  const curr = sel.value;
+  const cats = tipo === 'cassa' ? categorieCassa : categorieSagra;
+  sel.innerHTML = '<option value="">—</option>' +
+    cats.map(c => `<option value="${c.nome}" ${c.nome===curr?'selected':''}>${c.nome}</option>`).join('');
+}
+
+async function loadImpostazioni() {
+  await loadCategorie();
+  renderImpostazioni();
+}
+
+function renderImpostazioni() {
+  renderCategorieTabella('cassa');
+  renderCategorieTabella('sagra');
+}
+
+function renderCategorieTabella(tipo) {
+  const cats = tipo === 'cassa' ? categorieCassa : categorieSagra;
+  const tbody = document.getElementById(`cat-tbody-${tipo}`);
+  if (!tbody) return;
+  tbody.innerHTML = cats.map(c => `
+    <tr style="border-bottom:1px solid var(--border);">
+      <td style="padding:8px 14px;font-weight:500;">${c.nome}</td>
+      <td style="padding:8px 14px;text-align:center;">
+        <button class="btn btn-sm" style="color:#991B1B" onclick="eliminaCategoria('${c.id}','${tipo}')"><i class="ti ti-trash"></i></button>
+      </td>
+    </tr>
+  `).join('') || '<tr><td colspan="2" style="padding:16px;text-align:center;color:var(--testo-muted);">Nessuna categoria</td></tr>';
+}
+
+async function aggiungiCategoria(tipo) {
+  const input = document.getElementById(`cat-input-${tipo}`);
+  const nome = input?.value.trim();
+  if (!nome) { showToast('Inserisci un nome', 'error'); return; }
+  const { error } = await db.from('categorie').insert({ tipo, nome });
+  if (error) { showToast('Errore: ' + (error.message.includes('unique') ? 'Categoria già esistente' : error.message), 'error'); return; }
+  input.value = '';
+  showToast('Categoria aggiunta!', 'success');
+  await loadCategorie();
+  renderImpostazioni();
+}
+
+async function eliminaCategoria(id, tipo) {
+  if (!confirm('Eliminare questa categoria?')) return;
+  await db.from('categorie').delete().eq('id', id);
+  showToast('Eliminata', 'success');
+  await loadCategorie();
+  renderImpostazioni();
+}
+
+// Override openModalCassa per usare categorie dinamiche
+const _origOpenModalCassa = openModalCassa;
+function openModalCassa(m = null) {
+  _origOpenModalCassa(m);
+  buildCategorieSelect('m-cassa-categoria', 'cassa');
+  if (m?.categoria) document.getElementById('m-cassa-categoria').value = m.categoria;
+}
+
+// Override openModalMovimento per usare categorie dinamiche sagra
+const _origOpenModalMovimento = openModalMovimento;
+function openModalMovimento(m = null) {
+  _origOpenModalMovimento(m);
+  buildCategorieSelect('m-mov-categoria', 'sagra');
+  if (m?.categoria) document.getElementById('m-mov-categoria').value = m.categoria;
+}
+
+// Carica categorie all'avvio app
+const _origLoadDashboard = loadDashboard;
+async function loadDashboard() {
+  await loadCategorie();
+  await _origLoadDashboard();
 }
