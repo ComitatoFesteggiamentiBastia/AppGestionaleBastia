@@ -1161,6 +1161,40 @@
         </div>
       </div>
 
+      <!-- Unità di misura -->
+      <div class="table-card" style="margin-bottom:12px;">
+        <div class="table-card-header" onclick="toggleSezioneImp('imp-unita')" style="cursor:pointer;justify-content:space-between;">
+          <span>Unità di misura</span>
+          <i class="ti ti-chevron-down" id="ico-imp-unita" style="font-size:16px;color:var(--testo-muted);transition:transform 0.2s;"></i>
+        </div>
+        <div id="imp-unita" style="display:none;">
+          <div style="padding:10px 14px;display:flex;gap:8px;">
+            <input id="unita-input-imp" type="text" placeholder="Es. Flaconi, Sacchi..." style="flex:1;padding:7px 12px;border:1px solid #D4C9BE;border-radius:7px;font-size:13px;outline:none;">
+            <button class="btn btn-add" onclick="aggiungiUnitaImp()"><i class="ti ti-plus"></i></button>
+          </div>
+          <table style="width:100%;border-collapse:collapse;font-size:13px;">
+            <tbody id="unita-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Stand sagra -->
+      <div class="table-card" style="margin-bottom:12px;">
+        <div class="table-card-header" onclick="toggleSezioneImp('imp-stand')" style="cursor:pointer;justify-content:space-between;">
+          <span>Stand sagra</span>
+          <i class="ti ti-chevron-down" id="ico-imp-stand" style="font-size:16px;color:var(--testo-muted);transition:transform 0.2s;"></i>
+        </div>
+        <div id="imp-stand" style="display:none;">
+          <div style="padding:10px 14px;display:flex;gap:8px;">
+            <input id="stand-input-imp" type="text" placeholder="Es. FRITTELLE, VINI..." style="flex:1;padding:7px 12px;border:1px solid #D4C9BE;border-radius:7px;font-size:13px;outline:none;">
+            <button class="btn btn-add" onclick="aggiungiStandImp()"><i class="ti ti-plus"></i></button>
+          </div>
+          <table style="width:100%;border-collapse:collapse;font-size:13px;">
+            <tbody id="stand-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
       <!-- Sezione Catalogo articoli -->
       <div class="table-card">
         <div class="table-card-header" onclick="toggleSezioneImp('imp-catalogo')" style="cursor:pointer;justify-content:space-between;">
