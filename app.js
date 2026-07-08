@@ -2288,3 +2288,132 @@ function openModalMovimento(m = null) {
 
 // Carica categorie all'avvio app
 // categorie caricate in initApp
+
+
+// ===== FORNITORI =====
+let tuttiFornitori = [];
+
+async function loadFornitori() {
+  const { data } = await db.from('fornitori').select('*').order('nome');
+  tuttiFornitori = data || [];
+  renderFornitoriTabella();
+  // Aggiorna datalist fornitori nel modale spesa
+  const dl = document.getElementById('fornitori-list');
+  if (dl) dl.innerHTML = tuttiFornitori.map(f => `<option value="${f.nome}">`).join('');
+}
+
+function renderFornitoriTabella() {
+  const tbody = document.getElementById('fornitori-tbody');
+  if (!tbody) return;
+  tbody.innerHTML = tuttiFornitori.map(f => `
+    <tr style="border-bottom:1px solid var(--border);">
+      <td style="padding:8px 14px;font-weight:500;">${f.nome}</td>
+      <td style="padding:8px 14px;color:var(--testo-muted);">${f.categoria || '—'}</td>
+      <td style="padding:8px 14px;color:var(--testo-muted);font-size:12px;">${f.note || ''}</td>
+      <td style="padding:8px 14px;text-align:center;">
+        <button class="btn btn-sm" onclick="openModalFornitore(${JSON.stringify(f).replace(/"/g,'&quot;')})"><i class="ti ti-edit"></i></button>
+        <button class="btn btn-sm" style="color:#991B1B" onclick="eliminaFornitore('${f.id}')"><i class="ti ti-trash"></i></button>
+      </td>
+    </tr>
+  `).join('') || '<tr><td colspan="4" style="padding:16px;text-align:center;color:var(--testo-muted);">Nessun fornitore</td></tr>';
+}
+
+function openModalFornitore(f = null) {
+  document.getElementById('modal-fornitore').style.display = 'flex';
+  document.getElementById('modal-fornitore').style.pointerEvents = 'auto';
+  document.getElementById('m-forn-id').value = f?.id || '';
+  document.getElementById('m-forn-nome').value = f?.nome || '';
+  document.getElementById('m-forn-categoria').value = f?.categoria || '';
+  document.getElementById('m-forn-note').value = f?.note || '';
+}
+
+function closeModalFornitore() {
+  const m = document.getElementById('modal-fornitore');
+  m.style.display = 'none';
+  m.style.pointerEvents = 'none';
+}
+
+async function saveFornitore() {
+  const nome = document.getElementById('m-forn-nome').value.trim();
+  if (!nome) { showToast('Nome obbligatorio', 'error'); return; }
+  const payload = {
+    nome,
+    categoria: document.getElementById('m-forn-categoria').value.trim() || null,
+    note: document.getElementById('m-forn-note').value.trim() || null
+  };
+  const id = document.getElementById('m-forn-id').value;
+  let error;
+  if (id) {
+    ({ error } = await db.from('fornitori').update(payload).eq('id', id));
+  } else {
+    ({ error } = await db.from('fornitori').insert(payload));
+  }
+  if (error) { showToast('Errore: ' + error.message, 'error'); return; }
+  showToast('Fornitore salvato!', 'success');
+  closeModalFornitore();
+  loadFornitori();
+}
+
+async function eliminaFornitore(id) {
+  if (!confirm('Eliminare questo fornitore?')) return;
+  await db.from('fornitori').delete().eq('id', id);
+  showToast('Eliminato', 'success');
+  loadFornitori();
+}
+
+// ===== CATALOGO ARTICOLI SPESA =====
+let tuttoCatalogo = [];
+
+async function loadCatalogoCompleto() {
+  const { data } = await db.from('catalogo_spesa').select('*').order('categoria').order('articolo');
+  tuttoCatalogo = data || [];
+  renderCatalogoTabella();
+}
+
+function renderCatalogoTabella() {
+  const search = (document.getElementById('cat-articoli-search')?.value || '').toLowerCase();
+  const tbody = document.getElementById('cat-articoli-tbody');
+  if (!tbody) return;
+
+  let lista = tuttoCatalogo;
+  if (search) lista = lista.filter(a => JSON.stringify(a).toLowerCase().includes(search));
+
+  if (!lista.length) {
+    tbody.innerHTML = '<tr><td colspan="5" style="padding:16px;text-align:center;color:var(--testo-muted);">Nessun articolo</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = lista.map(a => `
+    <tr style="border-bottom:1px solid var(--border);">
+      <td style="padding:7px 12px;font-weight:500;font-size:12px;">${a.articolo}</td>
+      <td style="padding:7px 12px;font-size:12px;color:var(--testo-muted);">${a.fornitore || '—'}</td>
+      <td style="padding:7px 12px;font-size:12px;color:var(--testo-muted);">${a.categoria || '—'}</td>
+      <td style="padding:7px 12px;font-size:12px;">${a.prezzo_unitario ? '€ '+parseFloat(a.prezzo_unitario).toFixed(2) : '—'}</td>
+      <td style="padding:7px 12px;text-align:center;">
+        <button class="btn btn-sm" style="color:#991B1B" onclick="eliminaArticoloCatalogo('${a.id}')"><i class="ti ti-trash"></i></button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+async function eliminaArticoloCatalogo(id) {
+  if (!confirm('Eliminare dal catalogo?')) return;
+  await db.from('catalogo_spesa').delete().eq('id', id);
+  showToast('Eliminato', 'success');
+  loadCatalogoCompleto();
+}
+
+// Aggiorna loadImpostazioni per includere fornitori e catalogo
+const _origLoadImpostazioni = loadImpostazioni;
+async function loadImpostazioni() {
+  await _origLoadImpostazioni();
+  await loadFornitori();
+  await loadCatalogoCompleto();
+}
+
+// Carica fornitori all'avvio per datalist nel modale spesa
+const _origLoadCategorie = loadCategorie;
+async function loadCategorie() {
+  await _origLoadCategorie();
+  await loadFornitori();
+}
