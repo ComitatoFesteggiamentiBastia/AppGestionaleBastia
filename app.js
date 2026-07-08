@@ -1371,7 +1371,14 @@ async function saveSpesa() {
   }
   if (error) { showToast('Errore: ' + error.message, 'error'); return; }
   // Aggiunge automaticamente al catalogo
-  await aggiungiACatalogo(articolo, fornitore, categoria, stand, unita, prezzo, iva);
+  const _articolo = document.getElementById('m-spesa-articolo').value.trim();
+  const _fornitore = document.getElementById('m-spesa-fornitore').value.trim();
+  const _categoria = document.getElementById('m-spesa-categoria').value.trim();
+  const _stand = document.getElementById('m-spesa-stand').value.trim();
+  const _unita = document.getElementById('m-spesa-unita').value.trim();
+  const _prezzo = parseFloat(document.getElementById('m-spesa-prezzo').value) || null;
+  const _iva = parseFloat(document.getElementById('m-spesa-iva').value) || null;
+  await aggiungiACatalogo(_articolo, _fornitore, _categoria, _stand, _unita, _prezzo, _iva);
   await loadCatalogoSpesa();
   showToast('Salvato!', 'success');
   closeModalSpesa();
