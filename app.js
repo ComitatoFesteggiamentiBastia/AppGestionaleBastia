@@ -1,3 +1,4 @@
+
 const SUPABASE_URL = 'https://nwpuiwfptkswloauphzn.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im53cHVpd2ZwdGtzd2xvYXVwaHpuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE4MDY5OTEsImV4cCI6MjA5NzM4Mjk5MX0.kOcnfzbxI2xoSRsM26LiyesE8SszyPJ4eBkLRDKgQPc';
 const { createClient } = supabase;
@@ -1281,27 +1282,207 @@ async function eliminaSponsor(id) {
 
 // ===== LISTA SPESA =====
 let tuttiArticoliSpesa = [];
+let unitaMisura = [];
+let standSagra = [];
 
 async function loadSpesa() {
   await assicuraSagreCaricate();
   const sagraId = getSagraId();
   aggiornaHeaderSagra('spesa-sagra-header');
   if (!sagraId) return;
-  const { data } = await db.from('lista_spesa').select('*').eq('sagra_id', sagraId).order('stand').order('categoria');
-  tuttiArticoliSpesa = data || [];
+  const [spesaRes, unitaRes, standRes] = await Promise.all([
+    db.from('lista_spesa').select('*').eq('sagra_id', sagraId).order('fornitore').order('categoria'),
+    db.from('unita_misura').select('*').order('nome'),
+    db.from('stand_sagra').select('*').order('nome')
+  ]);
+  tuttiArticoliSpesa = spesaRes.data || [];
+  unitaMisura = unitaRes.data || [];
+  standSagra = standRes.data || [];
+  aggiornaDatalistSpesa();
   renderSpesa();
   aggiornaStatsSpesa();
+}
+
+function aggiornaDatalistSpesa() {
+  const dlUnita = document.getElementById('unita-list');
+  if (dlUnita) dlUnita.innerHTML = unitaMisura.map(u => `<option value="${u.nome}">`).join('');
+  const dlStand = document.getElementById('stand-list');
+  if (dlStand) dlStand.innerHTML = standSagra.map(s => `<option value="${s.nome}">`).join('');
+}
+
+async function aggiungiUnitaSeNuova(nome) {
+  if (!nome || unitaMisura.find(u => u.nome === nome)) return;
+  await db.from('unita_misura').insert({ nome });
+}
+
+async function aggiungiStandSeNuovo(nome) {
+  if (!nome || standSagra.find(s => s.nome === nome)) return;
+  await db.from('stand_sagra').insert({ nome });
+}
+
+async function aggiungiFornitoireSeNuovo(nome) {
+  if (!nome || tuttiFornitori.find(f => f.nome === nome)) return;
+  await db.from('fornitori').insert({ nome });
+  await loadFornitori();
+}
+
+// ===== PDF LISTA SPESA PER FORNITORE =====
+function pdfConPrezzi() {
+  return document.getElementById('pdf-con-prezzi')?.checked || false;
+}
+
+async function scaricaPDFFornitore(fornitore) {
+  await caricaJsPDF();
+  const { jsPDF } = window.jspdf;
+  const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const conPrezzi = pdfConPrezzi();
+
+  const articoli = tuttiArticoliSpesa.filter(a => (a.fornitore || 'Senza fornitore') === fornitore);
+  if (!articoli.length) { showToast('Nessun articolo per questo fornitore', 'error'); return; }
+
+  const oggi = new Date().toLocaleDateString('it-IT');
+  const sagraNome = sagraSelezionata?.nome || 'Sagra';
+
+  // Header
+  pdf.setFillColor(30, 45, 71);
+  pdf.rect(0, 0, 210, 28, 'F');
+  pdf.setTextColor(201, 160, 48);
+  pdf.setFontSize(16);
+  pdf.setFont('helvetica', 'bold');
+  pdf.text('LISTA DELLA SPESA', 14, 12);
+  pdf.setFontSize(10);
+  pdf.setFont('helvetica', 'normal');
+  pdf.setTextColor(200, 216, 240);
+  pdf.text(sagraNome, 14, 20);
+  pdf.text(oggi, 196, 20, { align: 'right' });
+
+  // Fornitore
+  pdf.setTextColor(30, 45, 71);
+  pdf.setFontSize(13);
+  pdf.setFont('helvetica', 'bold');
+  pdf.text('Fornitore: ' + fornitore, 14, 38);
+  pdf.setDrawColor(212, 201, 190);
+  pdf.line(14, 41, 196, 41);
+
+  // Raggruppa per categoria
+  const gruppi = {};
+  articoli.forEach(a => {
+    const cat = a.categoria || 'Altro';
+    if (!gruppi[cat]) gruppi[cat] = [];
+    gruppi[cat].push(a);
+  });
+
+  let y = 48;
+  const statoLabel = { da_ordinare: 'Da ordinare', ordinato: 'Ordinato', comprato: 'Comprato' };
+
+  for (const [cat, items] of Object.entries(gruppi)) {
+    // Header categoria
+    pdf.setFillColor(242, 237, 232);
+    pdf.rect(14, y - 4, 182, 7, 'F');
+    pdf.setFontSize(9);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(122, 101, 72);
+    pdf.text(cat.toUpperCase(), 16, y + 1);
+    y += 8;
+
+    // Intestazione colonne
+    pdf.setFontSize(8);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(30, 45, 71);
+    if (conPrezzi) {
+      pdf.text('Articolo', 16, y);
+      pdf.text('Q.tà', 110, y);
+      pdf.text('Unità', 125, y);
+      pdf.text('Prezzo', 140, y);
+      pdf.text('Totale', 162, y);
+      pdf.text('✓', 196, y);
+    } else {
+      pdf.text('Articolo', 16, y);
+      pdf.text('Q.tà', 140, y);
+      pdf.text('Unità', 158, y);
+      pdf.text('Stato', 172, y);
+      pdf.text('✓', 196, y);
+    }
+    pdf.setDrawColor(212, 201, 190);
+    pdf.line(14, y + 2, 196, y + 2);
+    y += 6;
+
+    let totCategoria = 0;
+    // Righe articoli
+    for (const a of items) {
+      if (y > 270) {
+        pdf.addPage();
+        y = 20;
+      }
+      pdf.setFontSize(9);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(26, 26, 26);
+      const art = a.articolo.length > (conPrezzi ? 42 : 55) ? a.articolo.substring(0, conPrezzi ? 40 : 53) + '...' : a.articolo;
+      pdf.text(art, 16, y);
+      pdf.text(a.quantita ? String(parseFloat(a.quantita)) : '—', conPrezzi ? 110 : 140, y);
+      pdf.text(a.unita || '—', conPrezzi ? 125 : 158, y);
+      if (conPrezzi) {
+        pdf.text(a.prezzo_unitario ? '€ ' + parseFloat(a.prezzo_unitario).toFixed(2) : '—', 140, y);
+        const tot = a.prezzo_totale ? parseFloat(a.prezzo_totale) : 0;
+        if (tot) totCategoria += tot;
+        pdf.text(tot ? '€ ' + tot.toFixed(2) : '—', 162, y);
+      } else {
+        pdf.setTextColor(a.stato === 'comprato' ? 74 : 122, a.stato === 'comprato' ? 103 : 101, a.stato === 'comprato' ? 65 : 72);
+        pdf.text(statoLabel[a.stato] || '—', 172, y);
+        pdf.setTextColor(26, 26, 26);
+      }
+      pdf.setDrawColor(30, 45, 71);
+      pdf.rect(193, y - 4, 5, 5);
+      pdf.setDrawColor(212, 201, 190);
+      pdf.line(14, y + 2, 196, y + 2);
+      y += 7;
+    }
+    if (conPrezzi && totCategoria > 0) {
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(30, 45, 71);
+      pdf.text('Subtotale: € ' + totCategoria.toFixed(2), 162, y);
+      y += 5;
+    }
+    y += 3;
+  }
+
+  // Totale generale
+  pdf.setFontSize(9);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(30, 45, 71);
+  const totGen = articoli.filter(a => a.prezzo_totale).reduce((s,a) => s + parseFloat(a.prezzo_totale||0), 0);
+  pdf.text(`Totale articoli: ${articoli.length}`, 14, y + 5);
+  if (conPrezzi && totGen > 0) pdf.text(`Totale spesa: € ${totGen.toFixed(2)}`, 140, y + 5);
+
+  pdf.save(`spesa_${fornitore.replace(/\s+/g,'_')}_${sagraNome.replace(/\s+/g,'_')}.pdf`);
+  showToast('PDF generato!', 'success');
 }
 
 function renderSpesa() {
   const search = (document.getElementById('spesa-search')?.value || '').toLowerCase();
   const filtroStato = document.getElementById('spesa-filtro-stato')?.value || 'tutti';
   const filtroGiorno = document.getElementById('spesa-filtro-giorno')?.value || 'tutti';
+  const filtroFornitore = document.getElementById('spesa-filtro-fornitore')?.value || 'tutti';
+  const ordina = document.getElementById('spesa-ordina')?.value || 'categoria';
 
-  let lista = tuttiArticoliSpesa;
+  let lista = [...tuttiArticoliSpesa];
   if (search) lista = lista.filter(a => JSON.stringify(a).toLowerCase().includes(search));
   if (filtroStato !== 'tutti') lista = lista.filter(a => a.stato === filtroStato);
   if (filtroGiorno !== 'tutti') lista = lista.filter(a => a.giorno === filtroGiorno);
+  if (filtroFornitore !== 'tutti') lista = lista.filter(a => (a.fornitore || 'Senza fornitore') === filtroFornitore);
+
+  // Aggiorna select fornitori
+  const fornitori = [...new Set(tuttiArticoliSpesa.map(a => a.fornitore || 'Senza fornitore'))].sort();
+  const selForn = document.getElementById('spesa-filtro-fornitore');
+  if (selForn) {
+    const curr = selForn.value;
+    selForn.innerHTML = '<option value="tutti">Tutti i fornitori</option>' +
+      fornitori.map(f => `<option value="${f}" ${f===curr?'selected':''}>${f}</option>`).join('');
+  }
+
+  // Ordinamento
+  const sortKey = { categoria: 'categoria', fornitore: 'fornitore', articolo: 'articolo', stato: 'stato' };
+  lista.sort((a, b) => (a[sortKey[ordina]] || '').localeCompare(b[sortKey[ordina]] || ''));
 
   const container = document.getElementById('spesa-list');
   if (!container) return;
@@ -1311,20 +1492,72 @@ function renderSpesa() {
     return;
   }
 
-  // Raggruppa per stand/categoria
+  // Raggruppa in base all'ordinamento scelto (default: fornitore)
+  const gruppoKey = ordina === 'categoria' ? (a => (a.stand || 'Generico') + ' — ' + (a.categoria || 'Vario'))
+    : ordina === 'stato' ? (a => a.stato || 'da_ordinare')
+    : ordina === 'articolo' ? (a => (a.articolo?.[0] || '#').toUpperCase())
+    : (a => a.fornitore || 'Senza fornitore');
+
   const gruppi = {};
   lista.forEach(a => {
-    const key = (a.stand || 'Generico') + ' — ' + (a.categoria || 'Vario');
+    const key = gruppoKey(a);
     if (!gruppi[key]) gruppi[key] = [];
     gruppi[key].push(a);
   });
 
-  container.innerHTML = Object.entries(gruppi).map(([gruppo, articoli]) => `
-    <div style="margin-bottom:16px;">
-      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--testo-muted);padding:6px 16px;background:#F2EDE4;">${gruppo}</div>
-      ${articoli.map(a => rowSpesa(a)).join('')}
+  // Set gruppi collassati (persistente in sessione)
+  if (!window._spesaCollassati) window._spesaCollassati = new Set();
+
+  container.innerHTML = Object.entries(gruppi).map(([gruppo, articoli]) => {
+    const gId = 'sg_' + gruppo.replace(/[^a-zA-Z0-9]/g,'_');
+    const collassato = window._spesaCollassati.has(gId);
+    const totCosto = articoli.filter(a => a.prezzo_totale).reduce((s,a) => s + parseFloat(a.prezzo_totale||0), 0);
+    return `
+    <div style="margin-bottom:8px;border-radius:8px;overflow:hidden;border:1px solid var(--border);">
+      <div onclick="toggleGruppoSpesa('${gId}')" style="font-size:12px;font-weight:700;letter-spacing:0.04em;color:var(--testo-muted);padding:8px 16px;background:#F2EDE4;display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <i class="ti ti-chevron-${collassato?'right':'down'}" id="ico-${gId}" style="font-size:13px;"></i>
+          <span style="text-transform:uppercase;">${gruppo}</span>
+          <span style="font-weight:400;font-size:11px;">(${articoli.length})</span>
+        </div>
+        ${totCosto > 0 ? `<span style="font-size:12px;color:var(--blu-notte);font-weight:600;">€ ${totCosto.toFixed(2)}</span>` : ''}
+      </div>
+      <div id="${gId}" style="display:${collassato?'none':'block'};">
+        ${articoli.map(a => rowSpesa(a)).join('')}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function toggleGruppoSpesa(id) {
+  const el = document.getElementById(id);
+  const ico = document.getElementById('ico-' + id);
+  if (!el) return;
+  const aperto = el.style.display !== 'none';
+  el.style.display = aperto ? 'none' : 'block';
+  if (ico) ico.className = `ti ti-chevron-${aperto?'right':'down'}`;
+  if (aperto) window._spesaCollassati.add(id);
+  else window._spesaCollassati.delete(id);
+}
+
+function mostraMenuPDFFornitore() {
+  const menu = document.getElementById('menu-pdf-fornitore');
+  if (!menu) return;
+  if (menu.style.display !== 'none') { menu.style.display = 'none'; return; }
+  const fornitori = [...new Set(tuttiArticoliSpesa.map(a => a.fornitore || 'Senza fornitore'))].sort();
+  if (!fornitori.length) { showToast('Nessun articolo con fornitore', 'error'); return; }
+  menu.innerHTML = fornitori.map(f => `
+    <div onclick="scaricaPDFFornitore('${f.replace(/'/g,"\'")}');document.getElementById('menu-pdf-fornitore').style.display='none';"
+      style="padding:9px 16px;cursor:pointer;font-size:13px;border-bottom:1px solid var(--border);color:var(--testo);"
+      onmouseover="this.style.background='#F2EDE4'" onmouseout="this.style.background='white'">
+      <i class="ti ti-truck" style="margin-right:6px;color:var(--testo-muted);"></i>${f}
     </div>
   `).join('');
+  menu.style.display = 'block';
+  // Chiudi cliccando fuori
+  setTimeout(() => document.addEventListener('click', function h(e) {
+    if (!menu.contains(e.target)) { menu.style.display = 'none'; document.removeEventListener('click', h); }
+  }), 100);
 }
 
 function rowSpesa(a) {
@@ -1423,7 +1656,7 @@ async function saveSpesa() {
     ({ error } = await db.from('lista_spesa').insert(payload));
   }
   if (error) { showToast('Errore: ' + error.message, 'error'); return; }
-  // Aggiunge automaticamente al catalogo
+
   const _articolo = document.getElementById('m-spesa-articolo').value.trim();
   const _fornitore = document.getElementById('m-spesa-fornitore').value.trim();
   const _categoria = document.getElementById('m-spesa-categoria').value.trim();
@@ -1431,8 +1664,32 @@ async function saveSpesa() {
   const _unita = document.getElementById('m-spesa-unita').value.trim();
   const _prezzo = parseFloat(document.getElementById('m-spesa-prezzo').value) || null;
   const _iva = parseFloat(document.getElementById('m-spesa-iva').value) || null;
+
+  // Aggiungi unità, stand, fornitore se nuovi
+  await Promise.all([
+    aggiungiUnitaSeNuova(_unita),
+    aggiungiStandSeNuovo(_stand),
+    aggiungiFornitoireSeNuovo(_fornitore)
+  ]);
+
+  // Catalogo
   await aggiungiACatalogo(_articolo, _fornitore, _categoria, _stand, _unita, _prezzo, _iva);
   await loadCatalogoSpesa();
+
+  // Storico prezzi
+  if (_articolo && _prezzo) {
+    const anno = sagraSelezionata?.anno || ANNO_CORRENTE;
+    await db.from('storico_prezzi').insert({
+      articolo: _articolo,
+      fornitore: _fornitore || null,
+      anno,
+      prezzo_unitario: _prezzo,
+      iva: _iva,
+      prezzo_totale: payload.prezzo_totale,
+      quantita: payload.quantita
+    });
+  }
+
   showToast('Salvato!', 'success');
   closeModalSpesa();
   loadSpesa();
@@ -2517,3 +2774,114 @@ async function eliminaArticoloCatalogo(id) {
 // fornitori e catalogo integrati in loadImpostazioni
 
 // fornitori caricati in initApp
+
+
+// ===== PDF TOTALE LISTA SPESA =====
+async function scaricaPDFTotale() {
+  await caricaJsPDF();
+  const { jsPDF } = window.jspdf;
+  const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const conPrezzi = pdfConPrezzi();
+  const oggi = new Date().toLocaleDateString('it-IT');
+  const sagraNome = sagraSelezionata?.nome || 'Sagra';
+
+  // Header
+  pdf.setFillColor(30, 45, 71);
+  pdf.rect(0, 0, 210, 28, 'F');
+  pdf.setTextColor(201, 160, 48);
+  pdf.setFontSize(16);
+  pdf.setFont('helvetica', 'bold');
+  pdf.text('LISTA DELLA SPESA COMPLETA', 14, 12);
+  pdf.setFontSize(10);
+  pdf.setFont('helvetica', 'normal');
+  pdf.setTextColor(200, 216, 240);
+  pdf.text(sagraNome, 14, 20);
+  pdf.text(oggi, 196, 20, { align: 'right' });
+
+  // Raggruppa per fornitore
+  const fornitori = [...new Set(tuttiArticoliSpesa.map(a => a.fornitore || 'Senza fornitore'))].sort();
+  let y = 36;
+  let totaleGenerale = 0;
+
+  for (const fornitore of fornitori) {
+    const articoli = tuttiArticoliSpesa.filter(a => (a.fornitore || 'Senza fornitore') === fornitore);
+    if (!articoli.length) continue;
+
+    if (y > 250) { pdf.addPage(); y = 20; }
+
+    // Header fornitore
+    pdf.setFillColor(30, 45, 71);
+    pdf.rect(14, y - 4, 182, 8, 'F');
+    pdf.setFontSize(10);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(201, 160, 48);
+    pdf.text(fornitore, 16, y + 1);
+    y += 10;
+
+    // Raggruppa per categoria
+    const gruppi = {};
+    articoli.forEach(a => {
+      const cat = a.categoria || 'Altro';
+      if (!gruppi[cat]) gruppi[cat] = [];
+      gruppi[cat].push(a);
+    });
+
+    let totFornitore = 0;
+
+    for (const [cat, items] of Object.entries(gruppi)) {
+      if (y > 270) { pdf.addPage(); y = 20; }
+
+      pdf.setFillColor(242, 237, 232);
+      pdf.rect(14, y - 3, 182, 6, 'F');
+      pdf.setFontSize(8);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(122, 101, 72);
+      pdf.text(cat.toUpperCase(), 16, y + 1);
+      y += 7;
+
+      for (const a of items) {
+        if (y > 275) { pdf.addPage(); y = 20; }
+        pdf.setFontSize(8.5);
+        pdf.setFont('helvetica', 'normal');
+        pdf.setTextColor(26, 26, 26);
+        const art = a.articolo.length > (conPrezzi ? 42 : 55) ? a.articolo.substring(0, conPrezzi ? 40 : 53) + '...' : a.articolo;
+        pdf.text(art, 16, y);
+        pdf.text(a.quantita ? String(parseFloat(a.quantita)) : '—', conPrezzi ? 110 : 140, y);
+        pdf.text(a.unita || '', conPrezzi ? 125 : 155, y);
+        if (conPrezzi) {
+          pdf.text(a.prezzo_unitario ? '€ ' + parseFloat(a.prezzo_unitario).toFixed(2) : '—', 140, y);
+          const tot = parseFloat(a.prezzo_totale || 0);
+          if (tot) { totFornitore += tot; totaleGenerale += tot; }
+          pdf.text(tot ? '€ ' + tot.toFixed(2) : '—', 162, y);
+        }
+        pdf.setDrawColor(30, 45, 71);
+        pdf.rect(193, y - 3.5, 4.5, 4.5);
+        pdf.setDrawColor(220, 215, 210);
+        pdf.line(14, y + 1.5, 196, y + 1.5);
+        y += 6;
+      }
+    }
+
+    if (conPrezzi && totFornitore > 0) {
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(30, 45, 71);
+      pdf.text('Totale ' + fornitore + ': € ' + totFornitore.toFixed(2), 130, y + 2);
+      y += 6;
+    }
+    y += 4;
+  }
+
+  // Totale generale
+  if (conPrezzi && totaleGenerale > 0) {
+    if (y > 270) { pdf.addPage(); y = 20; }
+    pdf.setFillColor(30, 45, 71);
+    pdf.rect(14, y, 182, 10, 'F');
+    pdf.setFontSize(11);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(201, 160, 48);
+    pdf.text('TOTALE GENERALE: € ' + totaleGenerale.toFixed(2), 16, y + 7);
+  }
+
+  pdf.save(`spesa_totale_${sagraNome.replace(/\s+/g,'_')}.pdf`);
+  showToast('PDF totale generato!', 'success');
+}
