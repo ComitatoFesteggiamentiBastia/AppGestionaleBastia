@@ -124,6 +124,7 @@ function showPage(pageId) {
   closeSidebar();
   if (pageId === 'soci' || pageId === 'db-avanzato') loadSoci();
   if (pageId === 'quote') loadQuote();
+  if (pageId === 'cassa') loadCassa();
   if (pageId === 'impostazioni-anno') loadImpostazioniAnno();
   if (pageId === 'utenti') loadUtenti();
   if (pageId === 'sagra') loadSagre();
@@ -2039,4 +2040,129 @@ async function eliminaQuota(id) {
   await db.from('quote').delete().eq('id', id);
   showToast('Eliminato', 'success');
   loadQuote();
+}
+
+
+// ===== CASSA GENERALE =====
+let tuttiMovimentiCassa = [];
+
+async function loadCassa() {
+  const { data } = await db.from('movimenti_cassa').select('*').order('data', { ascending: false });
+  tuttiMovimentiCassa = data || [];
+  renderCassa();
+  aggiornaBilancioCassa();
+}
+
+function renderCassa() {
+  const search = (document.getElementById('cassa-search')?.value || '').toLowerCase();
+  const filtroTipo = document.getElementById('cassa-filtro-tipo')?.value || 'tutti';
+  const filtroSagra = document.getElementById('cassa-filtro-sagra')?.value || 'tutti';
+
+  let lista = tuttiMovimentiCassa;
+  if (search) lista = lista.filter(m => JSON.stringify(m).toLowerCase().includes(search));
+  if (filtroTipo !== 'tutti') lista = lista.filter(m => m.tipo === filtroTipo);
+  if (filtroSagra === 'no') lista = lista.filter(m => !m.collegato_sagra);
+  if (filtroSagra === 'si') lista = lista.filter(m => m.collegato_sagra);
+
+  const container = document.getElementById('cassa-list');
+  if (!container) return;
+
+  if (!lista.length) {
+    container.innerHTML = '<div style="padding:24px;text-align:center;color:var(--testo-muted);">Nessun movimento</div>';
+    return;
+  }
+
+  container.innerHTML = lista.map(m => {
+    const isEntrata = m.tipo === 'entrata';
+    const color = isEntrata ? 'var(--verde)' : '#991B1B';
+    const segno = isEntrata ? '+' : '-';
+    return `<div class="table-row">
+      <div style="flex:1;">
+        <div class="row-name">${m.descrizione}</div>
+        <div class="row-sub">${m.categoria || ''} · ${m.data ? formatDataIT(m.data) : ''} · ${m.metodo_pagamento || ''}${m.collegato_sagra ? ' · <span style="color:var(--oro);font-weight:500;">↗ Sagra</span>' : ''}</div>
+      </div>
+      <span style="font-weight:600;color:${color};white-space:nowrap;">${segno} € ${parseFloat(m.importo).toFixed(2)}</span>
+      <button class="btn btn-sm" onclick='openModalCassa(${JSON.stringify(m).replace(/'/g,"\'")})'><i class="ti ti-edit"></i></button>
+      <button class="btn btn-sm" style="color:#991B1B" onclick="eliminaMovimentoCassa('${m.id}')"><i class="ti ti-trash"></i></button>
+    </div>`;
+  }).join('');
+}
+
+function aggiornaBilancioCassa() {
+  const tutti = tuttiMovimentiCassa;
+  const entrate = tutti.filter(m => m.tipo === 'entrata').reduce((s,m) => s + parseFloat(m.importo||0), 0);
+  const uscite = tutti.filter(m => m.tipo === 'uscita').reduce((s,m) => s + parseFloat(m.importo||0), 0);
+  const saldo = entrate - uscite;
+
+  // Solo movimenti NON collegati alla sagra per bilancio netto
+  const entrateNette = tutti.filter(m => m.tipo === 'entrata' && !m.collegato_sagra).reduce((s,m) => s + parseFloat(m.importo||0), 0);
+  const usciteNette = tutti.filter(m => m.tipo === 'uscita' && !m.collegato_sagra).reduce((s,m) => s + parseFloat(m.importo||0), 0);
+  const saldoNetto = entrateNette - usciteNette;
+
+  if (document.getElementById('c-tot-entrate')) document.getElementById('c-tot-entrate').textContent = '€ ' + entrate.toFixed(2);
+  if (document.getElementById('c-tot-uscite')) document.getElementById('c-tot-uscite').textContent = '€ ' + uscite.toFixed(2);
+  if (document.getElementById('c-saldo')) {
+    document.getElementById('c-saldo').textContent = '€ ' + saldo.toFixed(2);
+    document.getElementById('c-saldo').style.color = saldo >= 0 ? 'var(--verde)' : '#991B1B';
+  }
+  if (document.getElementById('c-saldo-netto')) {
+    document.getElementById('c-saldo-netto').textContent = '€ ' + saldoNetto.toFixed(2);
+    document.getElementById('c-saldo-netto').style.color = saldoNetto >= 0 ? 'var(--verde)' : '#991B1B';
+  }
+}
+
+function openModalCassa(m = null) {
+  document.getElementById('modal-cassa').style.display = 'flex';
+  document.getElementById('modal-cassa').style.pointerEvents = 'auto';
+  document.getElementById('m-cassa-id').value = m?.id || '';
+  document.getElementById('m-cassa-tipo').value = m?.tipo || 'entrata';
+  document.getElementById('m-cassa-categoria').value = m?.categoria || '';
+  document.getElementById('m-cassa-descrizione').value = m?.descrizione || '';
+  document.getElementById('m-cassa-importo').value = m?.importo || '';
+  document.getElementById('m-cassa-data').value = m?.data || new Date().toISOString().split('T')[0];
+  document.getElementById('m-cassa-metodo').value = m?.metodo_pagamento || 'contanti';
+  document.getElementById('m-cassa-sagra').checked = m?.collegato_sagra || false;
+  document.getElementById('m-cassa-note').value = m?.note || '';
+}
+
+function closeModalCassa() {
+  const m = document.getElementById('modal-cassa');
+  m.style.display = 'none';
+  m.style.pointerEvents = 'none';
+}
+
+async function saveMovimentoCassa() {
+  const descrizione = document.getElementById('m-cassa-descrizione').value.trim();
+  const importo = parseFloat(document.getElementById('m-cassa-importo').value);
+  if (!descrizione || isNaN(importo)) { showToast('Descrizione e importo obbligatori', 'error'); return; }
+
+  const payload = {
+    tipo: document.getElementById('m-cassa-tipo').value,
+    categoria: document.getElementById('m-cassa-categoria').value.trim() || null,
+    descrizione,
+    importo,
+    data: document.getElementById('m-cassa-data').value,
+    metodo_pagamento: document.getElementById('m-cassa-metodo').value || null,
+    collegato_sagra: document.getElementById('m-cassa-sagra').checked,
+    note: document.getElementById('m-cassa-note').value.trim() || null
+  };
+
+  const id = document.getElementById('m-cassa-id').value;
+  let error;
+  if (id) {
+    ({ error } = await db.from('movimenti_cassa').update(payload).eq('id', id));
+  } else {
+    ({ error } = await db.from('movimenti_cassa').insert(payload));
+  }
+  if (error) { showToast('Errore: ' + error.message, 'error'); return; }
+  showToast('Salvato!', 'success');
+  closeModalCassa();
+  loadCassa();
+}
+
+async function eliminaMovimentoCassa(id) {
+  if (!confirm('Eliminare questo movimento?')) return;
+  await db.from('movimenti_cassa').delete().eq('id', id);
+  showToast('Eliminato', 'success');
+  loadCassa();
 }
