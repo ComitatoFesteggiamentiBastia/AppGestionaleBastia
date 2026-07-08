@@ -1191,21 +1191,36 @@ function closeModalSponsor() {
 }
 
 async function saveSponsor() {
+  await assicuraSagreCaricate();
   const sagraId = getSagraId();
-  if (!sagraId) { showToast('Seleziona prima un\'edizione sagra', 'error'); return; }
+  if (!sagraId) { showToast('Nessuna edizione sagra trovata', 'error'); return; }
+
   const ditta = document.getElementById('m-sp-ditta').value.trim();
   if (!ditta) { showToast('Nome ditta obbligatorio', 'error'); return; }
+
+  const ricevutoNuovo = document.getElementById('m-sp-ricevuto').checked;
+  const importo = parseFloat(document.getElementById('m-sp-importo').value) || null;
+  const tipo = document.getElementById('m-sp-tipo').value;
+  const dettaglio = document.getElementById('m-sp-dettaglio').value.trim() || null;
+  const modo = document.getElementById('m-sp-modo').value.trim() || null;
+
   const payload = {
     sagra_id: sagraId,
-    ditta,
-    tipo: document.getElementById('m-sp-tipo').value,
-    importo: parseFloat(document.getElementById('m-sp-importo').value) || null,
-    dettaglio: document.getElementById('m-sp-dettaglio').value.trim() || null,
-    modo_pagamento: document.getElementById('m-sp-modo').value.trim() || null,
-    ricevuto: document.getElementById('m-sp-ricevuto').checked,
+    ditta, tipo, importo, dettaglio,
+    modo_pagamento: modo,
+    ricevuto: ricevutoNuovo,
     note: document.getElementById('m-sp-note').value.trim() || null
   };
+
   const id = document.getElementById('m-sp-id').value;
+
+  // Controlla se era già ricevuto (per non duplicare)
+  let eraGiaRicevuto = false;
+  if (id) {
+    const { data: existing } = await db.from('sponsor').select('ricevuto').eq('id', id).single();
+    eraGiaRicevuto = existing?.ricevuto || false;
+  }
+
   let error;
   if (id) {
     ({ error } = await db.from('sponsor').update(payload).eq('id', id));
@@ -1213,7 +1228,39 @@ async function saveSponsor() {
     ({ error } = await db.from('sponsor').insert(payload));
   }
   if (error) { showToast('Errore: ' + error.message, 'error'); return; }
-  showToast('Sponsor salvato!', 'success');
+
+  // Registra automaticamente se diventa ricevuto per la prima volta e ha importo
+  if (ricevutoNuovo && !eraGiaRicevuto && importo && importo > 0) {
+    const oggi = new Date().toISOString().split('T')[0];
+    const descrizione = `Sponsor: ${ditta}${dettaglio ? ' — ' + dettaglio : ''}`;
+
+    await db.from('movimenti_sagra').insert({
+      sagra_id: sagraId,
+      tipo: 'entrata',
+      categoria: 'SPONSOR',
+      descrizione,
+      importo,
+      data: oggi,
+      metodo_pagamento: modo || 'contanti',
+      pagato: true,
+      offerta: false,
+      a_bilancio: true
+    });
+
+    await db.from('movimenti_cassa').insert({
+      tipo: 'entrata',
+      categoria: 'Sponsor',
+      descrizione,
+      importo,
+      data: oggi,
+      metodo_pagamento: modo || 'contanti'
+    });
+
+    showToast('Sponsor salvato e registrato in cassa e sagra!', 'success');
+  } else {
+    showToast('Sponsor salvato!', 'success');
+  }
+
   closeModalSponsor();
   loadSponsor();
 }
