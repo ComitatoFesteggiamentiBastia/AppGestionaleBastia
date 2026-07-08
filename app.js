@@ -1234,7 +1234,7 @@ async function saveSponsor() {
     const oggi = new Date().toISOString().split('T')[0];
     const descrizione = `Sponsor: ${ditta}${dettaglio ? ' — ' + dettaglio : ''}`;
 
-    await db.from('movimenti_sagra').insert({
+    const { error: eSagra } = await db.from('movimenti_sagra').insert({
       sagra_id: sagraId,
       tipo: 'entrata',
       categoria: 'SPONSOR',
@@ -1246,17 +1246,24 @@ async function saveSponsor() {
       offerta: false,
       a_bilancio: true
     });
+    if (eSagra) console.error('Errore movimenti_sagra:', eSagra.message, eSagra.details);
 
-    await db.from('movimenti_cassa').insert({
+    const { error: eCassa } = await db.from('movimenti_cassa').insert({
       tipo: 'entrata',
       categoria: 'Sponsor',
       descrizione,
       importo,
       data: oggi,
-      metodo_pagamento: modo || 'contanti'
+      metodo_pagamento: modo || 'contanti',
+      collegato_sagra: false
     });
+    if (eCassa) console.error('Errore movimenti_cassa:', eCassa.message, eCassa.details);
 
-    showToast('Sponsor salvato e registrato in cassa e sagra!', 'success');
+    if (!eSagra && !eCassa) {
+      showToast('Sponsor salvato e registrato in cassa e sagra!', 'success');
+    } else {
+      showToast('Sponsor salvato ma errore registrazione movimenti', 'error');
+    }
   } else {
     showToast('Sponsor salvato!', 'success');
   }
