@@ -1,4 +1,3 @@
-
 const SUPABASE_URL = 'https://nwpuiwfptkswloauphzn.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im53cHVpd2ZwdGtzd2xvYXVwaHpuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE4MDY5OTEsImV4cCI6MjA5NzM4Mjk5MX0.kOcnfzbxI2xoSRsM26LiyesE8SszyPJ4eBkLRDKgQPc';
 const { createClient } = supabase;
@@ -1989,7 +1988,7 @@ function aggiornaStatsInventario() {
   if (document.getElementById('inv-stat-cat')) document.getElementById('inv-stat-cat').textContent = categorie;
 }
 
-function openModalInventario(i = null) {
+async function openModalInventario(i = null) {
   document.getElementById('modal-inventario').style.display = 'flex';
   document.getElementById('modal-inventario').style.pointerEvents = 'auto';
   document.getElementById('m-inv-id').value = i?.id || '';
@@ -1997,11 +1996,25 @@ function openModalInventario(i = null) {
   document.getElementById('m-inv-categoria').value = i?.categoria || '';
   document.getElementById('m-inv-quantita').value = i?.quantita ?? '';
   document.getElementById('m-inv-unita').value = i?.unita || '';
-
   document.getElementById('m-inv-note').value = i?.note || '';
-  // Aggiorna datalist categorie
-  const dl = document.getElementById('inv-categorie-list');
-  if (dl) dl.innerHTML = categorieInventario.map(c => `<option value="${c}">`).join('');
+
+  // Datalist categorie inventario
+  const dlCat = document.getElementById('inv-categorie-list');
+  if (dlCat) dlCat.innerHTML = categorieInventario.map(c => `<option value="${c}">`).join('');
+
+  // Datalist articoli dal catalogo spesa
+  const dlArt = document.getElementById('inv-articoli-list');
+  if (dlArt) {
+    const { data: catData } = await db.from('catalogo_spesa').select('articolo').order('articolo');
+    dlArt.innerHTML = (catData || []).map(a => `<option value="${a.articolo}">`).join('');
+  }
+
+  // Datalist unità di misura
+  const dlUnita = document.getElementById('inv-unita-list');
+  if (dlUnita) {
+    const { data: unitaData } = await db.from('unita_misura').select('nome').order('nome');
+    dlUnita.innerHTML = (unitaData || []).map(u => `<option value="${u.nome}">`).join('');
+  }
 }
 
 function closeModalInventario() {
