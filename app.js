@@ -123,6 +123,7 @@ function showPage(pageId) {
   });
   closeSidebar();
   if (pageId === 'soci' || pageId === 'db-avanzato') loadSoci();
+  if (pageId === 'quote') loadQuote();
   if (pageId === 'impostazioni-anno') loadImpostazioniAnno();
   if (pageId === 'utenti') loadUtenti();
   if (pageId === 'sagra') loadSagre();
@@ -1959,4 +1960,83 @@ function caricaJsPDF() {
     script.onload = resolve;
     document.head.appendChild(script);
   });
+}
+
+
+// ===== QUOTE ANNUALI =====
+let tutteQuote = [];
+
+async function loadQuote() {
+  const { data } = await db
+    .from('quote')
+    .select('*, soci(nome, cognome, codice_fiscale)')
+    .order('anno', { ascending: false })
+    .order('created_at', { ascending: false });
+  tutteQuote = data || [];
+  renderQuote();
+  aggiornaStatsQuote();
+}
+
+function renderQuote() {
+  const anno = document.getElementById('quote-filtro-anno')?.value || 'tutti';
+  const stato = document.getElementById('quote-filtro-stato')?.value || 'tutti';
+  const search = (document.getElementById('quote-search')?.value || '').toLowerCase();
+
+  let lista = tutteQuote;
+  if (anno !== 'tutti') lista = lista.filter(q => String(q.anno) === anno);
+  if (stato === 'pagate') lista = lista.filter(q => q.pagato);
+  if (stato === 'non_pagate') lista = lista.filter(q => !q.pagato);
+  if (search) lista = lista.filter(q =>
+    `${q.soci?.cognome} ${q.soci?.nome} ${q.soci?.codice_fiscale}`.toLowerCase().includes(search)
+  );
+
+  // Aggiorna select anni
+  const anni = [...new Set(tutteQuote.map(q => q.anno))].sort((a,b) => b - a);
+  const sel = document.getElementById('quote-filtro-anno');
+  if (sel) {
+    const curr = sel.value;
+    sel.innerHTML = '<option value="tutti">Tutti gli anni</option>' +
+      anni.map(a => `<option value="${a}" ${String(a)===curr?'selected':''}>${a}</option>`).join('');
+  }
+
+  const tbody = document.getElementById('quote-tbody');
+  if (!tbody) return;
+
+  if (!lista.length) {
+    tbody.innerHTML = '<tr><td colspan="6" style="padding:32px;text-align:center;color:var(--testo-muted);">Nessuna quota trovata</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = lista.map((q, i) => `
+    <tr style="${i%2===0?'':'background:#F5F7FB;'}border-bottom:1px solid var(--border);">
+      <td style="padding:9px 14px;font-weight:500;">${q.soci?.cognome || ''} ${q.soci?.nome || ''}</td>
+      <td style="padding:9px 14px;font-size:12px;font-family:monospace;color:var(--testo-muted);">${q.soci?.codice_fiscale || ''}</td>
+      <td style="padding:9px 14px;text-align:center;font-weight:600;">${q.anno}</td>
+      <td style="padding:9px 14px;text-align:right;">€ ${parseFloat(q.importo||0).toFixed(2)}</td>
+      <td style="padding:9px 14px;text-align:center;">
+        <span class="badge ${q.pagato ? 'badge-ok' : 'badge-no'}">${q.pagato ? 'Pagata' : 'Da pagare'}</span>
+      </td>
+      <td style="padding:9px 14px;text-align:center;white-space:nowrap;">
+        <span style="font-size:12px;color:var(--testo-muted);">${q.data_pagamento ? formatDataIT(q.data_pagamento) : '—'}</span>
+        <button class="btn btn-sm" onclick="eliminaQuota('${q.id}')" style="color:#991B1B;margin-left:4px;"><i class="ti ti-trash"></i></button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+function aggiornaStatsQuote() {
+  const anno = ANNO_CORRENTE;
+  const qAnno = tutteQuote.filter(q => q.anno === anno);
+  const pagate = qAnno.filter(q => q.pagato).length;
+  const totIncassato = qAnno.filter(q => q.pagato).reduce((s,q) => s + parseFloat(q.importo||0), 0);
+  if (document.getElementById('q-stat-pagate')) document.getElementById('q-stat-pagate').textContent = pagate;
+  if (document.getElementById('q-stat-totale')) document.getElementById('q-stat-totale').textContent = '€ ' + totIncassato.toFixed(2);
+  if (document.getElementById('q-stat-anno')) document.getElementById('q-stat-anno').textContent = anno;
+}
+
+async function eliminaQuota(id) {
+  if (!confirm('Eliminare questo record quota?')) return;
+  await db.from('quote').delete().eq('id', id);
+  showToast('Eliminato', 'success');
+  loadQuote();
 }

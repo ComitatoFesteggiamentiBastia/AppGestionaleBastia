@@ -732,8 +732,51 @@
 
     <!-- QUOTE -->
     <div class="page" id="page-quote">
-      <div class="page-header"><h2>Quote annuali</h2></div>
-      <div class="coming-soon"><i class="ti ti-credit-card"></i><h3>Quote annuali</h3><p>Storico pagamenti per anno e per socio</p></div>
+      <div class="page-header">
+        <h2>Quote annuali</h2>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <input type="text" id="quote-search" placeholder="Cerca socio..." oninput="renderQuote()" style="padding:7px 12px;border:1px solid #D4C9BE;border-radius:7px;font-size:13px;width:160px;outline:none;">
+          <select id="quote-filtro-anno" onchange="renderQuote()" style="padding:7px 10px;border:1px solid #D4C9BE;border-radius:7px;font-size:13px;outline:none;">
+            <option value="tutti">Tutti gli anni</option>
+          </select>
+          <select id="quote-filtro-stato" onchange="renderQuote()" style="padding:7px 10px;border:1px solid #D4C9BE;border-radius:7px;font-size:13px;outline:none;">
+            <option value="tutti">Tutti</option>
+            <option value="pagate">Pagate</option>
+            <option value="non_pagate">Da pagare</option>
+          </select>
+        </div>
+      </div>
+      <!-- Stats anno corrente -->
+      <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:20px;">
+        <div class="stat-card verde" style="cursor:default;">
+          <i class="ti ti-credit-card"></i>
+          <div class="stat-val" id="q-stat-pagate" style="font-size:22px;">—</div>
+          <div class="stat-lbl">Quote pagate <span id="q-stat-anno"></span></div>
+        </div>
+        <div class="stat-card oro" style="cursor:default;">
+          <i class="ti ti-cash"></i>
+          <div class="stat-val" id="q-stat-totale" style="font-size:18px;">—</div>
+          <div class="stat-lbl">Totale incassato anno corrente</div>
+        </div>
+      </div>
+      <!-- Tabella -->
+      <div style="overflow-x:auto;">
+        <table style="width:100%;border-collapse:collapse;font-size:13px;background:white;border-radius:10px;overflow:hidden;border:1px solid var(--border);">
+          <thead>
+            <tr style="background:var(--blu-notte);color:white;">
+              <th style="padding:10px 14px;text-align:left;">Socio</th>
+              <th style="padding:10px 14px;text-align:left;">Codice Fiscale</th>
+              <th style="padding:10px 14px;text-align:center;">Anno</th>
+              <th style="padding:10px 14px;text-align:right;">Importo</th>
+              <th style="padding:10px 14px;text-align:center;">Stato</th>
+              <th style="padding:10px 14px;text-align:center;">Data pagamento</th>
+            </tr>
+          </thead>
+          <tbody id="quote-tbody">
+            <tr><td colspan="6" style="padding:32px;text-align:center;color:var(--testo-muted);">Caricamento...</td></tr>
+          </tbody>
+        </table>
+      </div>
     </div>
 
     <!-- CASSA -->
