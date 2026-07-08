@@ -1036,6 +1036,7 @@ function aggiornaBilancioSagra() {
 function openModalMovimento(m = null) {
   document.getElementById('modal-movimento').style.display = 'flex';
   document.getElementById('modal-movimento').style.pointerEvents = 'auto';
+  buildCategorieSelect('m-mov-categoria', 'sagra');
   document.getElementById('m-mov-id').value = m?.id || '';
   document.getElementById('m-mov-tipo').value = m?.tipo || 'entrata';
   document.getElementById('m-mov-categoria').value = m?.categoria || '';
@@ -1104,7 +1105,7 @@ async function loadSponsor() {
   const sagraId = getSagraId();
   aggiornaHeaderSagra('sp-sagra-header');
   if (!sagraId) {
-    document.getElementById('sponsor-tbody').innerHTML = '<tr><td colspan="6" style="padding:24px;text-align:center;color:var(--testo-muted);">Crea prima un'edizione sagra</td></tr>';
+    document.getElementById('sponsor-tbody').innerHTML = '<tr><td colspan="6" style="padding:24px;text-align:center;color:var(--testo-muted);">Crea prima un\'edizione sagra</td></tr>';
     return;
   }
   const { data } = await db.from('sponsor').select('*').eq('sagra_id', sagraId).order('ditta');
@@ -1365,6 +1366,9 @@ async function saveSpesa() {
     ({ error } = await db.from('lista_spesa').insert(payload));
   }
   if (error) { showToast('Errore: ' + error.message, 'error'); return; }
+  // Aggiunge automaticamente al catalogo
+  await aggiungiACatalogo(articolo, fornitore, categoria, stand, unita, prezzo, iva);
+  await loadCatalogoSpesa();
   showToast('Salvato!', 'success');
   closeModalSpesa();
   loadSpesa();
@@ -1521,19 +1525,7 @@ function selezionaArticoloCatalogo(articolo, fornitore, categoria, stand, unita,
 }
 
 // Override saveSpesa per aggiungere al catalogo
-const _origSaveSpesa = saveSpesa;
-async function saveSpesa() {
-  const articolo = document.getElementById('m-spesa-articolo').value.trim();
-  const fornitore = document.getElementById('m-spesa-fornitore').value.trim();
-  const categoria = document.getElementById('m-spesa-categoria').value.trim();
-  const stand = document.getElementById('m-spesa-stand').value.trim();
-  const unita = document.getElementById('m-spesa-unita').value.trim();
-  const prezzo = parseFloat(document.getElementById('m-spesa-prezzo').value) || null;
-  const iva = parseFloat(document.getElementById('m-spesa-iva').value) || null;
-  await _origSaveSpesa();
-  await aggiungiACatalogo(articolo, fornitore, categoria, stand, unita, prezzo, iva);
-  await loadCatalogoSpesa();
-}
+// catalogo integrato direttamente in saveSpesa
 
 // ===== COPIA DA EDIZIONE PRECEDENTE =====
 async function copiaSpesaEdizionePrecedente() {
@@ -2207,6 +2199,7 @@ function aggiornaBilancioCassa() {
 function openModalCassa(m = null) {
   document.getElementById('modal-cassa').style.display = 'flex';
   document.getElementById('modal-cassa').style.pointerEvents = 'auto';
+  buildCategorieSelect('m-cassa-categoria', 'cassa');
   document.getElementById('m-cassa-id').value = m?.id || '';
   document.getElementById('m-cassa-tipo').value = m?.tipo || 'entrata';
   document.getElementById('m-cassa-categoria').value = m?.categoria || '';
@@ -2269,6 +2262,7 @@ async function loadCategorie() {
   const { data } = await db.from('categorie').select('*').order('nome');
   categorieCassa = (data || []).filter(c => c.tipo === 'cassa');
   categorieSagra = (data || []).filter(c => c.tipo === 'sagra');
+  await loadFornitori();
 }
 
 function buildCategorieSelect(selectId, tipo) {
@@ -2283,6 +2277,8 @@ function buildCategorieSelect(selectId, tipo) {
 async function loadImpostazioni() {
   await loadCategorie();
   renderImpostazioni();
+  await loadFornitori();
+  await loadCatalogoCompleto();
 }
 
 function toggleSezioneImp(id) {
@@ -2333,21 +2329,9 @@ async function eliminaCategoria(id, tipo) {
   renderImpostazioni();
 }
 
-// Override openModalCassa per usare categorie dinamiche
-const _origOpenModalCassa = openModalCassa;
-function openModalCassa(m = null) {
-  _origOpenModalCassa(m);
-  buildCategorieSelect('m-cassa-categoria', 'cassa');
-  if (m?.categoria) document.getElementById('m-cassa-categoria').value = m.categoria;
-}
+// categorie cassa integrate direttamente
 
-// Override openModalMovimento per usare categorie dinamiche sagra
-const _origOpenModalMovimento = openModalMovimento;
-function openModalMovimento(m = null) {
-  _origOpenModalMovimento(m);
-  buildCategorieSelect('m-mov-categoria', 'sagra');
-  if (m?.categoria) document.getElementById('m-mov-categoria').value = m.categoria;
-}
+// categorie sagra integrate direttamente
 
 // Carica categorie all'avvio app
 // categorie caricate in initApp
@@ -2466,17 +2450,6 @@ async function eliminaArticoloCatalogo(id) {
   loadCatalogoCompleto();
 }
 
-// Aggiorna loadImpostazioni per includere fornitori e catalogo
-const _origLoadImpostazioni = loadImpostazioni;
-async function loadImpostazioni() {
-  await _origLoadImpostazioni();
-  await loadFornitori();
-  await loadCatalogoCompleto();
-}
+// fornitori e catalogo integrati in loadImpostazioni
 
-// Carica fornitori all'avvio per datalist nel modale spesa
-const _origLoadCategorie = loadCategorie;
-async function loadCategorie() {
-  await _origLoadCategorie();
-  await loadFornitori();
-}
+// fornitori caricati in initApp
