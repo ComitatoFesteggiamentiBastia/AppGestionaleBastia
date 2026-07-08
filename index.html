@@ -1027,10 +1027,13 @@
     <div class="page" id="page-impostazioni">
       <div class="page-header"><h2>Impostazioni</h2></div>
 
-      <!-- Categorie -->
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px;">
-        <div class="table-card">
-          <div class="table-card-header"><span>Categorie — Cassa generale</span></div>
+      <!-- Sezione Categorie Cassa -->
+      <div class="table-card" style="margin-bottom:12px;">
+        <div class="table-card-header" onclick="toggleSezioneImp('imp-cat-cassa')" style="cursor:pointer;justify-content:space-between;">
+          <span>Categorie — Cassa generale</span>
+          <i class="ti ti-chevron-down" id="ico-imp-cat-cassa" style="font-size:16px;color:var(--testo-muted);transition:transform 0.2s;"></i>
+        </div>
+        <div id="imp-cat-cassa">
           <div style="padding:10px 14px;display:flex;gap:8px;">
             <input id="cat-input-cassa" type="text" placeholder="Nuova categoria..." style="flex:1;padding:7px 12px;border:1px solid #D4C9BE;border-radius:7px;font-size:13px;outline:none;">
             <button class="btn btn-add" onclick="aggiungiCategoria('cassa')"><i class="ti ti-plus"></i></button>
@@ -1039,8 +1042,15 @@
             <tbody id="cat-tbody-cassa"></tbody>
           </table>
         </div>
-        <div class="table-card">
-          <div class="table-card-header"><span>Categorie — Entrate/Uscite Sagra</span></div>
+      </div>
+
+      <!-- Sezione Categorie Sagra -->
+      <div class="table-card" style="margin-bottom:12px;">
+        <div class="table-card-header" onclick="toggleSezioneImp('imp-cat-sagra')" style="cursor:pointer;justify-content:space-between;">
+          <span>Categorie — Entrate/Uscite Sagra</span>
+          <i class="ti ti-chevron-down" id="ico-imp-cat-sagra" style="font-size:16px;color:var(--testo-muted);transition:transform 0.2s;"></i>
+        </div>
+        <div id="imp-cat-sagra">
           <div style="padding:10px 14px;display:flex;gap:8px;">
             <input id="cat-input-sagra" type="text" placeholder="Nuova categoria..." style="flex:1;padding:7px 12px;border:1px solid #D4C9BE;border-radius:7px;font-size:13px;outline:none;">
             <button class="btn btn-add" onclick="aggiungiCategoria('sagra')"><i class="ti ti-plus"></i></button>
@@ -1051,46 +1061,56 @@
         </div>
       </div>
 
-      <!-- Fornitori -->
-      <div class="table-card" style="margin-bottom:20px;">
-        <div class="table-card-header" style="justify-content:space-between;">
+      <!-- Sezione Fornitori -->
+      <div class="table-card" style="margin-bottom:12px;">
+        <div class="table-card-header" onclick="toggleSezioneImp('imp-fornitori')" style="cursor:pointer;justify-content:space-between;">
           <span>Fornitori</span>
-          <button class="btn btn-add" onclick="openModalFornitore()"><i class="ti ti-plus"></i> Nuovo</button>
+          <div style="display:flex;align-items:center;gap:10px;" onclick="event.stopPropagation()">
+            <button class="btn btn-add" onclick="openModalFornitore()"><i class="ti ti-plus"></i> Nuovo</button>
+            <i class="ti ti-chevron-down" id="ico-imp-fornitori" style="font-size:16px;color:var(--testo-muted);transition:transform 0.2s;cursor:pointer;" onclick="toggleSezioneImp('imp-fornitori')"></i>
+          </div>
         </div>
-        <div style="overflow-x:auto;">
-          <table style="width:100%;border-collapse:collapse;font-size:13px;">
-            <thead>
-              <tr style="background:#F2EDE4;">
-                <th style="padding:8px 14px;text-align:left;font-weight:600;color:var(--blu-notte);">Nome</th>
-                <th style="padding:8px 14px;text-align:left;font-weight:600;color:var(--blu-notte);">Categoria</th>
-                <th style="padding:8px 14px;text-align:left;font-weight:600;color:var(--blu-notte);">Note</th>
-                <th style="padding:8px 14px;text-align:center;font-weight:600;color:var(--blu-notte);">Azioni</th>
-              </tr>
-            </thead>
-            <tbody id="fornitori-tbody"></tbody>
-          </table>
+        <div id="imp-fornitori" style="display:none;">
+          <div style="overflow-x:auto;">
+            <table style="width:100%;border-collapse:collapse;font-size:13px;">
+              <thead>
+                <tr style="background:#F2EDE4;">
+                  <th style="padding:8px 14px;text-align:left;font-weight:600;color:var(--blu-notte);">Nome</th>
+                  <th style="padding:8px 14px;text-align:left;font-weight:600;color:var(--blu-notte);">Categoria</th>
+                  <th style="padding:8px 14px;text-align:left;font-weight:600;color:var(--blu-notte);">Note</th>
+                  <th style="padding:8px 14px;text-align:center;font-weight:600;color:var(--blu-notte);">Azioni</th>
+                </tr>
+              </thead>
+              <tbody id="fornitori-tbody"></tbody>
+            </table>
+          </div>
         </div>
       </div>
 
-      <!-- Catalogo articoli spesa -->
+      <!-- Sezione Catalogo articoli -->
       <div class="table-card">
-        <div class="table-card-header" style="justify-content:space-between;">
+        <div class="table-card-header" onclick="toggleSezioneImp('imp-catalogo')" style="cursor:pointer;justify-content:space-between;">
           <span>Catalogo articoli spesa</span>
-          <input type="text" id="cat-articoli-search" placeholder="Cerca articolo..." oninput="renderCatalogoTabella()" style="padding:6px 12px;border:1px solid #D4C9BE;border-radius:7px;font-size:13px;outline:none;width:200px;">
+          <div style="display:flex;align-items:center;gap:10px;" onclick="event.stopPropagation()">
+            <input type="text" id="cat-articoli-search" placeholder="Cerca..." oninput="renderCatalogoTabella()" style="padding:6px 12px;border:1px solid #D4C9BE;border-radius:7px;font-size:13px;outline:none;width:160px;">
+            <i class="ti ti-chevron-down" id="ico-imp-catalogo" style="font-size:16px;color:var(--testo-muted);transition:transform 0.2s;cursor:pointer;" onclick="toggleSezioneImp('imp-catalogo')"></i>
+          </div>
         </div>
-        <div style="overflow-x:auto;max-height:400px;overflow-y:auto;">
-          <table style="width:100%;border-collapse:collapse;font-size:12px;">
-            <thead style="position:sticky;top:0;">
-              <tr style="background:#F2EDE4;">
-                <th style="padding:8px 12px;text-align:left;font-weight:600;color:var(--blu-notte);">Articolo</th>
-                <th style="padding:8px 12px;text-align:left;font-weight:600;color:var(--blu-notte);">Fornitore</th>
-                <th style="padding:8px 12px;text-align:left;font-weight:600;color:var(--blu-notte);">Categoria</th>
-                <th style="padding:8px 12px;text-align:left;font-weight:600;color:var(--blu-notte);">Prezzo rif.</th>
-                <th style="padding:8px 12px;text-align:center;font-weight:600;color:var(--blu-notte);">Azioni</th>
-              </tr>
-            </thead>
-            <tbody id="cat-articoli-tbody"></tbody>
-          </table>
+        <div id="imp-catalogo" style="display:none;">
+          <div style="overflow-x:auto;max-height:400px;overflow-y:auto;">
+            <table style="width:100%;border-collapse:collapse;font-size:12px;">
+              <thead style="position:sticky;top:0;">
+                <tr style="background:#F2EDE4;">
+                  <th style="padding:8px 12px;text-align:left;font-weight:600;color:var(--blu-notte);">Articolo</th>
+                  <th style="padding:8px 12px;text-align:left;font-weight:600;color:var(--blu-notte);">Fornitore</th>
+                  <th style="padding:8px 12px;text-align:left;font-weight:600;color:var(--blu-notte);">Categoria</th>
+                  <th style="padding:8px 12px;text-align:left;font-weight:600;color:var(--blu-notte);">Prezzo rif.</th>
+                  <th style="padding:8px 12px;text-align:center;font-weight:600;color:var(--blu-notte);">Azioni</th>
+                </tr>
+              </thead>
+              <tbody id="cat-articoli-tbody"></tbody>
+            </table>
+          </div>
         </div>
       </div>
     </div>

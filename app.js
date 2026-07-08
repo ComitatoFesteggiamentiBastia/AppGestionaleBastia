@@ -2231,6 +2231,15 @@ async function loadImpostazioni() {
   renderImpostazioni();
 }
 
+function toggleSezioneImp(id) {
+  const el = document.getElementById(id);
+  const ico = document.getElementById('ico-' + id);
+  if (!el) return;
+  const aperta = el.style.display !== 'none';
+  el.style.display = aperta ? 'none' : 'block';
+  if (ico) ico.style.transform = aperta ? 'rotate(-90deg)' : 'rotate(0deg)';
+}
+
 function renderImpostazioni() {
   renderCategorieTabella('cassa');
   renderCategorieTabella('sagra');
