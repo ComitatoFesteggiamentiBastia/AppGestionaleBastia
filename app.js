@@ -2054,16 +2054,21 @@ async function loadCassa() {
   aggiornaBilancioCassa();
 }
 
+const _cassaCollassate = new Set();
+
+function toggleGruppoCassa(cat) {
+  if (_cassaCollassate.has(cat)) _cassaCollassate.delete(cat);
+  else _cassaCollassate.add(cat);
+  renderCassa();
+}
+
 function renderCassa() {
   const search = (document.getElementById('cassa-search')?.value || '').toLowerCase();
   const filtroTipo = document.getElementById('cassa-filtro-tipo')?.value || 'tutti';
-  const filtroSagra = document.getElementById('cassa-filtro-sagra')?.value || 'tutti';
 
   let lista = tuttiMovimentiCassa;
   if (search) lista = lista.filter(m => JSON.stringify(m).toLowerCase().includes(search));
   if (filtroTipo !== 'tutti') lista = lista.filter(m => m.tipo === filtroTipo);
-  if (filtroSagra === 'no') lista = lista.filter(m => !m.collegato_sagra);
-  if (filtroSagra === 'si') lista = lista.filter(m => m.collegato_sagra);
 
   const container = document.getElementById('cassa-list');
   if (!container) return;
@@ -2073,19 +2078,51 @@ function renderCassa() {
     return;
   }
 
-  container.innerHTML = lista.map(m => {
-    const isEntrata = m.tipo === 'entrata';
-    const color = isEntrata ? 'var(--verde)' : '#991B1B';
-    const segno = isEntrata ? '+' : '-';
-    return `<div class="table-row">
-      <div style="flex:1;">
-        <div class="row-name">${m.descrizione}</div>
-        <div class="row-sub">${m.categoria || ''} · ${m.data ? formatDataIT(m.data) : ''} · ${m.metodo_pagamento || ''}${m.collegato_sagra ? ' · <span style="color:var(--oro);font-weight:500;">↗ Sagra</span>' : ''}</div>
-      </div>
-      <span style="font-weight:600;color:${color};white-space:nowrap;">${segno} € ${parseFloat(m.importo).toFixed(2)}</span>
-      <button class="btn btn-sm" onclick='openModalCassa(${JSON.stringify(m).replace(/'/g,"\'")})'><i class="ti ti-edit"></i></button>
-      <button class="btn btn-sm" style="color:#991B1B" onclick="eliminaMovimentoCassa('${m.id}')"><i class="ti ti-trash"></i></button>
-    </div>`;
+  // Raggruppa per categoria
+  const gruppi = {};
+  lista.forEach(m => {
+    const cat = m.categoria || 'Senza categoria';
+    if (!gruppi[cat]) gruppi[cat] = [];
+    gruppi[cat].push(m);
+  });
+
+  container.innerHTML = Object.entries(gruppi).map(([cat, movimenti]) => {
+    const totEntrate = movimenti.filter(m => m.tipo === 'entrata').reduce((s,m) => s + parseFloat(m.importo||0), 0);
+    const totUscite = movimenti.filter(m => m.tipo === 'uscita').reduce((s,m) => s + parseFloat(m.importo||0), 0);
+    const saldo = totEntrate - totUscite;
+    const collassato = _cassaCollassate.has(cat);
+    const saldoColor = saldo >= 0 ? 'var(--verde)' : '#991B1B';
+    const segnoSaldo = saldo >= 0 ? '+' : '';
+
+    return `
+      <div style="margin-bottom:4px;">
+        <div onclick="toggleGruppoCassa('${cat}')" style="display:flex;align-items:center;justify-content:space-between;padding:10px 16px;background:#F2EDE4;cursor:pointer;user-select:none;border-bottom:1px solid var(--border);">
+          <div style="display:flex;align-items:center;gap:10px;">
+            <i class="ti ti-chevron-${collassato ? 'right' : 'down'}" style="font-size:14px;color:var(--testo-muted);"></i>
+            <span style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--testo-muted);">${cat}</span>
+            <span style="font-size:11px;color:var(--testo-muted);">(${movimenti.length})</span>
+          </div>
+          <div style="display:flex;gap:16px;align-items:center;">
+            ${totEntrate > 0 ? `<span style="font-size:12px;color:var(--verde);font-weight:500;">+€ ${totEntrate.toFixed(2)}</span>` : ''}
+            ${totUscite > 0 ? `<span style="font-size:12px;color:#991B1B;font-weight:500;">-€ ${totUscite.toFixed(2)}</span>` : ''}
+            <span style="font-size:13px;font-weight:700;color:${saldoColor};">${segnoSaldo}€ ${saldo.toFixed(2)}</span>
+          </div>
+        </div>
+        ${collassato ? '' : movimenti.map(m => {
+          const isEntrata = m.tipo === 'entrata';
+          const color = isEntrata ? 'var(--verde)' : '#991B1B';
+          const segno = isEntrata ? '+' : '-';
+          return `<div class="table-row" style="padding-left:42px;">
+            <div style="flex:1;">
+              <div class="row-name">${m.descrizione}</div>
+              <div class="row-sub">${m.data ? formatDataIT(m.data) : ''} · ${m.metodo_pagamento || ''}</div>
+            </div>
+            <span style="font-weight:600;color:${color};white-space:nowrap;">${segno} € ${parseFloat(m.importo).toFixed(2)}</span>
+            <button class="btn btn-sm" onclick='openModalCassa(${JSON.stringify(m).replace(/"/g,"&quot;")})'><i class="ti ti-edit"></i></button>
+            <button class="btn btn-sm" style="color:#991B1B" onclick="eliminaMovimentoCassa('${m.id}')"><i class="ti ti-trash"></i></button>
+          </div>`;
+        }).join('')}
+      </div>`;
   }).join('');
 }
 
