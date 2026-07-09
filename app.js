@@ -1,4 +1,3 @@
-
 const SUPABASE_URL = 'https://nwpuiwfptkswloauphzn.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im53cHVpd2ZwdGtzd2xvYXVwaHpuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE4MDY5OTEsImV4cCI6MjA5NzM4Mjk5MX0.kOcnfzbxI2xoSRsM26LiyesE8SszyPJ4eBkLRDKgQPc';
 const { createClient } = supabase;
@@ -2899,20 +2898,46 @@ async function scaricaPDFTotale() {
   const oggi = new Date().toLocaleDateString('it-IT');
   const sagraNome = sagraSelezionata?.nome || 'Sagra';
 
-  // Header
-  pdf.setFillColor(30, 45, 71);
-  pdf.rect(0, 0, 210, 28, 'F');
-  pdf.setTextColor(201, 160, 48);
-  pdf.setFontSize(16);
-  pdf.setFont('helvetica', 'bold');
-  pdf.text('LISTA DELLA SPESA COMPLETA', 14, 12);
-  pdf.setFontSize(10);
-  pdf.setFont('helvetica', 'normal');
-  pdf.setTextColor(200, 216, 240);
-  pdf.text(sagraNome, 14, 20);
-  pdf.text(oggi, 196, 20, { align: 'right' });
+  // Colonne (stesse posizioni della versione per-fornitore, per coerenza visiva)
+  const COL_ART_X = 16;
+  const COL_ART_MAXW = 122;   // larghezza max colonna articolo prima della nota
+  const COL_QTA_X = 142, COL_QTA_W = 10;
+  const COL_UNI_X = 154, COL_UNI_W = 8;
+  const COL_PRZ_X = 164, COL_PRZ_W = 11;
+  const COL_TOT_X = 177, COL_TOT_W = 11;
+  const COL_CHK_X = 191;
 
-  // Raggruppa per fornitore
+  function drawHeader() {
+    pdf.setFillColor(30, 45, 71);
+    pdf.rect(0, 0, 210, 28, 'F');
+    pdf.setTextColor(201, 160, 48);
+    pdf.setFontSize(16);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text('LISTA DELLA SPESA COMPLETA', 14, 12);
+    pdf.setFontSize(10);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(200, 216, 240);
+    pdf.text(sagraNome, 14, 20);
+    pdf.text(oggi, 196, 20, { align: 'right' });
+  }
+
+  function drawIntestazioneColonne(y) {
+    pdf.setFontSize(8);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(30, 45, 71);
+    pdf.text('Articolo', COL_ART_X, y);
+    pdf.text('Q.tà', COL_QTA_X + COL_QTA_W, y, { align: 'right' });
+    pdf.text('Unità', COL_UNI_X, y);
+    if (conPrezzi) {
+      pdf.text('Prezzo', COL_PRZ_X + COL_PRZ_W, y, { align: 'right' });
+      pdf.text('Totale', COL_TOT_X + COL_TOT_W, y, { align: 'right' });
+    }
+    pdf.setDrawColor(212, 201, 190);
+    pdf.line(14, y + 2, 196, y + 2);
+    return y + 6;
+  }
+
+  drawHeader();
   const fornitori = [...new Set(tuttiArticoliSpesa.map(a => a.fornitore || 'Senza fornitore'))].sort();
   let y = 36;
   let totaleGenerale = 0;
@@ -2921,7 +2946,7 @@ async function scaricaPDFTotale() {
     const articoli = tuttiArticoliSpesa.filter(a => (a.fornitore || 'Senza fornitore') === fornitore);
     if (!articoli.length) continue;
 
-    if (y > 250) { pdf.addPage(); y = 20; }
+    if (y > 250) { pdf.addPage(); drawHeader(); y = 36; }
 
     // Header fornitore
     pdf.setFillColor(30, 45, 71);
@@ -2943,7 +2968,7 @@ async function scaricaPDFTotale() {
     let totFornitore = 0;
 
     for (const [cat, items] of Object.entries(gruppi)) {
-      if (y > 270) { pdf.addPage(); y = 20; }
+      if (y > 260) { pdf.addPage(); drawHeader(); y = 36; }
 
       pdf.setFillColor(242, 237, 232);
       pdf.rect(14, y - 3, 182, 6, 'F');
@@ -2951,49 +2976,74 @@ async function scaricaPDFTotale() {
       pdf.setFont('helvetica', 'bold');
       pdf.setTextColor(122, 101, 72);
       pdf.text(cat.toUpperCase(), 16, y + 1);
-      y += 7;
+      y += 8;
 
-      for (const a of items) {
-        if (y > 275) { pdf.addPage(); y = 20; }
-        pdf.setFontSize(8.5);
-        pdf.setFont('helvetica', 'normal');
-        pdf.setTextColor(26, 26, 26);
-        const haNota2 = a.note && a.note.trim();
-        const altRiga2 = haNota2 ? 11 : 6;
-        if (y + altRiga2 > 275) { pdf.addPage(); y = 20; }
-        pdf.setFontSize(8.5);
-        pdf.setFont('helvetica', 'normal');
-        pdf.setTextColor(26, 26, 26);
-        const art = a.articolo.length > 65 ? a.articolo.substring(0, 63) + '...' : a.articolo;
-        pdf.text(art, 16, y);
-        pdf.text(a.quantita ? String(parseFloat(a.quantita)) : '—', 152, y);
-        pdf.text(a.unita || '', 165, y);
-        if (conPrezzi) {
-          pdf.text(a.prezzo_unitario ? parseFloat(a.prezzo_unitario).toFixed(2) : '—', 175, y);
-          const tot = parseFloat(a.prezzo_totale || 0);
-          if (tot) { totFornitore += tot; totaleGenerale += tot; }
-          pdf.text(tot ? tot.toFixed(2) : '—', 188, y);
+      y = drawIntestazioneColonne(y);
+
+      items.forEach((a, idx) => {
+        if (y > 275) { pdf.addPage(); drawHeader(); y = 36; y = drawIntestazioneColonne(y); }
+
+        // Zebra striping
+        if (idx % 2 === 0) {
+          pdf.setFillColor(247, 245, 242);
+          pdf.rect(14, y - 4, 182, 7, 'F');
         }
-        pdf.setDrawColor(30, 45, 71);
-        pdf.rect(197, y - 3, 4, 4);
-        if (haNota2) {
+
+        pdf.setFontSize(8.5);
+        pdf.setFont('helvetica', 'normal');
+        pdf.setTextColor(26, 26, 26);
+
+        // Nome articolo (troncato alla larghezza di colonna, non a un numero di caratteri fisso)
+        let art = a.articolo || '';
+        while (pdf.getTextWidth(art) > COL_ART_MAXW && art.length > 3) {
+          art = art.substring(0, art.length - 4) + '...';
+        }
+        pdf.text(art, COL_ART_X, y);
+
+        // Nota affiancata all'articolo, nello spazio residuo della stessa riga
+        const haNota = a.note && a.note.trim();
+        if (haNota) {
           pdf.setFont('helvetica', 'italic');
           pdf.setFontSize(7);
-          pdf.setTextColor(140, 130, 120);
-          const notaTrunc2 = a.note.length > 90 ? a.note.substring(0,88)+'...' : a.note;
-          pdf.text(notaTrunc2, 22, y + 4.5);
-          pdf.setFont('helvetica', 'normal');
-          pdf.setFontSize(8.5);
-          pdf.setTextColor(26, 26, 26);
+          pdf.setTextColor(150, 140, 130);
+          const artW = pdf.getTextWidth(art);
+          const notaX = COL_ART_X + artW + 4;
+          const spazioDisp = (COL_ART_X + COL_ART_MAXW) - notaX;
+          if (spazioDisp > 15) {
+            let nota = a.note;
+            while (pdf.getTextWidth(nota) > spazioDisp && nota.length > 3) {
+              nota = nota.substring(0, nota.length - 4) + '...';
+            }
+            pdf.text(nota, notaX, y);
+          }
         }
-        y += altRiga2;
-      }
+
+        // Q.tà, unità — allineati a destra/sinistra in modo coerente per colonna
+        pdf.setFontSize(8.5);
+        pdf.setFont('helvetica', 'normal');
+        pdf.setTextColor(26, 26, 26);
+        pdf.text(a.quantita ? String(parseFloat(a.quantita)) : '—', COL_QTA_X + COL_QTA_W, y, { align: 'right' });
+        pdf.text(a.unita || '—', COL_UNI_X, y);
+
+        if (conPrezzi) {
+          pdf.text(a.prezzo_unitario ? parseFloat(a.prezzo_unitario).toFixed(2) : '—', COL_PRZ_X + COL_PRZ_W, y, { align: 'right' });
+          const tot = parseFloat(a.prezzo_totale || 0);
+          if (tot) { totFornitore += tot; totaleGenerale += tot; }
+          pdf.text(tot ? tot.toFixed(2) : '—', COL_TOT_X + COL_TOT_W, y, { align: 'right' });
+        }
+
+        pdf.setDrawColor(30, 45, 71);
+        pdf.rect(COL_CHK_X, y - 3, 4, 4);
+
+        y += 7;
+      });
     }
 
     if (conPrezzi && totFornitore > 0) {
       pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(9);
       pdf.setTextColor(30, 45, 71);
-      pdf.text('Totale ' + fornitore + ': € ' + totFornitore.toFixed(2), 130, y + 2);
+      pdf.text('Totale ' + fornitore + ': € ' + totFornitore.toFixed(2), 196, y + 2, { align: 'right' });
       y += 6;
     }
     y += 4;
@@ -3001,7 +3051,7 @@ async function scaricaPDFTotale() {
 
   // Totale generale
   if (conPrezzi && totaleGenerale > 0) {
-    if (y > 270) { pdf.addPage(); y = 20; }
+    if (y > 270) { pdf.addPage(); drawHeader(); y = 36; }
     pdf.setFillColor(30, 45, 71);
     pdf.rect(14, y, 182, 10, 'F');
     pdf.setFontSize(11);
