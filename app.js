@@ -1432,17 +1432,21 @@ async function scaricaPDFFornitore(fornitore) {
       pdf.setFont('helvetica', 'normal');
       pdf.setTextColor(26, 26, 26);
 
-      // Nome articolo + nota sulla stessa riga
-      const maxArt = haNota ? 42 : 62;
-      const art = a.articolo.length > maxArt ? a.articolo.substring(0, maxArt-2) + '...' : a.articolo;
+      // Nome articolo
+      const art = a.articolo.length > 62 ? a.articolo.substring(0, 60) + '...' : a.articolo;
       pdf.text(art, 16, y);
 
+      // Nota sotto il nome, rientrata
       if (haNota) {
         pdf.setFont('helvetica', 'italic');
         pdf.setFontSize(7.5);
         pdf.setTextColor(150, 140, 130);
-        const notaTrunc = a.note.length > 40 ? a.note.substring(0, 38) + '...' : a.note;
-        pdf.text(notaTrunc, 100, y);
+        const artW = pdf.getTextWidth(art);
+        const notaX = 18 + artW + 4;
+        const spazioDisp = 135 - notaX;
+        const charsMax = Math.floor(spazioDisp / 1.8);
+        const notaTrunc = a.note.length > charsMax ? a.note.substring(0, charsMax-2) + '...' : a.note;
+        if (spazioDisp > 20) pdf.text(notaTrunc, notaX, y);
         pdf.setFont('helvetica', 'normal');
         pdf.setFontSize(9);
         pdf.setTextColor(26, 26, 26);
