@@ -1458,8 +1458,6 @@ async function scaricaPDFFornitore(fornitore) {
         pdf.setTextColor(26, 26, 26);
       }
 
-      pdf.setDrawColor(212, 201, 190);
-      pdf.line(14, y + altRiga - 2, 196, y + altRiga - 2);
       y += altRiga;
     }
     if (conPrezzi && totCategoria > 0) {
@@ -2978,8 +2976,6 @@ async function scaricaPDFTotale() {
           pdf.setFontSize(8.5);
           pdf.setTextColor(26, 26, 26);
         }
-        pdf.setDrawColor(220, 215, 210);
-        pdf.line(14, y + altRiga2 - 1, 202, y + altRiga2 - 1);
         y += altRiga2;
       }
     }
