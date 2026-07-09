@@ -1,3 +1,4 @@
+
 const SUPABASE_URL = 'https://nwpuiwfptkswloauphzn.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im53cHVpd2ZwdGtzd2xvYXVwaHpuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE4MDY5OTEsImV4cCI6MjA5NzM4Mjk5MX0.kOcnfzbxI2xoSRsM26LiyesE8SszyPJ4eBkLRDKgQPc';
 const { createClient } = supabase;
@@ -1148,18 +1149,29 @@ async function loadStoricoSponsor() {
 function renderSponsor() {
   const tbody = document.getElementById('sponsor-tbody');
   if (!tbody) return;
-  if (!tuttiSponsor.length) {
+  if (!tuttiSponsor.length && !sponsorAnnoPrecedente.length) {
     tbody.innerHTML = '<tr><td colspan="7" style="padding:24px;text-align:center;color:var(--testo-muted);">Nessuno sponsor</td></tr>';
     return;
   }
   const tipoLabel = { offerta: 'Offerta €', materiale: 'Materiale', mano_dopera: "Mano d'opera", altro: 'Altro' };
-  tbody.innerHTML = tuttiSponsor.map((s, i) => {
+
+  function precInfo(prec) {
+    if (!prec) return '<span style="color:#ccc;">—</span>';
+    let cosa;
+    if (prec.tipo === 'materiale') cosa = 'Materiale' + (prec.dettaglio ? ': ' + prec.dettaglio : '');
+    else if (prec.tipo === 'mano_dopera') cosa = "Mano d'opera" + (prec.dettaglio ? ': ' + prec.dettaglio : '');
+    else if (prec.importo) cosa = '€ ' + parseFloat(prec.importo).toFixed(0);
+    else cosa = prec.dettaglio || tipoLabel[prec.tipo] || '—';
+    const stato = prec.ricevuto
+      ? '<span class="badge badge-ok" style="margin-left:4px;">✓</span>'
+      : '<span class="badge badge-no" style="margin-left:4px;">non dato</span>';
+    return `${cosa}${stato}`;
+  }
+
+  const righeAttuali = tuttiSponsor.map((s, i) => {
     const prec = sponsorAnnoPrecedente.find(p => p.ditta.toLowerCase() === s.ditta.toLowerCase());
-    const precCell = prec
-      ? `<td style="padding:8px 12px;font-size:11px;"><span class="badge ${prec.ricevuto?'badge-ok':'badge-no'}">${prec.ricevuto ? '✓ '+(prec.importo ? '€'+parseFloat(prec.importo).toFixed(0) : 'Sì') : 'Attesa'}</span></td>`
-      : '<td style="padding:8px 12px;font-size:11px;color:#ccc;">—</td>';
     return `<tr style="${i%2===0?'':'background:#F5F7FB;'}border-bottom:1px solid var(--border);">
-      ${precCell}
+      <td style="padding:8px 12px;font-size:11px;">${precInfo(prec)}</td>
       <td style="padding:8px 12px;font-weight:500;">${s.ditta}</td>
       <td style="padding:8px 12px;"><span class="badge badge-pietra">${tipoLabel[s.tipo] || s.tipo}</span></td>
       <td style="padding:8px 12px;">${s.importo ? '€ ' + parseFloat(s.importo).toFixed(2) : '—'}</td>
@@ -1171,6 +1183,21 @@ function renderSponsor() {
       </td>
     </tr>`;
   }).join('');
+
+  // Sponsor dell'anno precedente non ancora reinseriti quest'anno
+  const mancanti = sponsorAnnoPrecedente.filter(p =>
+    !tuttiSponsor.some(s => s.ditta.toLowerCase() === p.ditta.toLowerCase())
+  );
+  const righeMancanti = mancanti.map(p => `<tr style="border-bottom:1px solid var(--border);color:#999;font-style:italic;">
+      <td style="padding:8px 12px;font-size:11px;">${precInfo(p)}</td>
+      <td style="padding:8px 12px;">${p.ditta}</td>
+      <td style="padding:8px 12px;" colspan="4">non ancora inserito quest'anno</td>
+      <td style="padding:8px 12px;text-align:center;">
+        <button class="btn btn-sm" onclick="openModalSponsor({ditta:'${p.ditta.replace(/'/g,"\\'")}'})" title="Aggiungi"><i class="ti ti-plus"></i></button>
+      </td>
+    </tr>`).join('');
+
+  tbody.innerHTML = righeAttuali + righeMancanti;
 }
 
 function openModalSponsor(s = null) {
