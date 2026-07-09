@@ -1419,16 +1419,34 @@ async function scaricaPDFFornitore(fornitore) {
     let totCategoria = 0;
     for (const a of items) {
       const haNota = a.note && a.note.trim();
-      const altRiga = haNota ? 12 : 7;
-      if (y + altRiga > 275) { pdf.addPage(); y = 20; }
+      if (y + 7 > 275) { pdf.addPage(); y = 20; }
+
+      // Zebra striping
+      const rowIdx = items.indexOf(a);
+      if (rowIdx % 2 === 0) {
+        pdf.setFillColor(247, 245, 242);
+        pdf.rect(14, y - 4, 182, altRiga + 1, 'F');
+      }
 
       pdf.setFontSize(9);
       pdf.setFont('helvetica', 'normal');
       pdf.setTextColor(26, 26, 26);
 
-      // Nome articolo (max 65 caratteri)
-      const art = a.articolo.length > 65 ? a.articolo.substring(0, 63) + '...' : a.articolo;
+      // Nome articolo + nota sulla stessa riga
+      const maxArt = haNota ? 42 : 62;
+      const art = a.articolo.length > maxArt ? a.articolo.substring(0, maxArt-2) + '...' : a.articolo;
       pdf.text(art, 16, y);
+
+      if (haNota) {
+        pdf.setFont('helvetica', 'italic');
+        pdf.setFontSize(7.5);
+        pdf.setTextColor(150, 140, 130);
+        const notaTrunc = a.note.length > 40 ? a.note.substring(0, 38) + '...' : a.note;
+        pdf.text(notaTrunc, 100, y);
+        pdf.setFont('helvetica', 'normal');
+        pdf.setFontSize(9);
+        pdf.setTextColor(26, 26, 26);
+      }
 
       // Q.tà e unità
       pdf.text(a.quantita ? String(parseFloat(a.quantita)) : '-', 142, y);
@@ -1446,19 +1464,7 @@ async function scaricaPDFFornitore(fornitore) {
       pdf.setDrawColor(30, 45, 71);
       pdf.rect(189, y - 3.5, 4.5, 4.5);
 
-      // Nota su riga sotto in grigio
-      if (haNota) {
-        pdf.setFont('helvetica', 'italic');
-        pdf.setFontSize(7.5);
-        pdf.setTextColor(140, 130, 120);
-        const notaTrunc = a.note.length > 90 ? a.note.substring(0, 88) + '...' : a.note;
-        pdf.text(notaTrunc, 22, y + 5);
-        pdf.setFont('helvetica', 'normal');
-        pdf.setFontSize(9);
-        pdf.setTextColor(26, 26, 26);
-      }
-
-      y += altRiga;
+      y += 7;
     }
     if (conPrezzi && totCategoria > 0) {
       pdf.setFont('helvetica', 'bold');
