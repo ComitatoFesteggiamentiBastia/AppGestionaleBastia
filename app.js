@@ -1,3 +1,4 @@
+
 const SUPABASE_URL = 'https://nwpuiwfptkswloauphzn.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im53cHVpd2ZwdGtzd2xvYXVwaHpuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE4MDY5OTEsImV4cCI6MjA5NzM4Mjk5MX0.kOcnfzbxI2xoSRsM26LiyesE8SszyPJ4eBkLRDKgQPc';
 const { createClient } = supabase;
@@ -1404,13 +1405,13 @@ async function scaricaPDFFornitore(fornitore) {
     pdf.setFont('helvetica', 'bold');
     pdf.setTextColor(30, 45, 71);
     pdf.text('Articolo', 16, y);
-    pdf.text('Q.tà', 152, y);
-    pdf.text('Unità', 165, y);
+    pdf.text('Q.ta', 142, y);
+    pdf.text('Unita', 154, y);
     if (conPrezzi) {
-      pdf.text('€ Unit.', 175, y);
-      pdf.text('Tot.', 188, y);
+      pdf.text('Prezzo', 164, y);
+      pdf.text('Totale', 177, y);
     }
-    pdf.text('✓', 198, y);
+    pdf.text('/', 190, y);
     pdf.setDrawColor(212, 201, 190);
     pdf.line(14, y + 2, 202, y + 2);
     y += 6;
@@ -1430,20 +1431,20 @@ async function scaricaPDFFornitore(fornitore) {
       pdf.text(art, 16, y);
 
       // Q.tà e unità
-      pdf.text(a.quantita ? String(parseFloat(a.quantita)) : '—', 152, y);
-      pdf.text(a.unita || '—', 165, y);
+      pdf.text(a.quantita ? String(parseFloat(a.quantita)) : '-', 142, y);
+      pdf.text(a.unita || '-', 154, y);
 
       // Prezzi
       if (conPrezzi) {
-        pdf.text(a.prezzo_unitario ? parseFloat(a.prezzo_unitario).toFixed(2) : '—', 175, y);
+        pdf.text(a.prezzo_unitario ? parseFloat(a.prezzo_unitario).toFixed(2) : '-', 164, y);
         const tot = a.prezzo_totale ? parseFloat(a.prezzo_totale) : 0;
         if (tot) totCategoria += tot;
-        pdf.text(tot ? tot.toFixed(2) : '—', 188, y);
+        pdf.text(tot ? tot.toFixed(2) : '-', 177, y);
       }
 
       // Quadratino spunta
       pdf.setDrawColor(30, 45, 71);
-      pdf.rect(197, y - 3.5, 4.5, 4.5);
+      pdf.rect(189, y - 3.5, 4.5, 4.5);
 
       // Nota su riga sotto in grigio
       if (haNota) {
@@ -1458,7 +1459,7 @@ async function scaricaPDFFornitore(fornitore) {
       }
 
       pdf.setDrawColor(212, 201, 190);
-      pdf.line(14, y + altRiga - 1, 202, y + altRiga - 1);
+      pdf.line(14, y + altRiga - 1, 196, y + altRiga - 1);
       y += altRiga;
     }
     if (conPrezzi && totCategoria > 0) {
