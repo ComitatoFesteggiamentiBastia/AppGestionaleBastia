@@ -1425,7 +1425,7 @@ async function scaricaPDFFornitore(fornitore) {
       const rowIdx = items.indexOf(a);
       if (rowIdx % 2 === 0) {
         pdf.setFillColor(247, 245, 242);
-        pdf.rect(14, y - 4, 182, altRiga + 1, 'F');
+        pdf.rect(14, y - 4, 182, 8, 'F');
       }
 
       pdf.setFontSize(9);
