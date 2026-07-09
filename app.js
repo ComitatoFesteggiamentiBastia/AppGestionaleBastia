@@ -1123,7 +1123,7 @@ async function loadSponsor() {
   const sagraId = getSagraId();
   aggiornaHeaderSagra('sp-sagra-header');
   if (!sagraId) {
-    document.getElementById('sponsor-tbody').innerHTML = '<tr><td colspan="6" style="padding:24px;text-align:center;color:var(--testo-muted);">Crea prima un\'edizione sagra</td></tr>';
+    document.getElementById('sponsor-tbody').innerHTML = '<tr><td colspan="9" style="padding:24px;text-align:center;color:var(--testo-muted);">Crea prima un\'edizione sagra</td></tr>';
     return;
   }
   const { data } = await db.from('sponsor').select('*').eq('sagra_id', sagraId).order('ditta');
@@ -1150,33 +1150,33 @@ function renderSponsor() {
   const tbody = document.getElementById('sponsor-tbody');
   if (!tbody) return;
   if (!tuttiSponsor.length && !sponsorAnnoPrecedente.length) {
-    tbody.innerHTML = '<tr><td colspan="7" style="padding:24px;text-align:center;color:var(--testo-muted);">Nessuno sponsor</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9" style="padding:24px;text-align:center;color:var(--testo-muted);">Nessuno sponsor</td></tr>';
     return;
   }
   const tipoLabel = { offerta: 'Offerta €', materiale: 'Materiale', mano_dopera: "Mano d'opera", altro: 'Altro' };
 
   function precInfo(prec) {
     if (!prec) return '<span style="color:#ccc;">—</span>';
-    let cosa;
-    if (prec.tipo === 'materiale') cosa = 'Materiale' + (prec.dettaglio ? ': ' + prec.dettaglio : '');
-    else if (prec.tipo === 'mano_dopera') cosa = "Mano d'opera" + (prec.dettaglio ? ': ' + prec.dettaglio : '');
-    else if (prec.importo) cosa = '€ ' + parseFloat(prec.importo).toFixed(0);
-    else cosa = prec.dettaglio || tipoLabel[prec.tipo] || '—';
-    const stato = prec.ricevuto
-      ? '<span class="badge badge-ok" style="margin-left:4px;">✓</span>'
-      : '<span class="badge badge-no" style="margin-left:4px;">non dato</span>';
-    return `${cosa}${stato}`;
+    if (prec.tipo === 'materiale') return 'Materiale' + (prec.dettaglio ? ': ' + prec.dettaglio : '');
+    if (prec.tipo === 'mano_dopera') return "Mano d'opera" + (prec.dettaglio ? ': ' + prec.dettaglio : '');
+    if (prec.importo) return '€ ' + parseFloat(prec.importo).toFixed(0);
+    return prec.dettaglio || tipoLabel[prec.tipo] || '—';
   }
 
   const righeAttuali = tuttiSponsor.map((s, i) => {
     const prec = sponsorAnnoPrecedente.find(p => p.ditta.toLowerCase() === s.ditta.toLowerCase());
+    const logoCell = s.logo_url
+      ? `<img src="${s.logo_url}" style="height:28px;max-width:60px;object-fit:contain;">`
+      : '<span style="color:#ccc;">—</span>';
     return `<tr style="${i%2===0?'':'background:#F5F7FB;'}border-bottom:1px solid var(--border);">
       <td style="padding:8px 12px;font-size:11px;">${precInfo(prec)}</td>
+      <td style="padding:8px 12px;text-align:center;">${logoCell}</td>
       <td style="padding:8px 12px;font-weight:500;">${s.ditta}</td>
       <td style="padding:8px 12px;"><span class="badge badge-pietra">${tipoLabel[s.tipo] || s.tipo}</span></td>
       <td style="padding:8px 12px;">${s.importo ? '€ ' + parseFloat(s.importo).toFixed(2) : '—'}</td>
       <td style="padding:8px 12px;font-size:12px;color:var(--testo-muted);">${s.dettaglio || '—'}</td>
       <td style="padding:8px 12px;"><span class="badge ${s.ricevuto ? 'badge-ok' : 'badge-no'}">${s.ricevuto ? 'Ricevuto' : 'In attesa'}</span></td>
+      <td style="padding:8px 12px;text-align:center;">${s.pubblica_sito ? '<span class="badge badge-ok">Online</span>' : '<span class="badge badge-no">Off</span>'}</td>
       <td style="padding:8px 12px;text-align:center;white-space:nowrap;">
         <button class="btn btn-sm" onclick='openModalSponsor(${JSON.stringify(s).replace(/"/g,"&quot;")})'><i class="ti ti-edit"></i></button>
         <button class="btn btn-sm" style="color:#991B1B" onclick="eliminaSponsor('${s.id}')"><i class="ti ti-trash"></i></button>
@@ -1190,8 +1190,9 @@ function renderSponsor() {
   );
   const righeMancanti = mancanti.map(p => `<tr style="border-bottom:1px solid var(--border);color:#999;font-style:italic;">
       <td style="padding:8px 12px;font-size:11px;">${precInfo(p)}</td>
+      <td style="padding:8px 12px;"></td>
       <td style="padding:8px 12px;">${p.ditta}</td>
-      <td style="padding:8px 12px;" colspan="4">non ancora inserito quest'anno</td>
+      <td style="padding:8px 12px;" colspan="5">non ancora inserito quest'anno</td>
       <td style="padding:8px 12px;text-align:center;">
         <button class="btn btn-sm" onclick="openModalSponsor({ditta:'${p.ditta.replace(/'/g,"\\'")}'})" title="Aggiungi"><i class="ti ti-plus"></i></button>
       </td>
@@ -1210,9 +1211,26 @@ function openModalSponsor(s = null) {
   document.getElementById('m-sp-dettaglio').value = s?.dettaglio || '';
   document.getElementById('m-sp-modo').value = s?.modo_pagamento || '';
   document.getElementById('m-sp-ricevuto').checked = s?.ricevuto || false;
+  document.getElementById('m-sp-pubblica').checked = s?.pubblica_sito || false;
   document.getElementById('m-sp-note').value = s?.note || '';
+  document.getElementById('m-sp-logo-url').value = s?.logo_url || '';
+  document.getElementById('m-sp-logo-file').value = '';
+  document.getElementById('m-sp-logo-preview').innerHTML = s?.logo_url
+    ? `<img src="${s.logo_url}" style="height:48px;border-radius:6px;border:1px solid var(--border);">`
+    : '';
   // Setup autocomplete storico
   setTimeout(() => setupAutocompleteSponsor(), 100);
+}
+
+function anteprimaLogoSponsor() {
+  const file = document.getElementById('m-sp-logo-file').files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    document.getElementById('m-sp-logo-preview').innerHTML =
+      `<img src="${e.target.result}" style="height:48px;border-radius:6px;border:1px solid var(--border);">`;
+  };
+  reader.readAsDataURL(file);
 }
 
 function setupAutocompleteSponsor() {
@@ -1246,16 +1264,34 @@ async function saveSponsor() {
   if (!ditta) { showToast('Nome ditta obbligatorio', 'error'); return; }
 
   const ricevutoNuovo = document.getElementById('m-sp-ricevuto').checked;
+  const pubblicaSito = document.getElementById('m-sp-pubblica').checked;
   const importo = parseFloat(document.getElementById('m-sp-importo').value) || null;
   const tipo = document.getElementById('m-sp-tipo').value;
   const dettaglio = document.getElementById('m-sp-dettaglio').value.trim() || null;
   const modo = document.getElementById('m-sp-modo').value.trim() || null;
+
+  // Upload logo se è stato selezionato un nuovo file
+  let logoUrl = document.getElementById('m-sp-logo-url').value || null;
+  const logoFile = document.getElementById('m-sp-logo-file').files[0];
+  if (logoFile) {
+    const ext = logoFile.name.split('.').pop();
+    const path = `${ditta.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}-${Date.now()}.${ext}`;
+    const { error: eUpload } = await db.storage.from('loghi-sponsor').upload(path, logoFile, { upsert: true });
+    if (eUpload) {
+      showToast('Errore upload logo: ' + eUpload.message, 'error');
+    } else {
+      const { data: pub } = db.storage.from('loghi-sponsor').getPublicUrl(path);
+      logoUrl = pub.publicUrl;
+    }
+  }
 
   const payload = {
     sagra_id: sagraId,
     ditta, tipo, importo, dettaglio,
     modo_pagamento: modo,
     ricevuto: ricevutoNuovo,
+    pubblica_sito: pubblicaSito,
+    logo_url: logoUrl,
     note: document.getElementById('m-sp-note').value.trim() || null
   };
 

@@ -890,11 +890,13 @@
           <thead>
             <tr style="background:var(--blu-notte);color:white;">
               <th style="padding:10px 12px;text-align:left;opacity:0.6;">Anno prec.</th>
+              <th style="padding:10px 12px;text-align:center;">Logo</th>
               <th style="padding:10px 12px;text-align:left;">Ditta</th>
               <th style="padding:10px 12px;text-align:left;">Tipo</th>
               <th style="padding:10px 12px;text-align:left;">Importo</th>
               <th style="padding:10px 12px;text-align:left;">Dettaglio</th>
               <th style="padding:10px 12px;text-align:left;">Stato</th>
+              <th style="padding:10px 12px;text-align:center;">Sito</th>
               <th style="padding:10px 12px;text-align:center;">Azioni</th>
             </tr>
           </thead>
@@ -1604,6 +1606,12 @@
     </div>
     <div class="form-group"><label>Ditta *</label><input id="m-sp-ditta" list="sponsor-storico-list" autocomplete="off"><datalist id="sponsor-storico-list"></datalist><div style="font-size:11px;color:var(--testo-muted);margin-top:3px;">Se la ditta è già presente nello storico, i campi si precompilano automaticamente</div></div>
     <div class="form-group">
+      <label>Logo</label>
+      <input type="file" id="m-sp-logo-file" accept="image/*" onchange="anteprimaLogoSponsor()">
+      <div id="m-sp-logo-preview" style="margin-top:8px;"></div>
+      <input type="hidden" id="m-sp-logo-url">
+    </div>
+    <div class="form-group">
       <label>Tipo contributo</label>
       <select id="m-sp-tipo" style="width:100%;padding:9px 12px;border:1px solid #D4C9BE;border-radius:8px;font-size:14px;outline:none;">
         <option value="offerta">Offerta in €</option>
@@ -1616,6 +1624,11 @@
     <div class="form-group"><label>Dettaglio</label><input id="m-sp-dettaglio" placeholder="Es. Trapunta lotteria, mano d'opera..."></div>
     <div class="form-group"><label>Modo pagamento</label><input id="m-sp-modo" placeholder="Contanti, bonifico..."></div>
     <div class="form-group"><label>Note</label><input id="m-sp-note"></div>
+    <div class="form-group">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;">
+        <input type="checkbox" id="m-sp-pubblica" style="width:16px;height:16px;accent-color:var(--verde);"> Pubblica sul sito
+      </label>
+    </div>
     <div class="form-group">
       <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;">
         <input type="checkbox" id="m-sp-ricevuto" style="width:16px;height:16px;accent-color:var(--verde);"> Contributo ricevuto
