@@ -1,4 +1,4 @@
-const CACHE = 'gestionale-bastia-v8';
+const CACHE = 'gestionale-bastia-v9';
 const FILES = [
   './',
   './index.html',
