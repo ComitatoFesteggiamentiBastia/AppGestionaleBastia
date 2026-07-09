@@ -1458,9 +1458,9 @@ async function scaricaPDFFornitore(fornitore) {
         pdf.setTextColor(26, 26, 26);
       }
 
-      y += altRiga;
       pdf.setDrawColor(212, 201, 190);
-      pdf.line(14, y - 1, 196, y - 1);
+      pdf.line(14, y + altRiga - 2, 196, y + altRiga - 2);
+      y += altRiga;
     }
     if (conPrezzi && totCategoria > 0) {
       pdf.setFont('helvetica', 'bold');
