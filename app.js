@@ -1,4 +1,3 @@
-
 const SUPABASE_URL = 'https://nwpuiwfptkswloauphzn.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im53cHVpd2ZwdGtzd2xvYXVwaHpuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE4MDY5OTEsImV4cCI6MjA5NzM4Mjk5MX0.kOcnfzbxI2xoSRsM26LiyesE8SszyPJ4eBkLRDKgQPc';
 const { createClient } = supabase;
@@ -1427,7 +1426,7 @@ async function scaricaPDFFornitore(fornitore) {
       pdf.setTextColor(26, 26, 26);
 
       // Nome articolo (max 65 caratteri)
-      const art = a.articolo.length > 65 ? a.articolo.substring(0, 63) + '…' : a.articolo;
+      const art = a.articolo.length > 65 ? a.articolo.substring(0, 63) + '...' : a.articolo;
       pdf.text(art, 16, y);
 
       // Q.tà e unità
@@ -1448,10 +1447,12 @@ async function scaricaPDFFornitore(fornitore) {
 
       // Nota su riga sotto in grigio
       if (haNota) {
+        pdf.setFont('helvetica', 'italic');
         pdf.setFontSize(7.5);
         pdf.setTextColor(140, 130, 120);
-        const notaTrunc = a.note.length > 90 ? a.note.substring(0, 88) + '…' : a.note;
-        pdf.text('↳ ' + notaTrunc, 20, y + 5);
+        const notaTrunc = a.note.length > 90 ? a.note.substring(0, 88) + '...' : a.note;
+        pdf.text(notaTrunc, 22, y + 5);
+        pdf.setFont('helvetica', 'normal');
         pdf.setFontSize(9);
         pdf.setTextColor(26, 26, 26);
       }
@@ -2954,7 +2955,7 @@ async function scaricaPDFTotale() {
         pdf.setFontSize(8.5);
         pdf.setFont('helvetica', 'normal');
         pdf.setTextColor(26, 26, 26);
-        const art = a.articolo.length > 65 ? a.articolo.substring(0, 63) + '…' : a.articolo;
+        const art = a.articolo.length > 65 ? a.articolo.substring(0, 63) + '...' : a.articolo;
         pdf.text(art, 16, y);
         pdf.text(a.quantita ? String(parseFloat(a.quantita)) : '—', 152, y);
         pdf.text(a.unita || '', 165, y);
@@ -2967,10 +2968,12 @@ async function scaricaPDFTotale() {
         pdf.setDrawColor(30, 45, 71);
         pdf.rect(197, y - 3, 4, 4);
         if (haNota2) {
+          pdf.setFont('helvetica', 'italic');
           pdf.setFontSize(7);
           pdf.setTextColor(140, 130, 120);
-          const notaTrunc2 = a.note.length > 90 ? a.note.substring(0,88)+'…' : a.note;
-          pdf.text('↳ ' + notaTrunc2, 20, y + 4.5);
+          const notaTrunc2 = a.note.length > 90 ? a.note.substring(0,88)+'...' : a.note;
+          pdf.text(notaTrunc2, 22, y + 4.5);
+          pdf.setFont('helvetica', 'normal');
           pdf.setFontSize(8.5);
           pdf.setTextColor(26, 26, 26);
         }
