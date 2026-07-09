@@ -1,3 +1,4 @@
+
 const SUPABASE_URL = 'https://nwpuiwfptkswloauphzn.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im53cHVpd2ZwdGtzd2xvYXVwaHpuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE4MDY5OTEsImV4cCI6MjA5NzM4Mjk5MX0.kOcnfzbxI2xoSRsM26LiyesE8SszyPJ4eBkLRDKgQPc';
 const { createClient } = supabase;
@@ -1401,16 +1402,17 @@ async function scaricaPDFFornitore(fornitore) {
     pdf.setTextColor(30, 45, 71);
     if (conPrezzi) {
       pdf.text('Articolo', 16, y);
-      pdf.text('Q.tà', 110, y);
-      pdf.text('Unità', 125, y);
-      pdf.text('Prezzo', 140, y);
-      pdf.text('Totale', 162, y);
+      pdf.text('Note', 90, y);
+      pdf.text('Q.tà', 135, y);
+      pdf.text('Unità', 148, y);
+      pdf.text('Prezzo', 160, y);
+      pdf.text('Totale', 176, y);
       pdf.text('✓', 196, y);
     } else {
       pdf.text('Articolo', 16, y);
-      pdf.text('Q.tà', 140, y);
-      pdf.text('Unità', 158, y);
-      pdf.text('Stato', 172, y);
+      pdf.text('Note', 100, y);
+      pdf.text('Q.tà', 148, y);
+      pdf.text('Unità', 162, y);
       pdf.text('✓', 196, y);
     }
     pdf.setDrawColor(212, 201, 190);
@@ -1427,19 +1429,24 @@ async function scaricaPDFFornitore(fornitore) {
       pdf.setFontSize(9);
       pdf.setFont('helvetica', 'normal');
       pdf.setTextColor(26, 26, 26);
-      const art = a.articolo.length > (conPrezzi ? 42 : 55) ? a.articolo.substring(0, conPrezzi ? 40 : 53) + '...' : a.articolo;
+      const artMax = conPrezzi ? 38 : 48;
+      const art = a.articolo.length > artMax ? a.articolo.substring(0, artMax-2) + '...' : a.articolo;
       pdf.text(art, 16, y);
-      pdf.text(a.quantita ? String(parseFloat(a.quantita)) : '—', conPrezzi ? 110 : 140, y);
-      pdf.text(a.unita || '—', conPrezzi ? 125 : 158, y);
+      const nota = a.note ? (a.note.length > 28 ? a.note.substring(0,26)+'...' : a.note) : '';
+      if (nota) {
+        pdf.setFontSize(7.5);
+        pdf.setTextColor(140, 130, 120);
+        pdf.text(nota, 90, y);
+        pdf.setFontSize(9);
+        pdf.setTextColor(26, 26, 26);
+      }
+      pdf.text(a.quantita ? String(parseFloat(a.quantita)) : '—', conPrezzi ? 135 : 148, y);
+      pdf.text(a.unita || '—', conPrezzi ? 148 : 162, y);
       if (conPrezzi) {
-        pdf.text(a.prezzo_unitario ? '€ ' + parseFloat(a.prezzo_unitario).toFixed(2) : '—', 140, y);
+        pdf.text(a.prezzo_unitario ? '€ ' + parseFloat(a.prezzo_unitario).toFixed(2) : '—', 160, y);
         const tot = a.prezzo_totale ? parseFloat(a.prezzo_totale) : 0;
         if (tot) totCategoria += tot;
-        pdf.text(tot ? '€ ' + tot.toFixed(2) : '—', 162, y);
-      } else {
-        pdf.setTextColor(a.stato === 'comprato' ? 74 : 122, a.stato === 'comprato' ? 103 : 101, a.stato === 'comprato' ? 65 : 72);
-        pdf.text(statoLabel[a.stato] || '—', 172, y);
-        pdf.setTextColor(26, 26, 26);
+        pdf.text(tot ? '€ ' + tot.toFixed(2) : '—', 176, y);
       }
       pdf.setDrawColor(30, 45, 71);
       pdf.rect(193, y - 4, 5, 5);
@@ -2935,15 +2942,24 @@ async function scaricaPDFTotale() {
         pdf.setFontSize(8.5);
         pdf.setFont('helvetica', 'normal');
         pdf.setTextColor(26, 26, 26);
-        const art = a.articolo.length > (conPrezzi ? 42 : 55) ? a.articolo.substring(0, conPrezzi ? 40 : 53) + '...' : a.articolo;
+        const artMax2 = conPrezzi ? 38 : 48;
+        const art = a.articolo.length > artMax2 ? a.articolo.substring(0, artMax2-2) + '...' : a.articolo;
         pdf.text(art, 16, y);
-        pdf.text(a.quantita ? String(parseFloat(a.quantita)) : '—', conPrezzi ? 110 : 140, y);
-        pdf.text(a.unita || '', conPrezzi ? 125 : 155, y);
+        const nota2 = a.note ? (a.note.length > 28 ? a.note.substring(0,26)+'...' : a.note) : '';
+        if (nota2) {
+          pdf.setFontSize(7);
+          pdf.setTextColor(140, 130, 120);
+          pdf.text(nota2, 90, y);
+          pdf.setFontSize(8.5);
+          pdf.setTextColor(26, 26, 26);
+        }
+        pdf.text(a.quantita ? String(parseFloat(a.quantita)) : '—', conPrezzi ? 135 : 148, y);
+        pdf.text(a.unita || '', conPrezzi ? 148 : 162, y);
         if (conPrezzi) {
-          pdf.text(a.prezzo_unitario ? '€ ' + parseFloat(a.prezzo_unitario).toFixed(2) : '—', 140, y);
+          pdf.text(a.prezzo_unitario ? '€ ' + parseFloat(a.prezzo_unitario).toFixed(2) : '—', 160, y);
           const tot = parseFloat(a.prezzo_totale || 0);
           if (tot) { totFornitore += tot; totaleGenerale += tot; }
-          pdf.text(tot ? '€ ' + tot.toFixed(2) : '—', 162, y);
+          pdf.text(tot ? '€ ' + tot.toFixed(2) : '—', 176, y);
         }
         pdf.setDrawColor(30, 45, 71);
         pdf.rect(193, y - 3.5, 4.5, 4.5);
