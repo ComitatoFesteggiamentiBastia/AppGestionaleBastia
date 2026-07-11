@@ -563,15 +563,41 @@ async function importExcel(input) {
     const dataRows = rows.slice(headerRow + 1).filter(r => r.some(c => c !== ''));
     let importati = 0, errori = 0;
 
-    for (const row of dataRows) {
+    // Parsing preliminare di tutte le righe
+    const oggetti = dataRows.map(row => {
       const obj = {};
       rawHeaders.forEach((h, i) => {
         const normalized = h.replace(/_/g, ' ').trim();
         const key = keyMap[h] || keyMap[normalized];
         if (key) obj[key] = String(row[i] || '').trim();
       });
-      if (!obj.codice_fiscale || !obj.cognome || !obj.nome) { errori++; continue; }
+      return obj;
+    }).filter(obj => obj.codice_fiscale && obj.cognome && obj.nome);
 
+    errori += dataRows.length - oggetti.length;
+
+    // Controllo duplicati di numero tessera all'interno del file stesso
+    const numeriVisti = {};
+    for (const obj of oggetti) {
+      const n = parseInt(obj.numero_tessera);
+      if (n) {
+        if (numeriVisti[n]) {
+          showToast(`Tessera n° ${n} duplicata nel file (${numeriVisti[n]} e ${obj.cognome} ${obj.nome}). Import annullato.`, 'error');
+          input.value = '';
+          return;
+        }
+        numeriVisti[n] = `${obj.cognome} ${obj.nome}`;
+      }
+    }
+
+    // Azzera temporaneamente i numeri tessera dei soci coinvolti, per evitare conflitti
+    // di unicità mentre si riassegnano i numeri (es. scambi tra due soci)
+    const cfCoinvolti = oggetti.map(o => o.codice_fiscale.toUpperCase());
+    if (cfCoinvolti.length) {
+      await db.from('soci').update({ numero_tessera: null }).in('codice_fiscale', cfCoinvolti);
+    }
+
+    for (const obj of oggetti) {
       obj.codice_fiscale = obj.codice_fiscale.toUpperCase();
       if (obj.data_nascita) {
         // Se è numero seriale Excel convertilo, altrimenti parseDataIT
@@ -590,7 +616,7 @@ async function importExcel(input) {
         }
         if (!obj.data_iscrizione) delete obj.data_iscrizione;
       }
-      if (obj.anno_rinnovo) obj.anno_rinnovo = parseInt(obj.anno_rinnovo) || null;
+      if (obj.anno_rinnovo !== undefined) obj.anno_rinnovo = parseInt(obj.anno_rinnovo) || null;
       if (obj.numero_tessera !== undefined) obj.numero_tessera = parseInt(obj.numero_tessera) || null;
       obj.attivo = true;
       obj.updated_at = new Date().toISOString();
