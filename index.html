@@ -973,6 +973,7 @@
           </select>
 
           <button class="btn btn-add" onclick="openModalInventario()"><i class="ti ti-plus"></i> Articolo</button>
+          <button class="btn" onclick="generaPDFInventario()"><i class="ti ti-file-text"></i> PDF</button>
         </div>
       </div>
       <!-- Stats -->
@@ -1215,6 +1216,7 @@
                   <th style="padding:8px 12px;text-align:left;font-weight:600;color:var(--blu-notte);">Fornitore</th>
                   <th style="padding:8px 12px;text-align:left;font-weight:600;color:var(--blu-notte);">Categoria</th>
                   <th style="padding:8px 12px;text-align:left;font-weight:600;color:var(--blu-notte);">Prezzo rif.</th>
+                  <th style="padding:8px 12px;text-align:left;font-weight:600;color:var(--blu-notte);">Note</th>
                   <th style="padding:8px 12px;text-align:center;font-weight:600;color:var(--blu-notte);">Azioni</th>
                 </tr>
               </thead>
@@ -1449,6 +1451,7 @@
       </div>
       <div class="form-group"><label>Quantità *</label><input id="m-inv-quantita" type="number" min="0"></div>
       <div class="form-group"><label>Unità</label><input id="m-inv-unita" list="inv-unita-list" placeholder="" autocomplete="off"><datalist id="inv-unita-list"></datalist></div>
+      <div class="form-group" style="grid-column:1/3"><label>Posizione</label><input id="m-inv-posizione" placeholder="Es. Magazzino, Scaffale A..."></div>
 
       <div class="form-group" style="grid-column:1/3"><label>Note</label><input id="m-inv-note"></div>
     </div>

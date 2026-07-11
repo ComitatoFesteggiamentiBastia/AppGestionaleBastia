@@ -1361,18 +1361,22 @@ async function loadSpesa() {
   const sagraId = getSagraId();
   aggiornaHeaderSagra('spesa-sagra-header');
   if (!sagraId) return;
-  const [spesaRes, unitaRes, standRes] = await Promise.all([
+  const [spesaRes, unitaRes, standRes, invRes] = await Promise.all([
     db.from('lista_spesa').select('*').eq('sagra_id', sagraId).order('fornitore').order('categoria'),
     db.from('unita_misura').select('*').order('nome'),
-    db.from('stand_sagra').select('*').order('nome')
+    db.from('stand_sagra').select('*').order('nome'),
+    db.from('inventario').select('nome,quantita,unita')
   ]);
   tuttiArticoliSpesa = spesaRes.data || [];
   unitaMisura = unitaRes.data || [];
   standSagra = standRes.data || [];
+  mappaRimanenze = {};
+  (invRes.data || []).forEach(i => { mappaRimanenze[i.nome.toLowerCase().trim()] = i; });
   aggiornaDatalistSpesa();
   renderSpesa();
   aggiornaStatsSpesa();
 }
+let mappaRimanenze = {};
 
 function aggiornaDatalistSpesa() {
   const dlUnita = document.getElementById('unita-list');
@@ -1659,6 +1663,9 @@ function rowSpesa(a) {
   const statoColor = { da_ordinare: 'badge-no', ordinato: 'badge-pietra', comprato: 'badge-ok' };
   const statoLabel = { da_ordinare: 'Da ordinare', ordinato: 'Ordinato', comprato: 'Comprato' };
   const giornoLabel = { sabato: 'Sab', domenica: 'Dom', entrambi: 'Entrambi' };
+  const riman = mappaRimanenze[(a.articolo || '').toLowerCase().trim()];
+  const badgeRimanenza = (riman && riman.quantita > 0)
+    ? `<span class="badge badge-ok" title="Presente in inventario">📦 Rimanenza: ${riman.quantita} ${riman.unita || ''}</span>` : '';
   return `<div class="table-row">
     <input type="checkbox" ${a.stato === 'comprato' ? 'checked' : ''} onchange="toggleSpesaAcquistata('${a.id}', this.checked)"
       style="width:16px;height:16px;accent-color:var(--verde);cursor:pointer;margin-right:4px;">
@@ -1666,6 +1673,7 @@ function rowSpesa(a) {
       <div class="row-name" style="${a.stato === 'comprato' ? 'text-decoration:line-through;opacity:0.6;' : ''}">${a.articolo}</div>
       <div class="row-sub">${a.fornitore || ''} ${a.quantita ? '· Q: ' + a.quantita + (a.unita ? ' ' + a.unita : '') : ''} ${a.prezzo_totale ? '· € ' + parseFloat(a.prezzo_totale).toFixed(2) : ''} ${a.giorno ? '· ' + (giornoLabel[a.giorno] || a.giorno) : ''}</div>
     </div>
+    ${badgeRimanenza}
     <span class="badge ${statoColor[a.stato] || 'badge-no'}">${statoLabel[a.stato] || a.stato}</span>
     <button class="btn btn-sm" onclick='openModalSpesa(${JSON.stringify(a).replace(/"/g,"&quot;")})'><i class="ti ti-edit"></i></button>
     <button class="btn btn-sm" style="color:#991B1B" onclick="eliminaSpesa('${a.id}')"><i class="ti ti-trash"></i></button>
@@ -2081,6 +2089,7 @@ async function openModalInventario(i = null) {
   document.getElementById('m-inv-categoria').value = i?.categoria || '';
   document.getElementById('m-inv-quantita').value = i?.quantita ?? '';
   document.getElementById('m-inv-unita').value = i?.unita || '';
+  document.getElementById('m-inv-posizione').value = i?.posizione || '';
   document.getElementById('m-inv-note').value = i?.note || '';
 
   // Datalist categorie inventario
@@ -2118,6 +2127,7 @@ async function saveInventario() {
     categoria: document.getElementById('m-inv-categoria').value.trim() || null,
     quantita,
     unita: document.getElementById('m-inv-unita').value.trim() || null,
+    posizione: document.getElementById('m-inv-posizione').value.trim() || null,
     note: document.getElementById('m-inv-note').value.trim() || null,
     updated_at: new Date().toISOString()
   };
@@ -2140,6 +2150,130 @@ async function eliminaInventario(id) {
   await db.from('inventario').delete().eq('id', id);
   showToast('Eliminato', 'success');
   loadInventario();
+}
+
+async function generaPDFInventario() {
+  await caricaJsPDF();
+  const { jsPDF } = window.jspdf;
+  const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const oggi = new Date().toLocaleDateString('it-IT');
+
+  const COL_NOME_X = 16, COL_NOME_MAXW = 78;
+  const COL_POS_X = 96, COL_POS_MAXW = 40;
+  const COL_QTA_X = 148, COL_QTA_W = 12;
+  const COL_UNI_X = 152;
+  const COL_STATO_X = 196;
+
+  function drawHeader() {
+    pdf.setFillColor(30, 45, 71);
+    pdf.rect(0, 0, 210, 28, 'F');
+    pdf.setTextColor(201, 160, 48);
+    pdf.setFontSize(16);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text('RESOCONTO INVENTARIO', 14, 12);
+    pdf.setFontSize(10);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(200, 216, 240);
+    pdf.text('Comitato Festeggiamenti N.S. della Bastia', 14, 20);
+    pdf.text(oggi, 196, 20, { align: 'right' });
+  }
+
+  function drawIntestazioneColonne(y) {
+    pdf.setFontSize(8);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(30, 45, 71);
+    pdf.text('Articolo', COL_NOME_X, y);
+    pdf.text('Posizione', COL_POS_X, y);
+    pdf.text('Q.tà', COL_QTA_X + COL_QTA_W, y, { align: 'right' });
+    pdf.text('Unità', COL_UNI_X, y);
+    pdf.text('Stato', COL_STATO_X, y, { align: 'right' });
+    pdf.setDrawColor(212, 201, 190);
+    pdf.line(14, y + 2, 196, y + 2);
+    return y + 6;
+  }
+
+  const statoLabel = { ottimo: 'Ottimo', buono: 'Buono', da_revisionare: 'Da revis.', fuori_uso: 'Fuori uso' };
+
+  drawHeader();
+  let y = 36;
+  const gruppi = {};
+  tuttoInventario.forEach(i => {
+    const cat = i.categoria || 'Senza categoria';
+    if (!gruppi[cat]) gruppi[cat] = [];
+    gruppi[cat].push(i);
+  });
+
+  for (const [cat, items] of Object.entries(gruppi)) {
+    if (y > 260) { pdf.addPage(); drawHeader(); y = 36; }
+
+    pdf.setFillColor(242, 237, 232);
+    pdf.rect(14, y - 3, 182, 6, 'F');
+    pdf.setFontSize(8);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(122, 101, 72);
+    pdf.text(cat.toUpperCase() + ` (${items.length})`, 16, y + 1);
+    y += 8;
+
+    y = drawIntestazioneColonne(y);
+
+    items.forEach((i, idx) => {
+      if (y > 275) { pdf.addPage(); drawHeader(); y = 36; y = drawIntestazioneColonne(y); }
+
+      if (idx % 2 === 0) {
+        pdf.setFillColor(247, 245, 242);
+        pdf.rect(14, y - 4, 182, 7, 'F');
+      }
+
+      pdf.setFontSize(8.5);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(26, 26, 26);
+
+      let nome = i.nome || '';
+      while (pdf.getTextWidth(nome) > COL_NOME_MAXW && nome.length > 3) {
+        nome = nome.substring(0, nome.length - 4) + '...';
+      }
+      pdf.text(nome, COL_NOME_X, y);
+
+      let pos = i.posizione || '—';
+      while (pdf.getTextWidth(pos) > COL_POS_MAXW && pos.length > 3) {
+        pos = pos.substring(0, pos.length - 4) + '...';
+      }
+      pdf.text(pos, COL_POS_X, y);
+
+      pdf.text(i.quantita != null ? String(parseFloat(i.quantita)) : '—', COL_QTA_X + COL_QTA_W, y, { align: 'right' });
+      pdf.text(i.unita || '—', COL_UNI_X, y);
+
+      pdf.setFontSize(7.5);
+      pdf.setTextColor(90, 90, 90);
+      pdf.text(statoLabel[i.stato] || '—', COL_STATO_X, y, { align: 'right' });
+
+      if (i.note) {
+        pdf.setFont('helvetica', 'italic');
+        pdf.setFontSize(7);
+        pdf.setTextColor(150, 140, 130);
+        const notaX = COL_NOME_X + pdf.getTextWidth(nome) + 4;
+        const spazioDisp = COL_POS_X - notaX - 2;
+        if (spazioDisp > 12) {
+          let nota = i.note;
+          while (pdf.getTextWidth(nota) > spazioDisp && nota.length > 3) {
+            nota = nota.substring(0, nota.length - 4) + '...';
+          }
+          pdf.text(nota, notaX, y);
+        }
+      }
+
+      y += 7;
+    });
+    y += 4;
+  }
+
+  pdf.setFontSize(8);
+  pdf.setFont('helvetica', 'italic');
+  pdf.setTextColor(130, 130, 130);
+  pdf.text(`Totale articoli censiti: ${tuttoInventario.length}`, 14, y + 4);
+
+  pdf.save(`inventario_${oggi.replace(/\//g,'-')}.pdf`);
+  showToast('PDF inventario generato!', 'success');
 }
 
 // ===== MARIELLO — AI ASSISTANT =====
@@ -2923,7 +3057,7 @@ function renderCatalogoTabella() {
   if (search) lista = lista.filter(a => JSON.stringify(a).toLowerCase().includes(search));
 
   if (!lista.length) {
-    tbody.innerHTML = '<tr><td colspan="5" style="padding:16px;text-align:center;color:var(--testo-muted);">Nessun articolo</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" style="padding:16px;text-align:center;color:var(--testo-muted);">Nessun articolo</td></tr>';
     return;
   }
 
@@ -2933,11 +3067,19 @@ function renderCatalogoTabella() {
       <td style="padding:7px 12px;font-size:12px;color:var(--testo-muted);">${a.fornitore || '—'}</td>
       <td style="padding:7px 12px;font-size:12px;color:var(--testo-muted);">${a.categoria || '—'}</td>
       <td style="padding:7px 12px;font-size:12px;">${a.prezzo_unitario ? '€ '+parseFloat(a.prezzo_unitario).toFixed(2) : '—'}</td>
+      <td style="padding:7px 12px;font-size:12px;color:var(--testo-muted);cursor:pointer;" onclick="modificaNoteCatalogo('${a.id}','${(a.note||'').replace(/'/g,"\\'")}')" title="Clicca per modificare">${a.note || '<span style=\"opacity:0.4;\">+ nota</span>'}</td>
       <td style="padding:7px 12px;text-align:center;">
         <button class="btn btn-sm" style="color:#991B1B" onclick="eliminaArticoloCatalogo('${a.id}')"><i class="ti ti-trash"></i></button>
       </td>
     </tr>
   `).join('');
+}
+
+async function modificaNoteCatalogo(id, noteAttuali) {
+  const nuova = prompt('Nota per questo articolo (fornitore preferito, avvertenze, ecc.):', noteAttuali);
+  if (nuova === null) return;
+  await db.from('catalogo_spesa').update({ note: nuova.trim() || null }).eq('id', id);
+  await loadCatalogoCompleto();
 }
 
 async function eliminaArticoloCatalogo(id) {
