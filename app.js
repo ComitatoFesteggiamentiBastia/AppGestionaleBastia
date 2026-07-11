@@ -1,3 +1,4 @@
+
 const SUPABASE_URL = 'https://nwpuiwfptkswloauphzn.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im53cHVpd2ZwdGtzd2xvYXVwaHpuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE4MDY5OTEsImV4cCI6MjA5NzM4Mjk5MX0.kOcnfzbxI2xoSRsM26LiyesE8SszyPJ4eBkLRDKgQPc';
 const { createClient } = supabase;
@@ -2839,6 +2840,24 @@ async function toggleTesseraStampata(id, valore) {
   showToast(valore ? 'Segnata come stampata' : 'Segnata come da stampare', 'success');
 }
 
+async function apriRinominaStorico(vecchioNome) {
+  const suggerimenti = catalogoSpesa.map(c => c.articolo).sort();
+  const elenco = suggerimenti.length ? '\n\nArticoli esistenti in Database Articoli (copia il nome esatto se corrisponde):\n' + suggerimenti.join(', ') : '';
+  const nuovoNome = prompt(`Correggi il nome articolo "${vecchioNome}" in Storico Prezzi.\nInserisci il nome corretto (deve corrispondere esattamente a un articolo di Database Articoli):${elenco}`, vecchioNome);
+  if (!nuovoNome || !nuovoNome.trim() || nuovoNome.trim() === vecchioNome) return;
+  const nomeFinale = nuovoNome.trim();
+
+  const { error } = await db.from('storico_prezzi').update({ articolo: nomeFinale }).eq('articolo', vecchioNome);
+  if (error) { showToast('Errore: ' + error.message, 'error'); return; }
+
+  if (!articoloInDatabase(nomeFinale)) {
+    showToast(`Rinominato in "${nomeFinale}", ma non risulta ancora in Database Articoli`, '');
+  } else {
+    showToast('Articolo corretto!', 'success');
+  }
+  loadStoricoPrezzi();
+}
+
 function selezionaSoloMancanti() {
   document.querySelectorAll('.socio-checkbox').forEach(cb => {
     const socio = tuttiSoci.find(s => s.id === cb.dataset.id);
@@ -3949,7 +3968,8 @@ function renderStoricoPrezzi() {
     <tr style="background:#F2EDE4;">
       <td colspan="6" style="padding:8px 14px;font-weight:700;font-size:13px;color:var(--blu-notte);">
         ${art}
-        ${!articoloInDatabase(art) ? `<span class="badge badge-no" style="cursor:pointer;font-weight:500;font-size:11px;margin-left:8px;" onclick="openModalDatabaseArticolo({articolo:'${art.replace(/'/g,"\\'")}',fornitore:'${(storico[0]?.fornitore||'').replace(/'/g,"\\'")}'})" title="Clicca per aggiungere al database">⚠️ Non in Database Articoli — clicca per aggiungere</span>` : ''}
+        ${!articoloInDatabase(art) ? `<span class="badge badge-no" style="cursor:pointer;font-weight:500;font-size:11px;margin-left:8px;" onclick="openModalDatabaseArticolo({articolo:'${art.replace(/'/g,"\\'")}',fornitore:'${(storico[0]?.fornitore||'').replace(/'/g,"\\'")}'})" title="Clicca per aggiungere al database">⚠️ Non in Database Articoli — aggiungi</span>
+        <button class="btn btn-sm" style="margin-left:4px;" onclick="apriRinominaStorico('${art.replace(/'/g,"\\'")}')" title="Correggi il nome di questo articolo"><i class="ti ti-edit"></i> correggi nome</button>` : ''}
       </td>
     </tr>
     ${storico.map((s,i) => `
@@ -3971,4 +3991,121 @@ async function eliminaStorico(id) {
   await db.from('storico_prezzi').delete().eq('id', id);
   showToast('Eliminato', 'success');
   loadStoricoPrezzi();
+}
+
+async function generaPDFStorico() {
+  if (!tuttoStorico.length) { showToast('Nessun dato storico da esportare', 'error'); return; }
+  await caricaJsPDF();
+  const { jsPDF } = window.jspdf;
+  const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const oggi = new Date().toLocaleDateString('it-IT');
+
+  const COL_ANNO_X = 16, COL_ANNO_W = 12;
+  const COL_FORN_X = 34;
+  const COL_QTA_X = 118, COL_QTA_W = 14;
+  const COL_PREZZO_X = 148, COL_PREZZO_W = 20;
+  const COL_VAR_X = 196;
+
+  function drawHeader() {
+    pdf.setFillColor(30, 45, 71);
+    pdf.rect(0, 0, 210, 28, 'F');
+    pdf.setTextColor(201, 160, 48);
+    pdf.setFontSize(16);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text('ANDAMENTO PREZZI', 14, 12);
+    pdf.setFontSize(10);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(200, 216, 240);
+    pdf.text('Comitato Festeggiamenti N.S. della Bastia', 14, 20);
+    pdf.text(oggi, 196, 20, { align: 'right' });
+  }
+
+  function drawIntestazioneColonne(y) {
+    pdf.setFontSize(8);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(30, 45, 71);
+    pdf.text('Anno', COL_ANNO_X, y);
+    pdf.text('Fornitore', COL_FORN_X, y);
+    pdf.text('Q.tà', COL_QTA_X + COL_QTA_W, y, { align: 'right' });
+    pdf.text('Prezzo unit.', COL_PREZZO_X + COL_PREZZO_W, y, { align: 'right' });
+    pdf.text('Variazione', COL_VAR_X, y, { align: 'right' });
+    pdf.setDrawColor(212, 201, 190);
+    pdf.line(14, y + 2, 196, y + 2);
+    return y + 6;
+  }
+
+  // Raggruppa per articolo, ordina storico per anno crescente
+  const gruppi = {};
+  tuttoStorico.forEach(s => {
+    if (!gruppi[s.articolo]) gruppi[s.articolo] = [];
+    gruppi[s.articolo].push(s);
+  });
+  const articoli = Object.keys(gruppi).sort();
+
+  drawHeader();
+  let y = 36;
+
+  articoli.forEach(art => {
+    const storico = gruppi[art].slice().sort((a, b) => a.anno - b.anno);
+    const righeAltezza = 7 * storico.length + 16;
+    if (y + righeAltezza > 280) { pdf.addPage(); drawHeader(); y = 36; }
+
+    pdf.setFillColor(242, 237, 232);
+    pdf.rect(14, y - 4, 182, 7, 'F');
+    pdf.setFontSize(9);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(30, 45, 71);
+    let nomeArt = art;
+    while (pdf.getTextWidth(nomeArt) > 150 && nomeArt.length > 3) nomeArt = nomeArt.substring(0, nomeArt.length - 4) + '...';
+    pdf.text(nomeArt, 16, y + 1);
+    if (!articoloInDatabase(art)) {
+      pdf.setFontSize(7);
+      pdf.setFont('helvetica', 'italic');
+      pdf.setTextColor(150, 100, 60);
+      pdf.text('(non presente in Database Articoli)', 16 + pdf.getTextWidth(nomeArt) + 4, y + 1);
+    }
+    y += 10;
+    y = drawIntestazioneColonne(y);
+
+    let prezzoPrec = null;
+    storico.forEach((s, idx) => {
+      if (idx % 2 === 0) {
+        pdf.setFillColor(247, 245, 242);
+        pdf.rect(14, y - 4, 182, 7, 'F');
+      }
+      pdf.setFontSize(8.5);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(26, 26, 26);
+      pdf.text(String(s.anno), COL_ANNO_X, y);
+      pdf.text(s.fornitore || '—', COL_FORN_X, y);
+      pdf.text(s.quantita ? String(parseFloat(s.quantita)) : '—', COL_QTA_X + COL_QTA_W, y, { align: 'right' });
+      const prezzo = s.prezzo_unitario ? parseFloat(s.prezzo_unitario) : null;
+      pdf.text(prezzo != null ? '€ ' + prezzo.toFixed(2) : '—', COL_PREZZO_X + COL_PREZZO_W, y, { align: 'right' });
+
+      if (prezzo != null && prezzoPrec != null && prezzoPrec > 0) {
+        const variazione = ((prezzo - prezzoPrec) / prezzoPrec) * 100;
+        const segno = variazione > 0 ? '+' : '';
+        pdf.setFont('helvetica', 'bold');
+        if (variazione > 0.5) pdf.setTextColor(155, 44, 44);
+        else if (variazione < -0.5) pdf.setTextColor(47, 107, 79);
+        else pdf.setTextColor(120, 120, 120);
+        pdf.text(`${segno}${variazione.toFixed(1)}%`, COL_VAR_X, y, { align: 'right' });
+      } else {
+        pdf.setFontSize(7.5);
+        pdf.setTextColor(180, 180, 180);
+        pdf.text('—', COL_VAR_X, y, { align: 'right' });
+      }
+      if (prezzo != null) prezzoPrec = prezzo;
+      y += 7;
+    });
+    y += 6;
+  });
+
+  pdf.setFontSize(7.5);
+  pdf.setFont('helvetica', 'italic');
+  pdf.setTextColor(130, 130, 130);
+  pdf.text('Variazione calcolata rispetto al prezzo unitario dell\'anno precedente disponibile per lo stesso articolo.', 14, 292);
+
+  pdf.save(`andamento_prezzi_${oggi.replace(/\//g,'-')}.pdf`);
+  showToast('PDF andamento prezzi generato!', 'success');
 }
