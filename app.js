@@ -1,4 +1,3 @@
-
 const SUPABASE_URL = 'https://nwpuiwfptkswloauphzn.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im53cHVpd2ZwdGtzd2xvYXVwaHpuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE4MDY5OTEsImV4cCI6MjA5NzM4Mjk5MX0.kOcnfzbxI2xoSRsM26LiyesE8SszyPJ4eBkLRDKgQPc';
 const { createClient } = supabase;
@@ -328,8 +327,8 @@ function rowSocio(s, stato) {
     ? '<span class="badge badge-ok">Attivo</span>'
     : `<span class="badge badge-no">${s.anno_rinnovo || '—'}</span>`;
   const badgeTessera = s.tessera_stampata
-    ? '<span class="badge badge-ok" title="Tessera già stampata">🖨️ Stampata</span>'
-    : '<span class="badge badge-no" title="Tessera non ancora stampata">Da stampare</span>';
+    ? `<span class="badge badge-ok" style="cursor:pointer;" title="Clicca per segnare come non stampata" onclick="toggleTesseraStampata('${s.id}', false)">🖨️ Stampata</span>`
+    : `<span class="badge badge-no" style="cursor:pointer;" title="Clicca per segnare come già stampata" onclick="toggleTesseraStampata('${s.id}', true)">Da stampare</span>`;
   return `<div class="table-row">
     <input type="checkbox" class="socio-checkbox" data-id="${s.id}" onchange="aggiornaBarraRinnovo()"
       style="margin-right:4px;width:16px;height:16px;cursor:pointer;accent-color:var(--blu);">
@@ -2823,6 +2822,23 @@ function caricaHtml2Canvas() {
 }
 
 // ===== STAMPA MASSIVA TESSERE =====
+async function toggleTesseraStampata(id, valore) {
+  const socio = tuttiSoci.find(s => s.id === id);
+  if (!socio) return;
+  if (valore && !socio.numero_tessera) { showToast('Assegna prima un numero tessera', 'error'); return; }
+  const msg = valore
+    ? `Segnare la tessera di ${socio.cognome} ${socio.nome} come già stampata? Il numero tessera verrà bloccato.`
+    : `Segnare la tessera di ${socio.cognome} ${socio.nome} come da ristampare? Il numero tessera tornerà modificabile.`;
+  if (!confirm(msg)) return;
+  const oraStampa = valore ? new Date().toISOString() : null;
+  const { error } = await db.from('soci').update({ tessera_stampata: valore, tessera_stampata_at: oraStampa }).eq('id', id);
+  if (error) { showToast('Errore: ' + error.message, 'error'); return; }
+  socio.tessera_stampata = valore;
+  socio.tessera_stampata_at = oraStampa;
+  renderSoci(tuttiSoci);
+  showToast(valore ? 'Segnata come stampata' : 'Segnata come da stampare', 'success');
+}
+
 function selezionaSoloMancanti() {
   document.querySelectorAll('.socio-checkbox').forEach(cb => {
     const socio = tuttiSoci.find(s => s.id === cb.dataset.id);
