@@ -327,6 +327,9 @@ function rowSocio(s, stato) {
   const badge = stato === 'attivo'
     ? '<span class="badge badge-ok">Attivo</span>'
     : `<span class="badge badge-no">${s.anno_rinnovo || '—'}</span>`;
+  const badgeTessera = s.tessera_stampata
+    ? '<span class="badge badge-ok" title="Tessera già stampata">🖨️ Stampata</span>'
+    : '<span class="badge badge-no" title="Tessera non ancora stampata">Da stampare</span>';
   return `<div class="table-row">
     <input type="checkbox" class="socio-checkbox" data-id="${s.id}" onchange="aggiornaBarraRinnovo()"
       style="margin-right:4px;width:16px;height:16px;cursor:pointer;accent-color:var(--blu);">
@@ -335,6 +338,7 @@ function rowSocio(s, stato) {
       <div class="row-sub">${s.codice_fiscale} · ${s.citta || ''} · ${s.telefono || ''}</div>
     </div>
     ${badge}
+    ${badgeTessera}
     <button class="btn btn-sm" onclick="generaTessera('${s.id}')" title="Tessera"><i class="ti ti-id"></i></button>
     <button class="btn btn-sm" onclick='openModalSocio(${JSON.stringify(s)})'><i class="ti ti-edit"></i></button>
     ${stato === 'non_rinnovato' ? `<button class="btn btn-sm" style="color:var(--verde)" onclick="rinnovaQuota('${s.id}')"><i class="ti ti-refresh"></i> Rinnova</button>` : ''}
@@ -2811,6 +2815,15 @@ function caricaHtml2Canvas() {
 }
 
 // ===== STAMPA MASSIVA TESSERE =====
+function selezionaSoloMancanti() {
+  document.querySelectorAll('.socio-checkbox').forEach(cb => {
+    const socio = tuttiSoci.find(s => s.id === cb.dataset.id);
+    cb.checked = socio ? !socio.tessera_stampata : false;
+  });
+  aggiornaBarraRinnovo();
+  showToast('Selezionate solo le tessere da stampare', 'success');
+}
+
 async function stampaTessereSelezionate() {
   const checkboxes = document.querySelectorAll('.socio-checkbox:checked');
   const ids = Array.from(checkboxes).map(cb => cb.dataset.id);
@@ -2874,6 +2887,16 @@ async function stampaTessereSelezionate() {
 
   document.body.removeChild(tempContainer);
   pdf.save(`tessere_soci_${new Date().toISOString().split('T')[0]}.pdf`);
+
+  // Segna le tessere come stampate
+  const oraStampa = new Date().toISOString();
+  await db.from('soci').update({ tessera_stampata: true, tessera_stampata_at: oraStampa }).in('id', ids);
+  ids.forEach(id => {
+    const socio = tuttiSoci.find(s => s.id === id);
+    if (socio) { socio.tessera_stampata = true; socio.tessera_stampata_at = oraStampa; }
+  });
+  renderSoci(tuttiSoci);
+
   showToast(`PDF generato: ${sociSelezionati.length} tessere`, 'success');
 }
 

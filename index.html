@@ -667,10 +667,11 @@
       </div>
 
       <!-- Seleziona tutti -->
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
         <input type="checkbox" id="select-tutti" onchange="toggleSelezioneTutti(this.checked)"
           style="width:16px;height:16px;cursor:pointer;accent-color:var(--blu);">
         <label for="select-tutti" style="font-size:13px;color:var(--testo-muted);cursor:pointer;">Seleziona tutti</label>
+        <button class="btn btn-sm" onclick="selezionaSoloMancanti()"><i class="ti ti-id"></i> Seleziona solo tessere da stampare</button>
       </div>
 
       <!-- Attivi -->
