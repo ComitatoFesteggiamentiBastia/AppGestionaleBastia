@@ -136,6 +136,7 @@ function showPage(pageId) {
   if (pageId === 'spesa') loadSpesa();
   if (pageId === 'prima-nota') loadPrimaNota();
   if (pageId === 'inventario') loadInventario();
+  if (pageId === 'database-articoli') loadCatalogoCompleto();
   if (pageId === 'menu-sagra') loadMenuSagra();
   if (pageId === 'storico-prezzi') loadStoricoPrezzi();
 }
@@ -249,6 +250,7 @@ const PAGINE_DISPONIBILI = [
   { id: 'turni',             label: 'Turni',               gruppo: 'Sagra' },
   { id: 'spesa',             label: 'Lista spesa',         gruppo: 'Sagra' },
   { id: 'inventario',        label: 'Inventario',          gruppo: 'Risorse' },
+  { id: 'database-articoli', label: 'Database Articoli',   gruppo: 'Risorse' },
   { id: 'impostazioni-anno', label: 'Anni e quote',        gruppo: 'Amministrazione' },
   { id: 'utenti',            label: 'Utenti',              gruppo: 'Amministrazione' },
 ];
@@ -1715,6 +1717,17 @@ function openModalSpesa(a = null) {
   document.getElementById('m-spesa-iva').value = a?.iva || '';
   document.getElementById('m-spesa-stato').value = a?.stato || 'da_ordinare';
   document.getElementById('m-spesa-note').value = a?.note || '';
+  mostraRimanenzaModaleSpesa();
+}
+
+function mostraRimanenzaModaleSpesa() {
+  const nome = document.getElementById('m-spesa-articolo').value.toLowerCase().trim();
+  const el = document.getElementById('m-spesa-rimanenza');
+  if (!el) return;
+  const riman = mappaRimanenze[nome];
+  el.innerHTML = (riman && riman.quantita > 0)
+    ? `<span class="badge badge-ok">📦 Già in inventario: ${riman.quantita} ${riman.unita || ''}</span>`
+    : (nome ? `<span class="badge badge-pietra">Nessuna rimanenza in inventario</span>` : '');
 }
 
 function closeModalSpesa() {
@@ -1946,6 +1959,7 @@ function selezionaArticoloCatalogo(articolo, fornitore, categoria, stand, unita,
   document.getElementById('m-spesa-prezzo').value = prezzo !== 'null' ? prezzo : '';
   document.getElementById('m-spesa-iva').value = iva !== 'null' ? iva : '';
   document.getElementById('autocomplete-spesa').style.display = 'none';
+  mostraRimanenzaModaleSpesa();
 }
 
 // Override saveSpesa per aggiungere al catalogo
@@ -2061,7 +2075,7 @@ function renderInventario() {
         <div class="table-row">
           <div style="flex:1;">
             <div class="row-name">${i.nome}</div>
-            <div class="row-sub">${i.posizione ? '📍 ' + i.posizione + ' · ' : ''}Q: <strong>${i.quantita} ${i.unita || 'pz'}</strong>${i.note ? ' · ' + i.note : ''}</div>
+            <div class="row-sub">Q: <strong>${i.quantita} ${i.unita || 'pz'}</strong>${i.note ? ' · ' + i.note : ''}</div>
           </div>
 
           <button class="btn btn-sm" onclick='openModalInventario(${JSON.stringify(i).replace(/"/g,"&quot;")})'><i class="ti ti-edit"></i></button>
@@ -2089,7 +2103,6 @@ async function openModalInventario(i = null) {
   document.getElementById('m-inv-categoria').value = i?.categoria || '';
   document.getElementById('m-inv-quantita').value = i?.quantita ?? '';
   document.getElementById('m-inv-unita').value = i?.unita || '';
-  document.getElementById('m-inv-posizione').value = i?.posizione || '';
   document.getElementById('m-inv-note').value = i?.note || '';
 
   // Datalist categorie inventario
@@ -2127,7 +2140,6 @@ async function saveInventario() {
     categoria: document.getElementById('m-inv-categoria').value.trim() || null,
     quantita,
     unita: document.getElementById('m-inv-unita').value.trim() || null,
-    posizione: document.getElementById('m-inv-posizione').value.trim() || null,
     note: document.getElementById('m-inv-note').value.trim() || null,
     updated_at: new Date().toISOString()
   };
@@ -2158,8 +2170,7 @@ async function generaPDFInventario() {
   const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
   const oggi = new Date().toLocaleDateString('it-IT');
 
-  const COL_NOME_X = 16, COL_NOME_MAXW = 78;
-  const COL_POS_X = 96, COL_POS_MAXW = 40;
+  const COL_NOME_X = 16, COL_NOME_MAXW = 110;
   const COL_QTA_X = 148, COL_QTA_W = 12;
   const COL_UNI_X = 152;
   const COL_STATO_X = 196;
@@ -2183,7 +2194,6 @@ async function generaPDFInventario() {
     pdf.setFont('helvetica', 'bold');
     pdf.setTextColor(30, 45, 71);
     pdf.text('Articolo', COL_NOME_X, y);
-    pdf.text('Posizione', COL_POS_X, y);
     pdf.text('Q.tà', COL_QTA_X + COL_QTA_W, y, { align: 'right' });
     pdf.text('Unità', COL_UNI_X, y);
     pdf.text('Stato', COL_STATO_X, y, { align: 'right' });
@@ -2234,12 +2244,6 @@ async function generaPDFInventario() {
       }
       pdf.text(nome, COL_NOME_X, y);
 
-      let pos = i.posizione || '—';
-      while (pdf.getTextWidth(pos) > COL_POS_MAXW && pos.length > 3) {
-        pos = pos.substring(0, pos.length - 4) + '...';
-      }
-      pdf.text(pos, COL_POS_X, y);
-
       pdf.text(i.quantita != null ? String(parseFloat(i.quantita)) : '—', COL_QTA_X + COL_QTA_W, y, { align: 'right' });
       pdf.text(i.unita || '—', COL_UNI_X, y);
 
@@ -2252,7 +2256,7 @@ async function generaPDFInventario() {
         pdf.setFontSize(7);
         pdf.setTextColor(150, 140, 130);
         const notaX = COL_NOME_X + pdf.getTextWidth(nome) + 4;
-        const spazioDisp = COL_POS_X - notaX - 2;
+        const spazioDisp = COL_QTA_X - notaX - 2;
         if (spazioDisp > 12) {
           let nota = i.note;
           while (pdf.getTextWidth(nota) > spazioDisp && nota.length > 3) {
@@ -3043,43 +3047,105 @@ async function eliminaFornitore(id) {
 let tuttoCatalogo = [];
 
 async function loadCatalogoCompleto() {
-  const { data } = await db.from('catalogo_spesa').select('*').order('categoria').order('articolo');
-  tuttoCatalogo = data || [];
+  const [catRes, invRes] = await Promise.all([
+    db.from('catalogo_spesa').select('*').order('categoria').order('articolo'),
+    db.from('inventario').select('nome,quantita,unita')
+  ]);
+  tuttoCatalogo = catRes.data || [];
+  mappaRimanenze = {};
+  (invRes.data || []).forEach(i => { mappaRimanenze[i.nome.toLowerCase().trim()] = i; });
   renderCatalogoTabella();
 }
 
 function renderCatalogoTabella() {
-  const search = (document.getElementById('cat-articoli-search')?.value || '').toLowerCase();
-  const tbody = document.getElementById('cat-articoli-tbody');
+  const search = (document.getElementById('db-art-search')?.value || '').toLowerCase();
+  const tbody = document.getElementById('db-articoli-tbody');
   if (!tbody) return;
 
   let lista = tuttoCatalogo;
   if (search) lista = lista.filter(a => JSON.stringify(a).toLowerCase().includes(search));
 
+  if (document.getElementById('db-art-stat-tot')) document.getElementById('db-art-stat-tot').textContent = tuttoCatalogo.length;
+
   if (!lista.length) {
-    tbody.innerHTML = '<tr><td colspan="6" style="padding:16px;text-align:center;color:var(--testo-muted);">Nessun articolo</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7" style="padding:24px;text-align:center;color:var(--testo-muted);">Nessun articolo</td></tr>';
     return;
   }
 
-  tbody.innerHTML = lista.map(a => `
-    <tr style="border-bottom:1px solid var(--border);">
-      <td style="padding:7px 12px;font-weight:500;font-size:12px;">${a.articolo}</td>
-      <td style="padding:7px 12px;font-size:12px;color:var(--testo-muted);">${a.fornitore || '—'}</td>
-      <td style="padding:7px 12px;font-size:12px;color:var(--testo-muted);">${a.categoria || '—'}</td>
-      <td style="padding:7px 12px;font-size:12px;">${a.prezzo_unitario ? '€ '+parseFloat(a.prezzo_unitario).toFixed(2) : '—'}</td>
-      <td style="padding:7px 12px;font-size:12px;color:var(--testo-muted);cursor:pointer;" onclick="modificaNoteCatalogo('${a.id}','${(a.note||'').replace(/'/g,"\\'")}')" title="Clicca per modificare">${a.note || '<span style=\"opacity:0.4;\">+ nota</span>'}</td>
-      <td style="padding:7px 12px;text-align:center;">
+  tbody.innerHTML = lista.map((a, i) => {
+    const riman = mappaRimanenze[a.articolo.toLowerCase().trim()];
+    const rimanCell = (riman && riman.quantita > 0)
+      ? `<span class="badge badge-ok">${riman.quantita} ${riman.unita || ''}</span>`
+      : '<span style="color:#ccc;">—</span>';
+    return `
+    <tr style="${i%2===0?'':'background:#F5F7FB;'}border-bottom:1px solid var(--border);">
+      <td style="padding:8px 12px;font-weight:500;font-size:12px;">${a.articolo}</td>
+      <td style="padding:8px 12px;font-size:12px;color:var(--testo-muted);">${a.categoria || '—'}</td>
+      <td style="padding:8px 12px;font-size:12px;color:var(--testo-muted);">${a.fornitore || '—'}</td>
+      <td style="padding:8px 12px;font-size:12px;">${a.unita || '—'}</td>
+      <td style="padding:8px 12px;font-size:12px;">${a.prezzo_unitario ? '€ '+parseFloat(a.prezzo_unitario).toFixed(2) : '—'}</td>
+      <td style="padding:8px 12px;text-align:center;">${rimanCell}</td>
+      <td style="padding:8px 12px;text-align:center;white-space:nowrap;">
+        <button class="btn btn-sm" onclick='openModalDatabaseArticolo(${JSON.stringify(a).replace(/"/g,"&quot;")})'><i class="ti ti-edit"></i></button>
         <button class="btn btn-sm" style="color:#991B1B" onclick="eliminaArticoloCatalogo('${a.id}')"><i class="ti ti-trash"></i></button>
       </td>
-    </tr>
-  `).join('');
+    </tr>`;
+  }).join('');
 }
 
-async function modificaNoteCatalogo(id, noteAttuali) {
-  const nuova = prompt('Nota per questo articolo (fornitore preferito, avvertenze, ecc.):', noteAttuali);
-  if (nuova === null) return;
-  await db.from('catalogo_spesa').update({ note: nuova.trim() || null }).eq('id', id);
-  await loadCatalogoCompleto();
+async function openModalDatabaseArticolo(a = null) {
+  document.getElementById('modal-database-articolo').style.display = 'flex';
+  document.getElementById('modal-database-articolo').style.pointerEvents = 'auto';
+  document.getElementById('m-dba-id').value = a?.id || '';
+  document.getElementById('m-dba-articolo').value = a?.articolo || '';
+  document.getElementById('m-dba-categoria').value = a?.categoria || '';
+  document.getElementById('m-dba-fornitore').value = a?.fornitore || '';
+  document.getElementById('m-dba-unita').value = a?.unita || '';
+  document.getElementById('m-dba-prezzo').value = a?.prezzo_unitario || '';
+  document.getElementById('m-dba-iva').value = a?.iva || '';
+  document.getElementById('m-dba-stand').value = a?.stand || '';
+  document.getElementById('m-dba-note').value = a?.note || '';
+  if (!tuttiFornitori.length) await loadFornitori();
+  const dlForn = document.getElementById('dba-fornitori-list');
+  if (dlForn) dlForn.innerHTML = tuttiFornitori.map(f => `<option value="${f.nome}">`).join('');
+}
+
+function closeModalDatabaseArticolo() {
+  const m = document.getElementById('modal-database-articolo');
+  m.style.display = 'none';
+  m.style.pointerEvents = 'none';
+}
+
+async function saveDatabaseArticolo() {
+  const articolo = document.getElementById('m-dba-articolo').value.trim();
+  if (!articolo) { showToast('Nome articolo obbligatorio', 'error'); return; }
+  const id = document.getElementById('m-dba-id').value;
+
+  // Verifica univocità nome (case-insensitive), escludendo se stesso in modifica
+  const duplicato = tuttoCatalogo.find(c => c.articolo.toLowerCase() === articolo.toLowerCase() && c.id !== id);
+  if (duplicato) { showToast('Esiste già un articolo con questo nome nel database', 'error'); return; }
+
+  const payload = {
+    articolo,
+    categoria: document.getElementById('m-dba-categoria').value.trim() || null,
+    fornitore: document.getElementById('m-dba-fornitore').value.trim() || null,
+    unita: document.getElementById('m-dba-unita').value.trim() || null,
+    prezzo_unitario: parseFloat(document.getElementById('m-dba-prezzo').value) || null,
+    iva: parseFloat(document.getElementById('m-dba-iva').value) || null,
+    stand: document.getElementById('m-dba-stand').value.trim() || null,
+    note: document.getElementById('m-dba-note').value.trim() || null
+  };
+
+  let error;
+  if (id) {
+    ({ error } = await db.from('catalogo_spesa').update(payload).eq('id', id));
+  } else {
+    ({ error } = await db.from('catalogo_spesa').insert(payload));
+  }
+  if (error) { showToast('Errore: ' + error.message, 'error'); return; }
+  showToast('Articolo salvato!', 'success');
+  closeModalDatabaseArticolo();
+  loadCatalogoCompleto();
 }
 
 async function eliminaArticoloCatalogo(id) {
