@@ -413,12 +413,18 @@ function openModalSocio(s = null) {
   document.getElementById('m-email').value = s?.email || '';
   document.getElementById('m-data-iscrizione').value = formatDataIT(s?.data_iscrizione) || '';
   document.getElementById('m-anno-rinnovo').value = s?.anno_rinnovo || ANNO_CORRENTE;
+  const campoTessera = document.getElementById('m-numero-tessera');
   if (s) {
-    document.getElementById('m-numero-tessera').value = s.numero_tessera || '';
+    campoTessera.value = s.numero_tessera || '';
   } else {
     const max = tuttiSoci.reduce((m, x) => x.numero_tessera && x.numero_tessera > m ? x.numero_tessera : m, 0);
-    document.getElementById('m-numero-tessera').value = max + 1;
+    campoTessera.value = max + 1;
   }
+  const bloccato = !!(s && s.tessera_stampata);
+  campoTessera.disabled = bloccato;
+  campoTessera.title = bloccato ? 'Tessera già stampata: il numero non può più essere modificato' : '';
+  const avviso = document.getElementById('avviso-tessera-bloccata');
+  if (avviso) avviso.style.display = bloccato ? 'block' : 'none';
 }
 
 function closeModalSocio() {
@@ -434,8 +440,10 @@ async function saveSocio() {
   if (!cf || !cognome || !nome) { showToast('CF, cognome e nome sono obbligatori', 'error'); return; }
 
   const id = document.getElementById('m-socio-id').value;
-  const numTessera = parseInt(document.getElementById('m-numero-tessera').value) || null;
-  if (numTessera) {
+  const socioCorrente = tuttiSoci.find(s => s.id === id);
+  const tesseraBloccata = !!(socioCorrente && socioCorrente.tessera_stampata);
+  const numTessera = tesseraBloccata ? socioCorrente.numero_tessera : (parseInt(document.getElementById('m-numero-tessera').value) || null);
+  if (!tesseraBloccata && numTessera) {
     const dup = tuttiSoci.find(s => s.numero_tessera === numTessera && s.id !== id);
     if (dup) { showToast(`Tessera n° ${numTessera} già assegnata a ${dup.cognome} ${dup.nome}`, 'error'); return; }
   }
@@ -2826,8 +2834,15 @@ function selezionaSoloMancanti() {
 
 async function stampaTessereSelezionate() {
   const checkboxes = document.querySelectorAll('.socio-checkbox:checked');
-  const ids = Array.from(checkboxes).map(cb => cb.dataset.id);
-  if (!ids.length) { showToast('Seleziona almeno un socio', 'error'); return; }
+  const idsSelezionati = Array.from(checkboxes).map(cb => cb.dataset.id);
+  if (!idsSelezionati.length) { showToast('Seleziona almeno un socio', 'error'); return; }
+
+  // Le tessere già stampate non rientrano mai nel file generale
+  const giaStampati = idsSelezionati.filter(id => tuttiSoci.find(s => s.id === id)?.tessera_stampata);
+  const ids = idsSelezionati.filter(id => !giaStampati.includes(id));
+
+  if (!ids.length) { showToast('Le tessere selezionate sono già state stampate', 'error'); return; }
+  if (giaStampati.length) showToast(`${giaStampati.length} tessere già stampate escluse automaticamente`, '');
 
   showToast('Genero il PDF...', '');
 
