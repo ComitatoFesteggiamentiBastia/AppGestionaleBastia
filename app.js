@@ -1360,6 +1360,7 @@ let standSagra = [];
 
 async function loadSpesa() {
   await assicuraSagreCaricate();
+  await loadCatalogoSpesa();
   const sagraId = getSagraId();
   aggiornaHeaderSagra('spesa-sagra-header');
   if (!sagraId) return;
@@ -1668,12 +1669,14 @@ function rowSpesa(a) {
   const riman = mappaRimanenze[(a.articolo || '').toLowerCase().trim()];
   const badgeRimanenza = (riman && riman.quantita > 0)
     ? `<span class="badge badge-ok" title="Presente in inventario">📦 Rimanenza: ${riman.quantita} ${riman.unita || ''}</span>` : '';
+  const nonInDb = !articoloInDatabase(a.articolo);
   return `<div class="table-row">
     <input type="checkbox" ${a.stato === 'comprato' ? 'checked' : ''} onchange="toggleSpesaAcquistata('${a.id}', this.checked)"
       style="width:16px;height:16px;accent-color:var(--verde);cursor:pointer;margin-right:4px;">
     <div style="flex:1;">
       <div class="row-name" style="${a.stato === 'comprato' ? 'text-decoration:line-through;opacity:0.6;' : ''}">${a.articolo}</div>
       <div class="row-sub">${a.fornitore || ''} ${a.quantita ? '· Q: ' + a.quantita + (a.unita ? ' ' + a.unita : '') : ''} ${a.prezzo_totale ? '· € ' + parseFloat(a.prezzo_totale).toFixed(2) : ''} ${a.giorno ? '· ' + (giornoLabel[a.giorno] || a.giorno) : ''}</div>
+      ${nonInDb ? `<div style="margin-top:4px;"><span class="badge badge-no" style="cursor:pointer;" onclick="openModalDatabaseArticolo({articolo:'${(a.articolo||'').replace(/'/g,"\\'")}',fornitore:'${(a.fornitore||'').replace(/'/g,"\\'")}',categoria:'${(a.categoria||'').replace(/'/g,"\\'")}',unita:'${(a.unita||'').replace(/'/g,"\\'")}'})" title="Clicca per aggiungere al database">⚠️ Non presente in Database Articoli — clicca per aggiungere</span></div>` : ''}
     </div>
     ${badgeRimanenza}
     <span class="badge ${statoColor[a.stato] || 'badge-no'}">${statoLabel[a.stato] || a.stato}</span>
@@ -1688,11 +1691,17 @@ function aggiornaStatsSpesa() {
   const ordinati = tuttiArticoliSpesa.filter(a => a.stato === 'ordinato').length;
   const daOrdinare = tuttiArticoliSpesa.filter(a => a.stato === 'da_ordinare').length;
   const totSpesa = tuttiArticoliSpesa.filter(a => a.prezzo_totale).reduce((s, a) => s + parseFloat(a.prezzo_totale), 0);
+  const mancanti = tuttiArticoliSpesa.filter(a => !articoloInDatabase(a.articolo)).length;
   if (document.getElementById('spesa-stat-tot')) document.getElementById('spesa-stat-tot').textContent = tot;
   if (document.getElementById('spesa-stat-comprati')) document.getElementById('spesa-stat-comprati').textContent = comprati;
   if (document.getElementById('spesa-stat-ordinati')) document.getElementById('spesa-stat-ordinati').textContent = ordinati;
   if (document.getElementById('spesa-stat-da-ordinare')) document.getElementById('spesa-stat-da-ordinare').textContent = daOrdinare;
   if (document.getElementById('spesa-stat-costo')) document.getElementById('spesa-stat-costo').textContent = '€ ' + totSpesa.toFixed(2);
+  const statMancanti = document.getElementById('spesa-stat-mancanti');
+  if (statMancanti) {
+    statMancanti.textContent = mancanti;
+    statMancanti.closest('.stat-card').style.display = mancanti > 0 ? '' : 'none';
+  }
 }
 
 async function toggleSpesaAcquistata(id, checked) {
@@ -2024,6 +2033,7 @@ let tuttoInventario = [];
 let categorieInventario = [];
 
 async function loadInventario() {
+  await loadCatalogoSpesa();
   const { data } = await db.from('inventario').select('*').order('categoria').order('nome');
   tuttoInventario = data || [];
   categorieInventario = [...new Set(tuttoInventario.map(i => i.categoria).filter(Boolean))].sort();
@@ -2076,6 +2086,7 @@ function renderInventario() {
           <div style="flex:1;">
             <div class="row-name">${i.nome}</div>
             <div class="row-sub">Q: <strong>${i.quantita} ${i.unita || 'pz'}</strong>${i.note ? ' · ' + i.note : ''}</div>
+            ${!articoloInDatabase(i.nome) ? `<div style="margin-top:4px;"><span class="badge badge-no" style="cursor:pointer;" onclick="openModalDatabaseArticolo({articolo:'${i.nome.replace(/'/g,"\\'")}'})" title="Clicca per aggiungere al database">⚠️ Non presente in Database Articoli — clicca per aggiungere</span></div>` : ''}
           </div>
 
           <button class="btn btn-sm" onclick='openModalInventario(${JSON.stringify(i).replace(/"/g,"&quot;")})'><i class="ti ti-edit"></i></button>
@@ -2091,8 +2102,20 @@ function aggiornaStatsInventario() {
   const daRev = tuttoInventario.filter(i => i.stato === 'da_revisionare').length;
   const fuoriUso = tuttoInventario.filter(i => i.stato === 'fuori_uso').length;
   const categorie = categorieInventario.length;
+  const mancanti = tuttoInventario.filter(i => !articoloInDatabase(i.nome)).length;
   if (document.getElementById('inv-stat-tot')) document.getElementById('inv-stat-tot').textContent = tot;
   if (document.getElementById('inv-stat-cat')) document.getElementById('inv-stat-cat').textContent = categorie;
+  const statMancanti = document.getElementById('inv-stat-mancanti');
+  if (statMancanti) {
+    statMancanti.textContent = mancanti;
+    statMancanti.closest('.stat-card').style.display = mancanti > 0 ? '' : 'none';
+  }
+}
+
+function articoloInDatabase(nome) {
+  const n = (nome || '').toLowerCase().trim();
+  if (!n) return true;
+  return catalogoSpesa.some(c => c.articolo.toLowerCase().trim() === n);
 }
 
 async function openModalInventario(i = null) {
@@ -3145,7 +3168,10 @@ async function saveDatabaseArticolo() {
   if (error) { showToast('Errore: ' + error.message, 'error'); return; }
   showToast('Articolo salvato!', 'success');
   closeModalDatabaseArticolo();
+  await loadCatalogoSpesa();
   loadCatalogoCompleto();
+  if (document.getElementById('spesa-list')) renderSpesa();
+  if (document.getElementById('inventario-list')) renderInventario();
 }
 
 async function eliminaArticoloCatalogo(id) {
