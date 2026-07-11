@@ -1,4 +1,3 @@
-
 const SUPABASE_URL = 'https://nwpuiwfptkswloauphzn.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im53cHVpd2ZwdGtzd2xvYXVwaHpuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE4MDY5OTEsImV4cCI6MjA5NzM4Mjk5MX0.kOcnfzbxI2xoSRsM26LiyesE8SszyPJ4eBkLRDKgQPc';
 const { createClient } = supabase;
@@ -406,7 +405,12 @@ function openModalSocio(s = null) {
   document.getElementById('m-email').value = s?.email || '';
   document.getElementById('m-data-iscrizione').value = formatDataIT(s?.data_iscrizione) || '';
   document.getElementById('m-anno-rinnovo').value = s?.anno_rinnovo || ANNO_CORRENTE;
-  document.getElementById('m-numero-tessera').value = s?.numero_tessera || '';
+  if (s) {
+    document.getElementById('m-numero-tessera').value = s.numero_tessera || '';
+  } else {
+    const max = tuttiSoci.reduce((m, x) => x.numero_tessera && x.numero_tessera > m ? x.numero_tessera : m, 0);
+    document.getElementById('m-numero-tessera').value = max + 1;
+  }
 }
 
 function closeModalSocio() {
