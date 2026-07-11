@@ -208,16 +208,16 @@
             <input id="f-nome" required>
           </div>
           <div class="field">
-            <label>Sesso <span class="opt">(facoltativo)</span></label>
-            <select id="f-sesso">
+            <label>Sesso *</label>
+            <select id="f-sesso" required>
               <option value="">—</option>
               <option value="M">Maschio</option>
               <option value="F">Femmina</option>
             </select>
           </div>
           <div class="field">
-            <label>Data di nascita <span class="opt">(facoltativo)</span></label>
-            <input id="f-data-nascita" placeholder="gg/mm/aaaa">
+            <label>Data di nascita *</label>
+            <input id="f-data-nascita" placeholder="gg/mm/aaaa" required>
           </div>
           <div class="field">
             <label>Comune di nascita <span class="opt">(facoltativo)</span></label>
@@ -232,16 +232,16 @@
         <div class="step-label">Residenza e contatti</div>
         <div class="grid">
           <div class="field full">
-            <label>Indirizzo <span class="opt">(facoltativo)</span></label>
-            <input id="f-indirizzo">
+            <label>Indirizzo *</label>
+            <input id="f-indirizzo" required>
           </div>
           <div class="field">
-            <label>CAP <span class="opt">(facoltativo)</span></label>
-            <input id="f-cap">
+            <label>CAP *</label>
+            <input id="f-cap" required>
           </div>
           <div class="field">
-            <label>Città <span class="opt">(facoltativo)</span></label>
-            <input id="f-citta">
+            <label>Città *</label>
+            <input id="f-citta" required>
           </div>
           <div class="field">
             <label>Telefono *</label>
@@ -283,6 +283,77 @@
     return `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`;
   }
 
+  // ===== Verifica Codice Fiscale =====
+  const DISPARI = {0:1,1:0,2:5,3:7,4:9,5:13,6:15,7:17,8:19,9:21,
+    A:1,B:0,C:5,D:7,E:9,F:13,G:15,H:17,I:19,J:21,K:2,L:4,M:18,N:20,O:11,P:3,Q:6,R:8,S:12,T:14,U:16,V:10,W:22,X:25,Y:24,Z:23};
+  const PARI = {0:0,1:1,2:2,3:3,4:4,5:5,6:6,7:7,8:8,9:9,
+    A:0,B:1,C:2,D:3,E:4,F:5,G:6,H:7,I:8,J:9,K:10,L:11,M:12,N:13,O:14,P:15,Q:16,R:17,S:18,T:19,U:20,V:21,W:22,X:23,Y:24,Z:25};
+  const MESI_CF = ['A','B','C','D','E','H','L','M','P','R','S','T'];
+
+  function normalizzaTesto(s) {
+    return (s || '').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^A-Z]/g, '');
+  }
+
+  function codiceCognome(cognome) {
+    const s = normalizzaTesto(cognome);
+    const cons = s.split('').filter(c => !'AEIOU'.includes(c));
+    const vow = s.split('').filter(c => 'AEIOU'.includes(c));
+    return (cons.join('') + vow.join('') + 'XXX').substring(0, 3);
+  }
+
+  function codiceNome(nome) {
+    const s = normalizzaTesto(nome);
+    const cons = s.split('').filter(c => !'AEIOU'.includes(c));
+    const vow = s.split('').filter(c => 'AEIOU'.includes(c));
+    if (cons.length >= 4) return cons[0] + cons[2] + cons[3];
+    return (cons.join('') + vow.join('') + 'XXX').substring(0, 3);
+  }
+
+  function codiceDataSesso(dataISO, sesso) {
+    const [y, m, d] = dataISO.split('-').map(Number);
+    const anno = String(y).slice(-2);
+    const mese = MESI_CF[m - 1];
+    const giorno = String(sesso === 'F' ? d + 40 : d).padStart(2, '0');
+    return anno + mese + giorno;
+  }
+
+  function checksumValido(cf16) {
+    let sum = 0;
+    for (let i = 0; i < 15; i++) {
+      const c = cf16[i];
+      sum += (i % 2 === 0) ? DISPARI[c] : PARI[c];
+    }
+    const atteso = String.fromCharCode(65 + (sum % 26));
+    return atteso === cf16[15];
+  }
+
+  // Ritorna null se tutto coerente, altrimenti un array di messaggi di discrepanza
+  function verificaCoerenzaCF(cf, cognome, nome, sesso, dataISO) {
+    const problemi = [];
+    if (!checksumValido(cf)) {
+      problemi.push('il codice fiscale non è formalmente valido (carattere di controllo errato)');
+      return problemi; // se il checksum è sbagliato, gli altri confronti non hanno senso
+    }
+    const attesoCognome = codiceCognome(cognome);
+    const attesoNome = codiceNome(nome);
+    if (cf.substring(0, 3) !== attesoCognome) problemi.push('il cognome non corrisponde al codice fiscale inserito');
+    if (cf.substring(3, 6) !== attesoNome) problemi.push('il nome non corrisponde al codice fiscale inserito');
+    if (dataISO && sesso) {
+      const attesoDataSesso = codiceDataSesso(dataISO, sesso);
+      if (cf.substring(6, 11) !== attesoDataSesso) problemi.push('la data di nascita o il sesso non corrispondono al codice fiscale inserito');
+    }
+    return problemi;
+  }
+
+  function calcolaEta(dataISO) {
+    const oggi = new Date();
+    const nascita = new Date(dataISO);
+    let eta = oggi.getFullYear() - nascita.getFullYear();
+    const m = oggi.getMonth() - nascita.getMonth();
+    if (m < 0 || (m === 0 && oggi.getDate() < nascita.getDate())) eta--;
+    return eta;
+  }
+
   function showMsg(text) {
     const el = document.getElementById('form-msg');
     el.textContent = text;
@@ -301,6 +372,30 @@
     if (!cf || cf.length !== 16) { showMsg('Inserisci un codice fiscale valido (16 caratteri).'); return; }
     if (!cognome || !nome) { showMsg('Cognome e nome sono obbligatori.'); return; }
     if (!telefono) { showMsg('Inserisci un numero di telefono per essere ricontattato.'); return; }
+
+    const sesso = document.getElementById('f-sesso').value;
+    const dataNascitaIT = document.getElementById('f-data-nascita').value.trim();
+    const dataNascitaISO = parseDataIT(dataNascitaIT);
+    const indirizzo = document.getElementById('f-indirizzo').value.trim();
+    const cap = document.getElementById('f-cap').value.trim();
+    const citta = document.getElementById('f-citta').value.trim();
+
+    if (!sesso) { showMsg('Il sesso è obbligatorio (serve a verificare il codice fiscale).'); return; }
+    if (!dataNascitaISO) { showMsg('Inserisci una data di nascita valida (gg/mm/aaaa).'); return; }
+    if (!indirizzo || !cap || !citta) { showMsg('Indirizzo, CAP e città di residenza sono obbligatori.'); return; }
+
+    // Verifica maggiore età
+    if (calcolaEta(dataNascitaISO) < 18) {
+      showMsg('Per iscriversi al comitato è necessario essere maggiorenni. Se sei minorenne, contatta il comitato per un\'iscrizione con l\'assenso di un genitore.');
+      return;
+    }
+
+    // Verifica coerenza tra codice fiscale e dati anagrafici inseriti
+    const problemi = verificaCoerenzaCF(cf, cognome, nome, sesso, dataNascitaISO);
+    if (problemi.length) {
+      showMsg('Controlla i dati inseriti: ' + problemi.join('; ') + '. Verifica il codice fiscale e riprova.');
+      return;
+    }
 
     const btn = document.getElementById('btn-submit');
     btn.disabled = true;
@@ -329,13 +424,13 @@
     const payload = {
       codice_fiscale: cf,
       cognome, nome, telefono,
-      sesso: document.getElementById('f-sesso').value || null,
-      data_nascita: parseDataIT(document.getElementById('f-data-nascita').value),
+      sesso: sesso,
+      data_nascita: dataNascitaISO,
       cap_nascita: document.getElementById('f-cap-nascita').value.trim() || null,
       luogo_nascita: document.getElementById('f-luogo-nascita').value.trim() || null,
-      indirizzo: document.getElementById('f-indirizzo').value.trim() || null,
-      cap: document.getElementById('f-cap').value.trim() || null,
-      citta: document.getElementById('f-citta').value.trim() || null,
+      indirizzo: indirizzo,
+      cap: cap,
+      citta: citta,
       email: document.getElementById('f-email').value.trim() || null,
       stato: 'in_attesa'
     };
