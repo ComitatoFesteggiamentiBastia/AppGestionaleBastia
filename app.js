@@ -406,6 +406,7 @@ function openModalSocio(s = null) {
   document.getElementById('m-email').value = s?.email || '';
   document.getElementById('m-data-iscrizione').value = formatDataIT(s?.data_iscrizione) || '';
   document.getElementById('m-anno-rinnovo').value = s?.anno_rinnovo || ANNO_CORRENTE;
+  document.getElementById('m-numero-tessera').value = s?.numero_tessera || '';
 }
 
 function closeModalSocio() {
@@ -419,6 +420,13 @@ async function saveSocio() {
   const cognome = document.getElementById('m-cognome').value.trim();
   const nome = document.getElementById('m-nome').value.trim();
   if (!cf || !cognome || !nome) { showToast('CF, cognome e nome sono obbligatori', 'error'); return; }
+
+  const id = document.getElementById('m-socio-id').value;
+  const numTessera = parseInt(document.getElementById('m-numero-tessera').value) || null;
+  if (numTessera) {
+    const dup = tuttiSoci.find(s => s.numero_tessera === numTessera && s.id !== id);
+    if (dup) { showToast(`Tessera n° ${numTessera} già assegnata a ${dup.cognome} ${dup.nome}`, 'error'); return; }
+  }
 
   const payload = {
     codice_fiscale: cf,
@@ -434,11 +442,11 @@ async function saveSocio() {
     email: document.getElementById('m-email').value.trim() || null,
     data_iscrizione: parseDataIT(document.getElementById('m-data-iscrizione').value) || null,
     anno_rinnovo: parseInt(document.getElementById('m-anno-rinnovo').value) || null,
+    numero_tessera: numTessera,
     attivo: true,
     updated_at: new Date().toISOString()
   };
 
-  const id = document.getElementById('m-socio-id').value;
   let error;
   if (id) {
     ({ error } = await db.from('soci').update(payload).eq('id', id));
@@ -543,7 +551,9 @@ async function importExcel(input) {
       'data_iscrizione_(gg/mm/aaaa)': 'data_iscrizione',
       'data iscrizione*': 'data_iscrizione',
       // anno rinnovo
-      'anno_rinnovo': 'anno_rinnovo', 'anno rinnovo': 'anno_rinnovo'
+      'anno_rinnovo': 'anno_rinnovo', 'anno rinnovo': 'anno_rinnovo',
+      // numero tessera
+      'numero_tessera': 'numero_tessera', 'numero tessera': 'numero_tessera', 'tessera': 'numero_tessera'
     };
 
     const dataRows = rows.slice(headerRow + 1).filter(r => r.some(c => c !== ''));
@@ -577,6 +587,7 @@ async function importExcel(input) {
         if (!obj.data_iscrizione) delete obj.data_iscrizione;
       }
       if (obj.anno_rinnovo) obj.anno_rinnovo = parseInt(obj.anno_rinnovo) || null;
+      if (obj.numero_tessera !== undefined) obj.numero_tessera = parseInt(obj.numero_tessera) || null;
       obj.attivo = true;
       obj.updated_at = new Date().toISOString();
 
@@ -602,8 +613,9 @@ async function importExcel(input) {
 function exportExcel() {
   const anno = ANNO_CORRENTE;
   const rows = [
-    ['codice_fiscale','cognome','nome','sesso','data_nascita','cap_nascita','luogo_nascita','indirizzo','cap','citta','telefono','email','data_iscrizione','anno_rinnovo'],
+    ['numero_tessera','codice_fiscale','cognome','nome','sesso','data_nascita','cap_nascita','luogo_nascita','indirizzo','cap','citta','telefono','email','data_iscrizione','anno_rinnovo'],
     ...tuttiSoci.map(s => [
+      s.numero_tessera || '',
       s.codice_fiscale, s.cognome, s.nome, s.sesso,
       formatDataIT(s.data_nascita), s.cap_nascita, s.luogo_nascita,
       s.indirizzo, s.cap, s.citta,
