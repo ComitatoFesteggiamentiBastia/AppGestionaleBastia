@@ -2840,18 +2840,34 @@ async function toggleTesseraStampata(id, valore) {
   showToast(valore ? 'Segnata come stampata' : 'Segnata come da stampare', 'success');
 }
 
-async function apriRinominaStorico(vecchioNome) {
-  const suggerimenti = catalogoSpesa.map(c => c.articolo).sort();
-  const elenco = suggerimenti.length ? '\n\nArticoli esistenti in Database Articoli (copia il nome esatto se corrisponde):\n' + suggerimenti.join(', ') : '';
-  const nuovoNome = prompt(`Correggi il nome articolo "${vecchioNome}" in Storico Prezzi.\nInserisci il nome corretto (deve corrispondere esattamente a un articolo di Database Articoli):${elenco}`, vecchioNome);
-  if (!nuovoNome || !nuovoNome.trim() || nuovoNome.trim() === vecchioNome) return;
-  const nomeFinale = nuovoNome.trim();
+function apriRinominaStorico(vecchioNome) {
+  document.getElementById('modal-rinomina-storico').style.display = 'flex';
+  document.getElementById('modal-rinomina-storico').style.pointerEvents = 'auto';
+  document.getElementById('rin-storico-vecchio-nome').value = vecchioNome;
+  document.getElementById('rin-storico-vecchio-label').textContent = vecchioNome;
+  document.getElementById('rin-storico-nuovo').value = vecchioNome;
+  const dl = document.getElementById('rin-storico-suggerimenti');
+  dl.innerHTML = catalogoSpesa.map(c => `<option value="${c.articolo}">`).join('');
+}
 
-  const { error } = await db.from('storico_prezzi').update({ articolo: nomeFinale }).eq('articolo', vecchioNome);
+function closeModalRinominaStorico() {
+  const m = document.getElementById('modal-rinomina-storico');
+  m.style.display = 'none';
+  m.style.pointerEvents = 'none';
+}
+
+async function confermaRinominaStorico() {
+  const vecchioNome = document.getElementById('rin-storico-vecchio-nome').value;
+  const nuovoNome = document.getElementById('rin-storico-nuovo').value.trim();
+  if (!nuovoNome) { showToast('Inserisci un nome', 'error'); return; }
+  if (nuovoNome === vecchioNome) { closeModalRinominaStorico(); return; }
+
+  const { error } = await db.from('storico_prezzi').update({ articolo: nuovoNome }).eq('articolo', vecchioNome);
   if (error) { showToast('Errore: ' + error.message, 'error'); return; }
 
-  if (!articoloInDatabase(nomeFinale)) {
-    showToast(`Rinominato in "${nomeFinale}", ma non risulta ancora in Database Articoli`, '');
+  closeModalRinominaStorico();
+  if (!articoloInDatabase(nuovoNome)) {
+    showToast(`Rinominato in "${nuovoNome}", ma non risulta ancora in Database Articoli`, '');
   } else {
     showToast('Articolo corretto!', 'success');
   }
