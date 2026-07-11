@@ -618,6 +618,118 @@ function exportExcel() {
   showToast('Export completato!', 'success');
 }
 
+async function generaLibroSoci() {
+  if (!tuttiSoci.length) { showToast('Nessun socio da esportare', 'error'); return; }
+  await caricaJsPDF();
+  const { jsPDF } = window.jspdf;
+  const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const anno = ANNO_CORRENTE;
+  const oggi = new Date().toLocaleDateString('it-IT');
+  const soci = [...tuttiSoci].sort((a, b) => (a.cognome || '').localeCompare(b.cognome || ''));
+
+  function campo(label, valore, x, y, w) {
+    pdf.setFontSize(8);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(122, 101, 72);
+    pdf.text(label.toUpperCase(), x, y);
+    pdf.setFontSize(11);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(26, 26, 26);
+    pdf.text(valore || '—', x, y + 6);
+    pdf.setDrawColor(220, 213, 200);
+    pdf.line(x, y + 9, x + w, y + 9);
+  }
+
+  soci.forEach((s, idx) => {
+    if (idx > 0) pdf.addPage();
+
+    // Header
+    pdf.setFillColor(30, 45, 71);
+    pdf.rect(0, 0, 210, 34, 'F');
+    pdf.setTextColor(201, 160, 48);
+    pdf.setFontSize(18);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text('LIBRO SOCI', 14, 15);
+    pdf.setFontSize(10);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(200, 216, 240);
+    pdf.text('Comitato Festeggiamenti N.S. della Bastia', 14, 23);
+    pdf.text(`Anno ${anno} — Scheda ${idx + 1}/${soci.length}`, 14, 29);
+    pdf.setFontSize(9);
+    pdf.text(oggi, 196, 15, { align: 'right' });
+    if (s.numero_tessera) {
+      pdf.setFontSize(13);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(201, 160, 48);
+      pdf.text(`Tessera n° ${s.numero_tessera}`, 196, 27, { align: 'right' });
+    }
+
+    // Nome socio
+    let y = 50;
+    pdf.setFontSize(20);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(30, 45, 71);
+    pdf.text(`${(s.cognome || '').toUpperCase()} ${(s.nome || '').toUpperCase()}`, 14, y);
+    y += 14;
+
+    // Dati anagrafici
+    pdf.setFillColor(242, 237, 232);
+    pdf.rect(14, y - 5, 182, 6, 'F');
+    pdf.setFontSize(8);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(122, 101, 72);
+    pdf.text('DATI ANAGRAFICI', 16, y - 1);
+    y += 12;
+
+    campo('Codice fiscale', s.codice_fiscale, 14, y, 85);
+    campo('Sesso', s.sesso === 'M' ? 'Maschio' : s.sesso === 'F' ? 'Femmina' : '—', 105, y, 91);
+    y += 18;
+    campo('Data di nascita', formatDataIT(s.data_nascita), 14, y, 85);
+    campo('Luogo di nascita', s.luogo_nascita + (s.cap_nascita ? ' (' + s.cap_nascita + ')' : ''), 105, y, 91);
+    y += 24;
+
+    // Contatti e residenza
+    pdf.setFillColor(242, 237, 232);
+    pdf.rect(14, y - 5, 182, 6, 'F');
+    pdf.setFontSize(8);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(122, 101, 72);
+    pdf.text('RESIDENZA E CONTATTI', 16, y - 1);
+    y += 12;
+
+    campo('Indirizzo', s.indirizzo, 14, y, 182);
+    y += 18;
+    campo('CAP', s.cap, 14, y, 40);
+    campo('Città', s.citta, 60, y, 60);
+    campo('Telefono', s.telefono, 126, y, 70);
+    y += 18;
+    campo('Email', s.email, 14, y, 182);
+    y += 24;
+
+    // Iscrizione
+    pdf.setFillColor(242, 237, 232);
+    pdf.rect(14, y - 5, 182, 6, 'F');
+    pdf.setFontSize(8);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(122, 101, 72);
+    pdf.text('ASSOCIAZIONE', 16, y - 1);
+    y += 12;
+
+    campo('Data iscrizione', formatDataIT(s.data_iscrizione), 14, y, 60);
+    campo('Anno ultimo rinnovo', s.anno_rinnovo ? String(s.anno_rinnovo) : '—', 80, y, 55);
+    campo('Numero tessera', s.numero_tessera ? String(s.numero_tessera) : '—', 141, y, 55);
+
+    // Footer
+    pdf.setFontSize(7.5);
+    pdf.setFont('helvetica', 'italic');
+    pdf.setTextColor(160, 160, 160);
+    pdf.text('Comitato Festeggiamenti N.S. della Bastia — Libro Soci generato il ' + oggi, 105, 290, { align: 'center' });
+  });
+
+  pdf.save(`libro_soci_${anno}.pdf`);
+  showToast('Libro Soci generato!', 'success');
+}
+
 // ===== IMPOSTAZIONI ANNO =====
 async function loadImpostazioniAnno() {
   const { data } = await db.from('impostazioni_anno').select('*').order('anno', { ascending: false });
