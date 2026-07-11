@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Diventa Socio — Comitato Festeggiamenti N.S. della Bastia</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --navy:#1E2D47;
+    --navy-deep:#141F33;
+    --gold:#C9A030;
+    --gold-light:#E4C567;
+    --cream:#F7F4EE;
+    --stone:#D4C9BE;
+    --ink:#20242C;
+    --muted:#6B7078;
+    --ok:#2F6B4F;
+    --err:#9B2C2C;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:var(--cream);
+    font-family:'Inter',sans-serif;
+    color:var(--ink);
+    -webkit-font-smoothing:antialiased;
+  }
+  .hero{
+    background:linear-gradient(160deg,var(--navy) 0%,var(--navy-deep) 100%);
+    color:white;
+    padding:56px 20px 80px;
+    text-align:center;
+    position:relative;
+    overflow:hidden;
+  }
+  .hero::before{
+    content:'';
+    position:absolute;
+    inset:0;
+    background-image:radial-gradient(circle at 20% 20%, rgba(201,160,48,0.10) 0%, transparent 45%),
+                      radial-gradient(circle at 85% 75%, rgba(201,160,48,0.08) 0%, transparent 40%);
+  }
+  .hero-content{position:relative;max-width:560px;margin:0 auto;}
+  .eyebrow{
+    font-size:12px;
+    font-weight:600;
+    letter-spacing:0.14em;
+    text-transform:uppercase;
+    color:var(--gold-light);
+    margin-bottom:14px;
+  }
+  .hero h1{
+    font-family:'Fraunces',serif;
+    font-weight:600;
+    font-size:clamp(30px,5vw,42px);
+    line-height:1.15;
+    margin:0 0 14px;
+  }
+  .hero p{
+    font-size:15px;
+    line-height:1.6;
+    color:#C7D0E0;
+    margin:0;
+  }
+  .wrap{
+    max-width:640px;
+    margin:-48px auto 60px;
+    padding:0 16px;
+    position:relative;
+  }
+  .card{
+    background:white;
+    border-radius:18px;
+    box-shadow:0 20px 50px -12px rgba(20,31,51,0.25);
+    padding:36px 30px 30px;
+  }
+  @media(max-width:480px){ .card{padding:26px 18px 22px;} }
+  .step-label{
+    font-size:11px;
+    font-weight:700;
+    letter-spacing:0.08em;
+    text-transform:uppercase;
+    color:var(--gold);
+    margin:26px 0 14px;
+    padding-top:18px;
+    border-top:1px solid #EFE9DF;
+  }
+  .step-label:first-child{margin-top:0;padding-top:0;border-top:none;}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+  .full{grid-column:1/3;}
+  @media(max-width:480px){ .grid{grid-template-columns:1fr;} .full{grid-column:1;} }
+  .field label{
+    display:block;
+    font-size:12.5px;
+    font-weight:600;
+    color:var(--navy);
+    margin-bottom:6px;
+  }
+  .field label .opt{font-weight:400;color:var(--muted);}
+  .field input,.field select{
+    width:100%;
+    padding:11px 13px;
+    border:1.5px solid var(--stone);
+    border-radius:9px;
+    font-size:14.5px;
+    font-family:inherit;
+    color:var(--ink);
+    background:#FBFAF8;
+    outline:none;
+    transition:border-color .15s, background .15s;
+  }
+  .field input:focus,.field select:focus{
+    border-color:var(--gold);
+    background:white;
+  }
+  .field{margin-bottom:0;}
+  .submit-row{margin-top:30px;}
+  button.submit{
+    width:100%;
+    background:var(--navy);
+    color:white;
+    border:none;
+    padding:15px 20px;
+    border-radius:10px;
+    font-size:15.5px;
+    font-weight:600;
+    font-family:inherit;
+    cursor:pointer;
+    transition:background .15s, transform .1s;
+  }
+  button.submit:hover{background:var(--navy-deep);}
+  button.submit:active{transform:scale(0.99);}
+  button.submit:disabled{opacity:0.55;cursor:default;}
+  .fine-print{
+    font-size:12px;
+    color:var(--muted);
+    text-align:center;
+    margin-top:14px;
+    line-height:1.5;
+  }
+  .msg{
+    display:none;
+    padding:12px 14px;
+    border-radius:9px;
+    font-size:13.5px;
+    margin-bottom:18px;
+    line-height:1.5;
+  }
+  .msg.err{display:block;background:#FBEAEA;color:var(--err);border:1px solid #F0C9C9;}
+  .success-screen{display:none;text-align:center;padding:12px 6px 4px;}
+  .success-screen .check{
+    width:56px;height:56px;border-radius:50%;
+    background:var(--ok);color:white;
+    display:flex;align-items:center;justify-content:center;
+    font-size:28px;margin:0 auto 18px;
+  }
+  .success-screen h2{
+    font-family:'Fraunces',serif;
+    font-weight:600;
+    font-size:22px;
+    color:var(--navy);
+    margin:0 0 10px;
+  }
+  .success-screen p{color:var(--muted);font-size:14.5px;line-height:1.6;margin:0 0 6px;}
+  .success-screen .tessera-num{
+    display:inline-block;margin-top:16px;padding:8px 18px;
+    background:var(--cream);border-radius:8px;
+    font-size:13px;color:var(--navy);font-weight:600;
+  }
+  footer{
+    text-align:center;
+    font-size:12px;
+    color:var(--muted);
+    padding:0 20px 40px;
+  }
+</style>
+</head>
+<body>
+
+  <div class="hero">
+    <div class="hero-content">
+      <div class="eyebrow">Comitato Festeggiamenti N.S. della Bastia</div>
+      <h1>Diventa socio</h1>
+      <p>Compila la scheda con i tuoi dati. Un volontario del comitato verificherà la richiesta e ti contatterà per completare il pagamento della quota e attivare la tessera.</p>
+    </div>
+  </div>
+
+  <div class="wrap">
+    <div class="card">
+
+      <div id="form-msg" class="msg err"></div>
+
+      <form id="form-iscrizione">
+        <div class="step-label">Dati anagrafici</div>
+        <div class="grid">
+          <div class="field full">
+            <label>Codice fiscale *</label>
+            <input id="f-cf" maxlength="16" style="text-transform:uppercase" required>
+          </div>
+          <div class="field">
+            <label>Cognome *</label>
+            <input id="f-cognome" required>
+          </div>
+          <div class="field">
+            <label>Nome *</label>
+            <input id="f-nome" required>
+          </div>
+          <div class="field">
+            <label>Sesso <span class="opt">(facoltativo)</span></label>
+            <select id="f-sesso">
+              <option value="">—</option>
+              <option value="M">Maschio</option>
+              <option value="F">Femmina</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Data di nascita <span class="opt">(facoltativo)</span></label>
+            <input id="f-data-nascita" placeholder="gg/mm/aaaa">
+          </div>
+          <div class="field">
+            <label>Comune di nascita <span class="opt">(facoltativo)</span></label>
+            <input id="f-luogo-nascita">
+          </div>
+          <div class="field">
+            <label>CAP di nascita <span class="opt">(facoltativo)</span></label>
+            <input id="f-cap-nascita">
+          </div>
+        </div>
+
+        <div class="step-label">Residenza e contatti</div>
+        <div class="grid">
+          <div class="field full">
+            <label>Indirizzo <span class="opt">(facoltativo)</span></label>
+            <input id="f-indirizzo">
+          </div>
+          <div class="field">
+            <label>CAP <span class="opt">(facoltativo)</span></label>
+            <input id="f-cap">
+          </div>
+          <div class="field">
+            <label>Città <span class="opt">(facoltativo)</span></label>
+            <input id="f-citta">
+          </div>
+          <div class="field">
+            <label>Telefono *</label>
+            <input id="f-telefono" type="tel" required>
+          </div>
+          <div class="field">
+            <label>Email <span class="opt">(facoltativo)</span></label>
+            <input id="f-email" type="email">
+          </div>
+        </div>
+
+        <div class="submit-row">
+          <button type="submit" class="submit" id="btn-submit">Invia richiesta di iscrizione</button>
+          <div class="fine-print">I dati vengono trattati esclusivamente per la gestione della vita associativa del comitato.</div>
+        </div>
+      </form>
+
+      <div class="success-screen" id="success-screen">
+        <div class="check">✓</div>
+        <h2>Richiesta inviata</h2>
+        <p>Grazie! La tua richiesta è stata registrata.<br>Un volontario del comitato ti contatterà per il pagamento della quota associativa e per consegnarti la tessera socio.</p>
+      </div>
+
+    </div>
+  </div>
+
+  <footer>Comitato Festeggiamenti N.S. della Bastia</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+  const SUPABASE_URL = 'https://nwpuiwfptkswloauphzn.supabase.co';
+  const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im53cHVpd2ZwdGtzd2xvYXVwaHpuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE4MDY5OTEsImV4cCI6MjA5NzM4Mjk5MX0.kOcnfzbxI2xoSRsM26LiyesE8SszyPJ4eBkLRDKgQPc';
+  const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+  function parseDataIT(str) {
+    if (!str) return null;
+    const m = str.trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (!m) return null;
+    return `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`;
+  }
+
+  function showMsg(text) {
+    const el = document.getElementById('form-msg');
+    el.textContent = text;
+    el.style.display = 'block';
+  }
+
+  document.getElementById('form-iscrizione').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    document.getElementById('form-msg').style.display = 'none';
+
+    const cf = document.getElementById('f-cf').value.trim().toUpperCase();
+    const cognome = document.getElementById('f-cognome').value.trim();
+    const nome = document.getElementById('f-nome').value.trim();
+    const telefono = document.getElementById('f-telefono').value.trim();
+
+    if (!cf || cf.length !== 16) { showMsg('Inserisci un codice fiscale valido (16 caratteri).'); return; }
+    if (!cognome || !nome) { showMsg('Cognome e nome sono obbligatori.'); return; }
+    if (!telefono) { showMsg('Inserisci un numero di telefono per essere ricontattato.'); return; }
+
+    const btn = document.getElementById('btn-submit');
+    btn.disabled = true;
+    btn.textContent = 'Verifica in corso...';
+
+    // Controlla se è già socio attivo
+    const { data: socioEsistente } = await db.from('soci').select('id').eq('codice_fiscale', cf).eq('attivo', true).maybeSingle();
+    if (socioEsistente) {
+      showMsg('Risulti già iscritto come socio. Se pensi si tratti di un errore, contatta il comitato.');
+      btn.disabled = false;
+      btn.textContent = 'Invia richiesta di iscrizione';
+      return;
+    }
+
+    // Controlla se c'è già una richiesta in attesa con lo stesso codice fiscale
+    const { data: richiestaEsistente } = await db.from('richieste_iscrizione').select('id').eq('codice_fiscale', cf).eq('stato', 'in_attesa').maybeSingle();
+    if (richiestaEsistente) {
+      showMsg('Abbiamo già ricevuto una tua richiesta, in attesa di conferma da parte del comitato. Non serve inviarne un\'altra.');
+      btn.disabled = false;
+      btn.textContent = 'Invia richiesta di iscrizione';
+      return;
+    }
+
+    btn.textContent = 'Invio in corso...';
+
+    const payload = {
+      codice_fiscale: cf,
+      cognome, nome, telefono,
+      sesso: document.getElementById('f-sesso').value || null,
+      data_nascita: parseDataIT(document.getElementById('f-data-nascita').value),
+      cap_nascita: document.getElementById('f-cap-nascita').value.trim() || null,
+      luogo_nascita: document.getElementById('f-luogo-nascita').value.trim() || null,
+      indirizzo: document.getElementById('f-indirizzo').value.trim() || null,
+      cap: document.getElementById('f-cap').value.trim() || null,
+      citta: document.getElementById('f-citta').value.trim() || null,
+      email: document.getElementById('f-email').value.trim() || null,
+      stato: 'in_attesa'
+    };
+
+    const { error } = await db.from('richieste_iscrizione').insert(payload);
+
+    if (error) {
+      showMsg('Si è verificato un errore. Riprova oppure contatta il comitato direttamente. (' + error.message + ')');
+      btn.disabled = false;
+      btn.textContent = 'Invia richiesta di iscrizione';
+      return;
+    }
+
+    document.getElementById('form-iscrizione').style.display = 'none';
+    document.getElementById('success-screen').style.display = 'block';
+  });
+</script>
+</body>
+</html>

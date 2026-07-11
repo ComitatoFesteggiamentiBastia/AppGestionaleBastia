@@ -563,6 +563,7 @@
     <div class="s-section">
       <div class="s-label">Associazione</div>
       <div class="s-item" onclick="showPage('soci')"><i class="ti ti-users"></i> Soci</div>
+      <div class="s-item" onclick="showPage('richieste')"><i class="ti ti-user-plus"></i> Richieste iscrizione <span id="richieste-badge" style="display:none;background:#991B1B;color:white;font-size:10px;font-weight:700;border-radius:10px;padding:1px 7px;margin-left:4px;">0</span></div>
       <div class="s-item" onclick="showPage('db-avanzato')"><i class="ti ti-table"></i> DB Avanzato</div>
       <div class="s-item" onclick="showPage('quote')"><i class="ti ti-credit-card"></i> Quote annuali</div>
       <div class="s-item" onclick="showPage('cassa')"><i class="ti ti-cash"></i> Cassa generale</div>
@@ -690,6 +691,22 @@
       </div>
       <div class="table-card">
         <div id="lista-nonrinn">
+          <div class="table-row"><span class="row-name" style="color:var(--testo-muted)">Caricamento...</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RICHIESTE ISCRIZIONE -->
+    <div class="page" id="page-richieste">
+      <div class="page-header">
+        <div>
+          <h2>Richieste iscrizione</h2>
+          <div style="font-size:12px;color:var(--testo-muted);margin-top:2px;">Iscrizioni ricevute dal modulo pubblico, in attesa di conferma pagamento</div>
+        </div>
+        <button class="btn" onclick="copiaLinkIscrizione()"><i class="ti ti-link"></i> Copia link pubblico</button>
+      </div>
+      <div class="table-card">
+        <div id="richieste-list">
           <div class="table-row"><span class="row-name" style="color:var(--testo-muted)">Caricamento...</span></div>
         </div>
       </div>

@@ -1,3 +1,4 @@
+
 const SUPABASE_URL = 'https://nwpuiwfptkswloauphzn.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im53cHVpd2ZwdGtzd2xvYXVwaHpuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE4MDY5OTEsImV4cCI6MjA5NzM4Mjk5MX0.kOcnfzbxI2xoSRsM26LiyesE8SszyPJ4eBkLRDKgQPc';
 const { createClient } = supabase;
@@ -101,6 +102,7 @@ async function initApp(user) {
         await applicaPermessi(user.id);
         await loadCategorie();
         await assicuraSagreCaricate();
+        loadRichieste();
         loadDashboard();
       } catch(e) {
         loadDashboard();
@@ -135,6 +137,7 @@ function showPage(pageId) {
   if (pageId === 'spesa') loadSpesa();
   if (pageId === 'prima-nota') loadPrimaNota();
   if (pageId === 'inventario') loadInventario();
+  if (pageId === 'richieste') loadRichieste();
   if (pageId === 'database-articoli') loadCatalogoCompleto();
   if (pageId === 'menu-sagra') loadMenuSagra();
   if (pageId === 'storico-prezzi') loadStoricoPrezzi();
@@ -239,6 +242,7 @@ const ANNO_CORRENTE = new Date().getFullYear();
 const PAGINE_DISPONIBILI = [
   { id: 'dashboard',         label: 'Dashboard',           gruppo: 'Generale' },
   { id: 'soci',              label: 'Soci',                gruppo: 'Associazione' },
+  { id: 'richieste',         label: 'Richieste iscrizione', gruppo: 'Associazione' },
   { id: 'db-avanzato',       label: 'DB Avanzato',         gruppo: 'Associazione' },
   { id: 'quote',             label: 'Quote annuali',       gruppo: 'Associazione' },
   { id: 'cassa',             label: 'Cassa generale',      gruppo: 'Associazione' },
@@ -498,6 +502,130 @@ async function rinnovaQuota(id) {
   loadSoci();
 }
 
+// ===== RICHIESTE ISCRIZIONE =====
+let tutteRichieste = [];
+
+async function loadRichieste() {
+  const { data } = await db.from('richieste_iscrizione').select('*').order('created_at', { ascending: false });
+  tutteRichieste = data || [];
+  renderRichieste();
+  aggiornaBadgeRichieste();
+}
+
+function aggiornaBadgeRichieste() {
+  const pendenti = tutteRichieste.filter(r => r.stato === 'in_attesa').length;
+  const badge = document.getElementById('richieste-badge');
+  if (badge) {
+    badge.textContent = pendenti;
+    badge.style.display = pendenti > 0 ? 'inline-block' : 'none';
+  }
+}
+
+function renderRichieste() {
+  const container = document.getElementById('richieste-list');
+  if (!container) return;
+  const pendenti = tutteRichieste.filter(r => r.stato === 'in_attesa');
+  const altre = tutteRichieste.filter(r => r.stato !== 'in_attesa');
+
+  if (!tutteRichieste.length) {
+    container.innerHTML = '<div style="padding:32px;text-align:center;color:var(--testo-muted);">Nessuna richiesta ricevuta. Condividi il link pubblico per far arrivare le iscrizioni qui.</div>';
+    return;
+  }
+
+  const rigaRichiesta = (r, pendente) => `
+    <div class="table-row">
+      <div style="flex:1;">
+        <div class="row-name">${r.cognome} ${r.nome}</div>
+        <div class="row-sub">${r.codice_fiscale} ${r.telefono ? '· ' + r.telefono : ''} ${r.email ? '· ' + r.email : ''} · ricevuta il ${new Date(r.created_at).toLocaleDateString('it-IT')}</div>
+      </div>
+      ${pendente
+        ? `<span class="badge badge-no">In attesa</span>
+           <button class="btn btn-sm" style="background:var(--verde);color:white;border-color:var(--verde);" onclick="convalidaRichiesta('${r.id}')"><i class="ti ti-check"></i> Convalida</button>
+           <button class="btn btn-sm" style="color:#991B1B" onclick="rifiutaRichiesta('${r.id}')"><i class="ti ti-x"></i></button>`
+        : `<span class="badge ${r.stato === 'convalidata' ? 'badge-ok' : 'badge-pietra'}">${r.stato === 'convalidata' ? 'Convalidata' : 'Rifiutata'}</span>`
+      }
+    </div>`;
+
+  let html = '';
+  if (pendenti.length) {
+    html += pendenti.map(r => rigaRichiesta(r, true)).join('');
+  } else {
+    html += '<div style="padding:20px 16px;color:var(--testo-muted);font-size:13px;">Nessuna richiesta in attesa.</div>';
+  }
+  if (altre.length) {
+    html += `<div style="padding:10px 16px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:var(--testo-muted);background:#F2EDE4;">Storico</div>`;
+    html += altre.map(r => rigaRichiesta(r, false)).join('');
+  }
+  container.innerHTML = html;
+}
+
+async function convalidaRichiesta(id) {
+  const r = tutteRichieste.find(x => x.id === id);
+  if (!r) return;
+
+  const quota = getQuotaAnnoCorrente();
+  const importoStr = prompt(`Confermi il pagamento della quota per ${r.cognome} ${r.nome}?\nImporto quota (€):`, quota);
+  if (importoStr === null) return;
+  const importo = parseFloat(importoStr) || quota;
+
+  // Verifica se esiste già un socio con questo CF (es. rinnovo dopo periodo di inattività)
+  const { data: esistente } = await db.from('soci').select('id').eq('codice_fiscale', r.codice_fiscale).maybeSingle();
+
+  const max = tuttiSoci.reduce((m, x) => x.numero_tessera && x.numero_tessera > m ? x.numero_tessera : m, 0);
+  const oggi = new Date().toISOString().split('T')[0];
+
+  const datiSocio = {
+    codice_fiscale: r.codice_fiscale,
+    cognome: r.cognome, nome: r.nome,
+    sesso: r.sesso, data_nascita: r.data_nascita,
+    cap_nascita: r.cap_nascita, luogo_nascita: r.luogo_nascita,
+    indirizzo: r.indirizzo, cap: r.cap, citta: r.citta,
+    telefono: r.telefono, email: r.email,
+    data_iscrizione: oggi, anno_rinnovo: ANNO_CORRENTE,
+    attivo: true, updated_at: new Date().toISOString()
+  };
+
+  let socioId, error;
+  if (esistente?.id) {
+    socioId = esistente.id;
+    ({ error } = await db.from('soci').update(datiSocio).eq('id', socioId));
+  } else {
+    datiSocio.numero_tessera = max + 1;
+    const { data: nuovo, error: e2 } = await db.from('soci').insert(datiSocio).select('id').single();
+    error = e2;
+    socioId = nuovo?.id;
+  }
+  if (error) { showToast('Errore creazione socio: ' + error.message, 'error'); return; }
+
+  await db.from('quote').insert({ socio_id: socioId, anno: ANNO_CORRENTE, pagato: true, data_pagamento: oggi, importo });
+  await db.from('movimenti_cassa').insert({
+    tipo: 'entrata', categoria: 'Quote associative',
+    descrizione: `Quota ${ANNO_CORRENTE} — ${r.cognome} ${r.nome} (nuova iscrizione)`,
+    importo, data: oggi, metodo_pagamento: 'contanti'
+  });
+  await db.from('richieste_iscrizione').update({ stato: 'convalidata', socio_id: socioId, convalidata_at: new Date().toISOString() }).eq('id', id);
+
+  showToast('Socio creato e quota registrata!', 'success');
+  await loadSoci();
+  loadRichieste();
+}
+
+async function rifiutaRichiesta(id) {
+  if (!confirm('Rifiutare questa richiesta? Non verrà creato alcun socio.')) return;
+  await db.from('richieste_iscrizione').update({ stato: 'rifiutata' }).eq('id', id);
+  showToast('Richiesta rifiutata', 'success');
+  loadRichieste();
+}
+
+function copiaLinkIscrizione() {
+  const link = window.location.origin + window.location.pathname.replace(/index\.html$/, '') + 'iscrizione.html';
+  navigator.clipboard.writeText(link).then(() => {
+    showToast('Link copiato: ' + link, 'success');
+  }).catch(() => {
+    prompt('Copia questo link:', link);
+  });
+}
+
 // ===== IMPORT EXCEL =====
 async function importExcel(input) {
   const file = input.files[0];
@@ -599,20 +727,23 @@ async function importExcel(input) {
 
     for (const obj of oggetti) {
       obj.codice_fiscale = obj.codice_fiscale.toUpperCase();
-      if (obj.data_nascita) {
-        // Se è numero seriale Excel convertilo, altrimenti parseDataIT
-        if (/^\d+(\.\d+)?$/.test(obj.data_nascita.trim())) {
-          obj.data_nascita = excelSerialToDate(obj.data_nascita);
-        } else {
-          obj.data_nascita = parseDataIT(obj.data_nascita);
+      if (obj.data_nascita !== undefined) {
+        if (obj.data_nascita) {
+          if (/^\d+(\.\d+)?$/.test(obj.data_nascita.trim())) {
+            obj.data_nascita = excelSerialToDate(obj.data_nascita);
+          } else {
+            obj.data_nascita = parseDataIT(obj.data_nascita);
+          }
         }
         if (!obj.data_nascita) delete obj.data_nascita;
       }
-      if (obj.data_iscrizione) {
-        if (/^\d+(\.\d+)?$/.test(obj.data_iscrizione.trim())) {
-          obj.data_iscrizione = excelSerialToDate(obj.data_iscrizione);
-        } else {
-          obj.data_iscrizione = parseDataIT(obj.data_iscrizione);
+      if (obj.data_iscrizione !== undefined) {
+        if (obj.data_iscrizione) {
+          if (/^\d+(\.\d+)?$/.test(obj.data_iscrizione.trim())) {
+            obj.data_iscrizione = excelSerialToDate(obj.data_iscrizione);
+          } else {
+            obj.data_iscrizione = parseDataIT(obj.data_iscrizione);
+          }
         }
         if (!obj.data_iscrizione) delete obj.data_iscrizione;
       }
