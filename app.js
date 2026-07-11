@@ -3908,6 +3908,7 @@ async function scaricaPDFMenu(giorno) {
 let tuttoStorico = [];
 
 async function loadStoricoPrezzi() {
+  await loadCatalogoSpesa();
   const { data } = await db.from('storico_prezzi').select('*').order('articolo').order('anno', { ascending: false });
   tuttoStorico = data || [];
   renderStoricoPrezzi();
@@ -3946,7 +3947,10 @@ function renderStoricoPrezzi() {
 
   tbody.innerHTML = Object.entries(gruppi).map(([art, storico]) => `
     <tr style="background:#F2EDE4;">
-      <td colspan="6" style="padding:8px 14px;font-weight:700;font-size:13px;color:var(--blu-notte);">${art}</td>
+      <td colspan="6" style="padding:8px 14px;font-weight:700;font-size:13px;color:var(--blu-notte);">
+        ${art}
+        ${!articoloInDatabase(art) ? `<span class="badge badge-no" style="cursor:pointer;font-weight:500;font-size:11px;margin-left:8px;" onclick="openModalDatabaseArticolo({articolo:'${art.replace(/'/g,"\\'")}',fornitore:'${(storico[0]?.fornitore||'').replace(/'/g,"\\'")}'})" title="Clicca per aggiungere al database">⚠️ Non in Database Articoli — clicca per aggiungere</span>` : ''}
+      </td>
     </tr>
     ${storico.map((s,i) => `
     <tr style="${i%2===0?'':'background:#F9F7F5;'}border-bottom:1px solid var(--border);">
