@@ -1996,6 +1996,8 @@ function rowSpesa(a) {
   const badgeRimanenza = (riman && riman.quantita > 0)
     ? `<span class="badge badge-ok" title="Presente in inventario">📦 Rimanenza: ${riman.quantita} ${riman.unita || ''}</span>` : '';
   const nonInDb = !articoloInDatabase(a.articolo);
+  const chiaveDup = a.articolo.toLowerCase().trim() + '|' + (a.fornitore || '').toLowerCase().trim();
+  const isDoppio = tuttiArticoliSpesa.filter(x => (x.articolo.toLowerCase().trim() + '|' + (x.fornitore || '').toLowerCase().trim()) === chiaveDup).length > 1;
   return `<div class="table-row">
     <input type="checkbox" ${a.stato === 'comprato' ? 'checked' : ''} onchange="toggleSpesaAcquistata('${a.id}', this.checked)"
       style="width:16px;height:16px;accent-color:var(--verde);cursor:pointer;margin-right:4px;">
@@ -2003,6 +2005,7 @@ function rowSpesa(a) {
       <div class="row-name" style="${a.stato === 'comprato' ? 'text-decoration:line-through;opacity:0.6;' : ''}">${a.articolo}</div>
       <div class="row-sub">${a.fornitore || ''} ${a.quantita ? '· Q: ' + a.quantita + (a.unita ? ' ' + a.unita : '') : ''} ${a.prezzo_totale ? '· € ' + parseFloat(a.prezzo_totale).toFixed(2) : ''} ${a.giorno ? '· ' + (giornoLabel[a.giorno] || a.giorno) : ''}</div>
       ${nonInDb ? `<div style="margin-top:4px;"><span class="badge badge-no" style="cursor:pointer;" onclick="openModalDatabaseArticolo({articolo:'${(a.articolo||'').replace(/'/g,"\\'")}',fornitore:'${(a.fornitore||'').replace(/'/g,"\\'")}',categoria:'${(a.categoria||'').replace(/'/g,"\\'")}',unita:'${(a.unita||'').replace(/'/g,"\\'")}'})" title="Clicca per aggiungere al database">⚠️ Non presente in Database Articoli — clicca per aggiungere</span></div>` : ''}
+      ${isDoppio ? `<div style="margin-top:4px;"><span class="badge" style="background:#FBEAEA;color:#991B1B;">📑 Articolo doppio in lista</span></div>` : ''}
     </div>
     ${badgeRimanenza}
     <span class="badge ${statoColor[a.stato] || 'badge-no'}">${statoLabel[a.stato] || a.stato}</span>
@@ -2027,6 +2030,19 @@ function aggiornaStatsSpesa() {
   if (statMancanti) {
     statMancanti.textContent = mancanti;
     statMancanti.closest('.stat-card').style.display = mancanti > 0 ? '' : 'none';
+  }
+
+  // Rileva articoli doppi (stesso articolo + fornitore ripetuto)
+  const chiavi = {};
+  tuttiArticoliSpesa.forEach(a => {
+    const k = a.articolo.toLowerCase().trim() + '|' + (a.fornitore || '').toLowerCase().trim();
+    chiavi[k] = (chiavi[k] || 0) + 1;
+  });
+  const nDoppi = Object.values(chiavi).filter(n => n > 1).length;
+  const statDoppi = document.getElementById('spesa-stat-doppi');
+  if (statDoppi) {
+    statDoppi.textContent = nDoppi;
+    statDoppi.closest('.stat-card').style.display = nDoppi > 0 ? '' : 'none';
   }
 }
 
@@ -2077,6 +2093,19 @@ async function saveSpesa() {
   const articolo = document.getElementById('m-spesa-articolo').value.trim();
   if (!articolo) { showToast('Articolo obbligatorio', 'error'); return; }
 
+  const id = document.getElementById('m-spesa-id').value;
+  const fornitoreCheck = document.getElementById('m-spesa-fornitore').value.trim();
+  if (!id) {
+    const doppio = tuttiArticoliSpesa.find(a =>
+      a.articolo.toLowerCase().trim() === articolo.toLowerCase() &&
+      (a.fornitore || '').toLowerCase().trim() === fornitoreCheck.toLowerCase().trim()
+    );
+    if (doppio) {
+      const continua = confirm(`"${articolo}"${fornitoreCheck ? ' (' + fornitoreCheck + ')' : ''} è già presente nella lista spesa di questa sagra (Q.tà ${doppio.quantita || '—'} ${doppio.unita || ''}).\n\nVuoi aggiungerlo comunque come riga separata?`);
+      if (!continua) return;
+    }
+  }
+
   const qta = parseFloat(document.getElementById('m-spesa-qta').value) || null;
   const prezzo = parseFloat(document.getElementById('m-spesa-prezzo').value) || null;
   const iva = parseFloat(document.getElementById('m-spesa-iva').value) || null;
@@ -2099,7 +2128,6 @@ async function saveSpesa() {
     acquistato: document.getElementById('m-spesa-stato').value === 'comprato'
   };
 
-  const id = document.getElementById('m-spesa-id').value;
   let error;
   if (id) {
     ({ error } = await db.from('lista_spesa').update(payload).eq('id', id));
