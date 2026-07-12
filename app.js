@@ -1475,7 +1475,7 @@ function renderSponsor() {
       <td style="padding:8px 12px;">${s.importo ? '€ ' + parseFloat(s.importo).toFixed(2) : '—'}</td>
       <td style="padding:8px 12px;font-size:12px;color:var(--testo-muted);">${s.dettaglio || '—'}</td>
       <td style="padding:8px 12px;"><span class="badge ${s.ricevuto ? 'badge-ok' : 'badge-no'}">${s.ricevuto ? 'Ricevuto' : 'In attesa'}</span></td>
-      <td style="padding:8px 12px;text-align:center;">${s.ricevuta_emessa ? '<span class="badge badge-ok">✓ Emessa</span>' : '<span class="badge badge-no" style="cursor:pointer;" onclick="toggleRicevutaSponsor(\'' + s.id + '\', true)" title="Clicca per segnare come emessa">Da fare</span>'}</td>
+      <td style="padding:8px 12px;text-align:center;">${cellaRicevuta(s)}</td>
       <td style="padding:8px 12px;text-align:center;">${s.pubblica_sito ? '<span class="badge badge-ok">Online</span>' : '<span class="badge badge-no">Off</span>'}</td>
       <td style="padding:8px 12px;text-align:center;white-space:nowrap;">
         <button class="btn btn-sm" onclick='openModalSponsor(${JSON.stringify(s).replace(/"/g,"&quot;")})'><i class="ti ti-edit"></i></button>
@@ -1511,7 +1511,7 @@ function openModalSponsor(s = null) {
   document.getElementById('m-sp-dettaglio').value = s?.dettaglio || '';
   document.getElementById('m-sp-modo').value = s?.modo_pagamento || '';
   document.getElementById('m-sp-ricevuto').checked = s?.ricevuto || false;
-  document.getElementById('m-sp-ricevuta').checked = s?.ricevuta_emessa || false;
+  document.getElementById('m-sp-ricevuta').value = s?.ricevuta_stato || 'da_fare';
   document.getElementById('m-sp-pubblica').checked = s?.pubblica_sito || false;
   document.getElementById('m-sp-note').value = s?.note || '';
   document.getElementById('m-sp-logo-url').value = s?.logo_url || '';
@@ -1565,7 +1565,7 @@ async function saveSponsor() {
   if (!ditta) { showToast('Nome ditta obbligatorio', 'error'); return; }
 
   const ricevutoNuovo = document.getElementById('m-sp-ricevuto').checked;
-  const ricevutaEmessa = document.getElementById('m-sp-ricevuta').checked;
+  const ricevutaStato = document.getElementById('m-sp-ricevuta').value;
   const pubblicaSito = document.getElementById('m-sp-pubblica').checked;
   const importo = parseFloat(document.getElementById('m-sp-importo').value) || null;
   const tipo = document.getElementById('m-sp-tipo').value;
@@ -1592,7 +1592,7 @@ async function saveSponsor() {
     ditta, tipo, importo, dettaglio,
     modo_pagamento: modo,
     ricevuto: ricevutoNuovo,
-    ricevuta_emessa: ricevutaEmessa,
+    ricevuta_stato: ricevutaStato,
     pubblica_sito: pubblicaSito,
     logo_url: logoUrl,
     note: document.getElementById('m-sp-note').value.trim() || null
@@ -1647,13 +1647,27 @@ async function saveSponsor() {
   loadSponsor();
 }
 
-async function toggleRicevutaSponsor(id, valore) {
-  const { error } = await db.from('sponsor').update({ ricevuta_emessa: valore }).eq('id', id);
-  if (error) { showToast('Errore: ' + error.message, 'error'); return; }
+function cellaRicevuta(s) {
+  const stato = s.ricevuta_stato || 'da_fare';
+  const config = {
+    fatta: { label: '✓ Fatta', badge: 'badge-ok' },
+    no: { label: 'No', badge: 'badge-pietra' },
+    da_fare: { label: 'Da fare', badge: 'badge-no' }
+  };
+  const c = config[stato] || config.da_fare;
+  return `<span class="badge ${c.badge}" style="cursor:pointer;" onclick="toggleRicevutaSponsor('${s.id}')" title="Clicca per cambiare stato">${c.label}</span>`;
+}
+
+async function toggleRicevutaSponsor(id) {
   const s = tuttiSponsor.find(x => x.id === id);
-  if (s) s.ricevuta_emessa = valore;
+  if (!s) return;
+  const ordine = ['da_fare', 'fatta', 'no'];
+  const attuale = s.ricevuta_stato || 'da_fare';
+  const nuovoStato = ordine[(ordine.indexOf(attuale) + 1) % ordine.length];
+  const { error } = await db.from('sponsor').update({ ricevuta_stato: nuovoStato }).eq('id', id);
+  if (error) { showToast('Errore: ' + error.message, 'error'); return; }
+  s.ricevuta_stato = nuovoStato;
   renderSponsor();
-  showToast('Ricevuta segnata come emessa', 'success');
 }
 
 async function eliminaSponsor(id) {
