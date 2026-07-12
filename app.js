@@ -1930,6 +1930,8 @@ function renderSpesa() {
     if (!gruppi[key]) gruppi[key] = [];
     gruppi[key].push(a);
   });
+  // Ordina alfabeticamente gli articoli dentro ogni gruppo
+  Object.values(gruppi).forEach(arr => arr.sort((a, b) => (a.articolo || '').localeCompare(b.articolo || '')));
 
   // Set gruppi collassati (persistente in sessione)
   if (!window._spesaCollassati) window._spesaCollassati = new Set();
