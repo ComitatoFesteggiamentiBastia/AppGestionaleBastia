@@ -1779,6 +1779,7 @@ async function scaricaPDFFornitore(fornitore) {
     if (!gruppi[cat]) gruppi[cat] = [];
     gruppi[cat].push(a);
   });
+  Object.values(gruppi).forEach(arr => arr.sort((a, b) => (a.articolo || '').localeCompare(b.articolo || '')));
 
   let y = 48;
   const statoLabel = { da_ordinare: 'Da ordinare', ordinato: 'Ordinato', comprato: 'Comprato' };
@@ -1952,13 +1953,34 @@ function renderSpesa() {
           <span style="text-transform:uppercase;">${gruppo}</span>
           <span style="font-weight:400;font-size:11px;">(${articoli.length})</span>
         </div>
-        ${totCosto > 0 ? `<span style="font-size:12px;color:var(--blu-notte);font-weight:600;">€ ${totCosto.toFixed(2)}</span>` : ''}
+        <div style="display:flex;align-items:center;gap:10px;">
+          ${totCosto > 0 ? `<span style="font-size:12px;color:var(--blu-notte);font-weight:600;">€ ${totCosto.toFixed(2)}</span>` : ''}
+          ${ordina === 'fornitore' ? `<button class="btn btn-sm" onclick="event.stopPropagation(); segnaFornitoreOrdinato('${gruppo.replace(/'/g,"\\'")}')" title="Segna tutti gli articoli da ordinare di questo fornitore come ordinati"><i class="ti ti-truck-delivery"></i> Segna ordinato</button>` : ''}
+        </div>
       </div>
       <div id="${gId}" style="display:${collassato?'none':'block'};">
         ${articoli.map(a => rowSpesa(a)).join('')}
       </div>
     </div>`;
   }).join('');
+}
+
+async function segnaFornitoreOrdinato(fornitore) {
+  const daAggiornare = tuttiArticoliSpesa.filter(a => (a.fornitore || 'Senza fornitore') === fornitore && a.stato === 'da_ordinare');
+  if (!daAggiornare.length) { showToast('Nessun articolo da aggiornare per questo fornitore', 'error'); return; }
+  if (!confirm(`Segnare come "Ordinato" tutti i ${daAggiornare.length} articoli di ${fornitore} ancora da ordinare?`)) return;
+
+  const ids = daAggiornare.map(a => a.id);
+  const { error } = await db.from('lista_spesa').update({ stato: 'ordinato' }).in('id', ids);
+  if (error) { showToast('Errore: ' + error.message, 'error'); return; }
+
+  ids.forEach(id => {
+    const a = tuttiArticoliSpesa.find(x => x.id === id);
+    if (a) a.stato = 'ordinato';
+  });
+  renderSpesa();
+  aggiornaStatsSpesa();
+  showToast(`${ids.length} articoli segnati come ordinati`, 'success');
 }
 
 function toggleGruppoSpesa(id) {
@@ -3696,6 +3718,7 @@ async function scaricaPDFTotale() {
       if (!gruppi[cat]) gruppi[cat] = [];
       gruppi[cat].push(a);
     });
+    Object.values(gruppi).forEach(arr => arr.sort((a, b) => (a.articolo || '').localeCompare(b.articolo || '')));
 
     let totFornitore = 0;
 
