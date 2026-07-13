@@ -1735,6 +1735,10 @@ function pdfConPrezzi() {
   return document.getElementById('pdf-con-prezzi')?.checked || false;
 }
 
+function pdfConNote() {
+  return document.getElementById('pdf-con-note')?.checked ?? true;
+}
+
 async function scaricaPDFFornitore(fornitore) {
   await caricaJsPDF();
   const { jsPDF } = window.jspdf;
@@ -1811,7 +1815,6 @@ async function scaricaPDFFornitore(fornitore) {
 
     let totCategoria = 0;
     for (const a of items) {
-      const haNota = a.note && a.note.trim();
       if (y + 7 > 275) { pdf.addPage(); y = 20; }
 
       // Zebra striping
@@ -1830,6 +1833,7 @@ async function scaricaPDFFornitore(fornitore) {
       pdf.text(art, 16, y);
 
       // Nota sotto il nome, rientrata
+      const haNota = pdfConNote() && a.note && a.note.trim();
       if (haNota) {
         pdf.setFont('helvetica', 'italic');
         pdf.setFontSize(7.5);
@@ -3729,7 +3733,7 @@ async function scaricaPDFTotale() {
         pdf.text(art, COL_ART_X, y);
 
         // Nota affiancata all'articolo, nello spazio residuo della stessa riga
-        const haNota = a.note && a.note.trim();
+        const haNota = pdfConNote() && a.note && a.note.trim();
         if (haNota) {
           pdf.setFont('helvetica', 'italic');
           pdf.setFontSize(7);
