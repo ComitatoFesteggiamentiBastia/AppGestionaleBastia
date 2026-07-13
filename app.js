@@ -103,6 +103,7 @@ async function initApp(user) {
         await loadCategorie();
         await assicuraSagreCaricate();
         loadRichieste();
+        loadTodo();
         loadDashboard();
       } catch(e) {
         loadDashboard();
@@ -139,6 +140,7 @@ function showPage(pageId) {
   if (pageId === 'inventario') loadInventario();
   if (pageId === 'richieste') loadRichieste();
   if (pageId === 'servizio') loadServizio();
+  if (pageId === 'todo') loadTodo();
   if (pageId === 'database-articoli') loadCatalogoCompleto();
   if (pageId === 'menu-sagra') loadMenuSagra();
   if (pageId === 'storico-prezzi') loadStoricoPrezzi();
@@ -152,6 +154,159 @@ function toggleSidebar() {
 function closeSidebar() {
   document.getElementById('sidebar').classList.remove('open');
   document.getElementById('sidebar-overlay').classList.remove('show');
+}
+
+// ===== TO DO LIST =====
+let tutteTodo = [];
+
+async function loadTodo() {
+  const { data } = await db.from('todo_list').select('*').order('scadenza', { ascending: true, nullsFirst: false });
+  tutteTodo = data || [];
+  if (!tuttiSoci || !tuttiSoci.length) await loadSoci();
+  renderTodo();
+  aggiornaBadgeTodo();
+}
+
+function aggiornaBadgeTodo() {
+  const oggi = new Date(); oggi.setHours(0,0,0,0);
+  const attenzione = tutteTodo.filter(t => {
+    if (t.stato === 'fatto' || !t.scadenza) return false;
+    const sc = new Date(t.scadenza);
+    const diffGiorni = Math.ceil((sc - oggi) / 86400000);
+    return diffGiorni <= 3; // scadute o entro 3 giorni
+  }).length;
+  const badge = document.getElementById('todo-badge');
+  if (badge) {
+    badge.textContent = attenzione;
+    badge.style.display = attenzione > 0 ? 'inline-block' : 'none';
+  }
+}
+
+function statoScadenza(scadenzaStr, stato) {
+  if (stato === 'fatto' || !scadenzaStr) return 'normale';
+  const oggi = new Date(); oggi.setHours(0,0,0,0);
+  const sc = new Date(scadenzaStr);
+  const diffGiorni = Math.ceil((sc - oggi) / 86400000);
+  if (diffGiorni < 0) return 'scaduta';
+  if (diffGiorni <= 3) return 'vicina';
+  return 'normale';
+}
+
+function renderTodo() {
+  const container = document.getElementById('todo-list');
+  if (!container) return;
+  const filtroStato = document.getElementById('todo-filtro-stato')?.value || 'tutti';
+
+  let lista = tutteTodo;
+  if (filtroStato !== 'tutti') lista = lista.filter(t => t.stato === filtroStato);
+
+  // Stats
+  const oggi = new Date(); oggi.setHours(0,0,0,0);
+  const scadute = tutteTodo.filter(t => statoScadenza(t.scadenza, t.stato) === 'scaduta').length;
+  const vicine = tutteTodo.filter(t => statoScadenza(t.scadenza, t.stato) === 'vicina').length;
+  const fatte = tutteTodo.filter(t => t.stato === 'fatto').length;
+  if (document.getElementById('todo-stat-scadute')) document.getElementById('todo-stat-scadute').textContent = scadute;
+  if (document.getElementById('todo-stat-vicine')) document.getElementById('todo-stat-vicine').textContent = vicine;
+  if (document.getElementById('todo-stat-fatte')) document.getElementById('todo-stat-fatte').textContent = fatte;
+
+  if (!lista.length) {
+    container.innerHTML = '<div style="padding:32px;text-align:center;color:var(--testo-muted);">Nessuna attività. Creane una con "Nuova attività".</div>';
+    return;
+  }
+
+  const prioritaLabel = { bassa: 'Bassa', media: 'Media', alta: 'Alta' };
+  const prioritaColore = { bassa: 'badge-pietra', media: 'badge-ok', alta: 'badge-no' };
+  const statoLabel = { da_fare: 'Da fare', in_corso: 'In corso', fatto: 'Fatto' };
+
+  container.innerHTML = lista.map(t => {
+    const urgenza = statoScadenza(t.scadenza, t.stato);
+    const bordoColore = urgenza === 'scaduta' ? '#991B1B' : urgenza === 'vicina' ? '#B8901A' : 'var(--border)';
+    const dataFormattata = t.scadenza ? new Date(t.scadenza + 'T00:00:00').toLocaleDateString('it-IT') : null;
+    return `
+    <div style="background:white;border:1px solid ${bordoColore};${urgenza!=='normale'?'border-left-width:4px;':''}border-radius:10px;padding:14px 16px;margin-bottom:10px;${t.stato==='fatto'?'opacity:0.6;':''}">
+      <div style="display:flex;align-items:flex-start;gap:10px;">
+        <input type="checkbox" ${t.stato === 'fatto' ? 'checked' : ''} onchange="toggleTodoFatto('${t.id}', this.checked)"
+          style="width:18px;height:18px;margin-top:2px;accent-color:var(--verde);cursor:pointer;">
+        <div style="flex:1;">
+          <div style="font-weight:600;font-size:14px;color:var(--blu-notte);${t.stato==='fatto'?'text-decoration:line-through;':''}">${t.titolo}</div>
+          ${t.descrizione ? `<div style="font-size:12.5px;color:var(--testo-muted);margin-top:3px;">${t.descrizione}</div>` : ''}
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;align-items:center;">
+            ${t.responsabile ? `<span class="badge badge-pietra"><i class="ti ti-user"></i> ${t.responsabile}</span>` : ''}
+            ${dataFormattata ? `<span class="badge ${urgenza === 'scaduta' ? 'badge-no' : urgenza === 'vicina' ? '' : 'badge-pietra'}" style="${urgenza==='vicina'?'background:#FBF3DC;color:#8A6D1D;':''}">${urgenza === 'scaduta' ? '⚠️ Scaduta il' : '📅'} ${dataFormattata}</span>` : ''}
+            <span class="badge ${prioritaColore[t.priorita] || 'badge-pietra'}">${prioritaLabel[t.priorita] || t.priorita}</span>
+            <span class="badge badge-pietra">${statoLabel[t.stato] || t.stato}</span>
+          </div>
+        </div>
+        <div style="display:flex;gap:4px;">
+          <button class="btn btn-sm" onclick='openModalTodo(${JSON.stringify(t).replace(/"/g,"&quot;")})'><i class="ti ti-edit"></i></button>
+          <button class="btn btn-sm" style="color:#991B1B" onclick="eliminaTodo('${t.id}')"><i class="ti ti-trash"></i></button>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function toggleTodoFatto(id, checked) {
+  const nuovoStato = checked ? 'fatto' : 'da_fare';
+  await db.from('todo_list').update({ stato: nuovoStato, updated_at: new Date().toISOString() }).eq('id', id);
+  const t = tutteTodo.find(x => x.id === id);
+  if (t) t.stato = nuovoStato;
+  renderTodo();
+  aggiornaBadgeTodo();
+}
+
+function openModalTodo(t = null) {
+  document.getElementById('modal-todo').style.display = 'flex';
+  document.getElementById('modal-todo').style.pointerEvents = 'auto';
+  document.getElementById('m-todo-id').value = t?.id || '';
+  document.getElementById('m-todo-titolo').value = t?.titolo || '';
+  document.getElementById('m-todo-descrizione').value = t?.descrizione || '';
+  document.getElementById('m-todo-responsabile').value = t?.responsabile || '';
+  document.getElementById('m-todo-scadenza').value = t?.scadenza || '';
+  document.getElementById('m-todo-priorita').value = t?.priorita || 'media';
+  document.getElementById('m-todo-stato').value = t?.stato || 'da_fare';
+  const dl = document.getElementById('todo-soci-list');
+  if (dl) dl.innerHTML = (tuttiSoci || []).map(s => `<option value="${s.cognome} ${s.nome}">`).join('');
+}
+
+function closeModalTodo() {
+  const m = document.getElementById('modal-todo');
+  m.style.display = 'none';
+  m.style.pointerEvents = 'none';
+}
+
+async function saveTodo() {
+  const titolo = document.getElementById('m-todo-titolo').value.trim();
+  if (!titolo) { showToast('Il titolo è obbligatorio', 'error'); return; }
+  const id = document.getElementById('m-todo-id').value;
+
+  const payload = {
+    titolo,
+    descrizione: document.getElementById('m-todo-descrizione').value.trim() || null,
+    responsabile: document.getElementById('m-todo-responsabile').value.trim() || null,
+    scadenza: document.getElementById('m-todo-scadenza').value || null,
+    priorita: document.getElementById('m-todo-priorita').value,
+    stato: document.getElementById('m-todo-stato').value,
+    updated_at: new Date().toISOString()
+  };
+
+  let error;
+  if (id) {
+    ({ error } = await db.from('todo_list').update(payload).eq('id', id));
+  } else {
+    ({ error } = await db.from('todo_list').insert(payload));
+  }
+  if (error) { showToast('Errore: ' + error.message, 'error'); return; }
+  closeModalTodo();
+  showToast('Attività salvata!', 'success');
+  loadTodo();
+}
+
+async function eliminaTodo(id) {
+  if (!confirm('Eliminare questa attività?')) return;
+  await db.from('todo_list').delete().eq('id', id);
+  showToast('Eliminata', 'success');
+  loadTodo();
 }
 
 async function loadDashboard() {
@@ -242,6 +397,7 @@ const ANNO_CORRENTE = new Date().getFullYear();
 
 const PAGINE_DISPONIBILI = [
   { id: 'dashboard',         label: 'Dashboard',           gruppo: 'Generale' },
+  { id: 'todo',              label: 'To Do',               gruppo: 'Generale' },
   { id: 'soci',              label: 'Soci',                gruppo: 'Associazione' },
   { id: 'richieste',         label: 'Richieste iscrizione', gruppo: 'Associazione' },
   { id: 'db-avanzato',       label: 'DB Avanzato',         gruppo: 'Associazione' },
@@ -4148,6 +4304,102 @@ async function eliminaServizioPersona(id) {
   await db.from('servizio_persone').delete().eq('id', id);
   showToast('Rimossa', 'success');
   loadServizio();
+}
+
+async function generaPDFServizio() {
+  if (!tutteCategorieServizio.length) { showToast('Nessuna categoria da esportare', 'error'); return; }
+  await caricaJsPDF();
+  const { jsPDF } = window.jspdf;
+  const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const oggi = new Date().toLocaleDateString('it-IT');
+  const sagraNome = sagraSelezionata?.nome || 'Sagra';
+
+  function drawHeader() {
+    pdf.setFillColor(30, 45, 71);
+    pdf.rect(0, 0, 210, 28, 'F');
+    pdf.setTextColor(201, 160, 48);
+    pdf.setFontSize(16);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text('SERVIZIO — TURNI', 14, 12);
+    pdf.setFontSize(10);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(200, 216, 240);
+    pdf.text(sagraNome, 14, 20);
+    pdf.text(oggi, 196, 20, { align: 'right' });
+  }
+
+  drawHeader();
+  let y = 36;
+  const giorni = [{ key: 'sabato', label: 'SABATO' }, { key: 'domenica', label: 'DOMENICA' }];
+
+  giorni.forEach(({ key, label }) => {
+    const categorie = tutteCategorieServizio.filter(c => c.giorno === key);
+    if (!categorie.length) return;
+
+    if (y > 260) { pdf.addPage(); drawHeader(); y = 36; }
+
+    pdf.setFillColor(30, 45, 71);
+    pdf.rect(14, y - 5, 182, 9, 'F');
+    pdf.setFontSize(12);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(201, 160, 48);
+    pdf.text(label, 16, y + 1);
+    y += 12;
+
+    categorie.forEach(cat => {
+      const persone = tuttePersoneServizio.filter(p => p.categoria_id === cat.id);
+      if (y > 270) { pdf.addPage(); drawHeader(); y = 36; }
+
+      pdf.setFillColor(242, 237, 232);
+      pdf.rect(14, y - 4, 182, 7, 'F');
+      pdf.setFontSize(9);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(122, 101, 72);
+      pdf.text(cat.nome.toUpperCase() + ` (${persone.length})`, 16, y + 1);
+      y += 9;
+
+      if (!persone.length) {
+        pdf.setFontSize(8.5);
+        pdf.setFont('helvetica', 'italic');
+        pdf.setTextColor(160, 160, 160);
+        pdf.text('Nessuna persona assegnata', 18, y);
+        y += 7;
+      } else {
+        persone.forEach((p, idx) => {
+          if (y > 278) { pdf.addPage(); drawHeader(); y = 36; }
+          if (idx % 2 === 0) {
+            pdf.setFillColor(247, 245, 242);
+            pdf.rect(14, y - 4, 182, 7, 'F');
+          }
+          pdf.setFontSize(9);
+          pdf.setFont('helvetica', 'normal');
+          pdf.setTextColor(26, 26, 26);
+          pdf.text(p.nome, 18, y);
+
+          if (p.nota) {
+            pdf.setFont('helvetica', 'italic');
+            pdf.setFontSize(7.5);
+            pdf.setTextColor(150, 140, 130);
+            const nomeW = pdf.getTextWidth(p.nome);
+            pdf.text(p.nota, 18 + nomeW + 6, y);
+          }
+
+          if (p.fascia) {
+            pdf.setFontSize(8);
+            pdf.setFont('helvetica', 'bold');
+            pdf.setTextColor(30, 45, 71);
+            pdf.text(p.fascia, 196, y, { align: 'right' });
+          }
+          y += 7;
+        });
+      }
+      y += 3;
+    });
+    y += 5;
+  });
+
+  pdf.save(`servizio_${sagraNome.replace(/\s+/g,'_')}.pdf`);
+  showToast('PDF servizio generato!', 'success');
 }
 
 async function scaricaPDFMenu(giorno) {

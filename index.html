@@ -559,6 +559,9 @@
       <div class="s-item active" onclick="showPage('dashboard')">
         <i class="ti ti-home"></i> Dashboard
       </div>
+      <div class="s-item" onclick="showPage('todo')">
+        <i class="ti ti-checklist"></i> To Do <span id="todo-badge" style="display:none;background:#991B1B;color:white;font-size:10px;font-weight:700;border-radius:10px;padding:1px 7px;margin-left:4px;">0</span>
+      </div>
     </div>
     <div class="s-section">
       <div class="s-label">Associazione</div>
@@ -643,6 +646,28 @@
           <div class="table-row"><span class="row-name" style="color:var(--testo-muted)">Caricamento...</span></div>
         </div>
       </div>
+    </div>
+
+    <!-- TO DO -->
+    <div class="page" id="page-todo">
+      <div class="page-header">
+        <h2>To Do</h2>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <select id="todo-filtro-stato" onchange="renderTodo()" style="padding:7px 10px;border:1px solid #D4C9BE;border-radius:7px;font-size:13px;outline:none;">
+            <option value="tutti">Tutti gli stati</option>
+            <option value="da_fare">Da fare</option>
+            <option value="in_corso">In corso</option>
+            <option value="fatto">Fatto</option>
+          </select>
+          <button class="btn btn-add" onclick="openModalTodo()"><i class="ti ti-plus"></i> Nuova attività</button>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:18px;max-width:520px;">
+        <div class="stat-card" style="border-top-color:#991B1B;cursor:default;"><i class="ti ti-alert-circle" style="color:#991B1B;"></i><div class="stat-val" id="todo-stat-scadute" style="font-size:20px;color:#991B1B;">0</div><div class="stat-lbl">Scadute</div></div>
+        <div class="stat-card oro" style="cursor:default;"><i class="ti ti-clock"></i><div class="stat-val" id="todo-stat-vicine" style="font-size:20px;">0</div><div class="stat-lbl">In scadenza (3gg)</div></div>
+        <div class="stat-card verde" style="cursor:default;"><i class="ti ti-check"></i><div class="stat-val" id="todo-stat-fatte" style="font-size:20px;">0</div><div class="stat-lbl">Completate</div></div>
+      </div>
+      <div id="todo-list"><div style="padding:24px;text-align:center;color:var(--testo-muted);">Caricamento...</div></div>
     </div>
 
     <!-- SOCI -->
@@ -1147,8 +1172,9 @@
         <button class="btn" id="tab-servizio-domenica" onclick="cambiaGiornoServizio('domenica')" style="flex:1;font-weight:600;"><i class="ti ti-calendar"></i> Domenica</button>
       </div>
 
-      <div style="margin-bottom:14px;">
+      <div style="margin-bottom:14px;display:flex;gap:8px;">
         <button class="btn btn-add" onclick="openModalServizioCategoria()"><i class="ti ti-plus"></i> Nuova categoria</button>
+        <button class="btn" onclick="generaPDFServizio()"><i class="ti ti-file-text"></i> Esporta PDF</button>
       </div>
 
       <div id="servizio-list"><div style="padding:24px;text-align:center;color:var(--testo-muted);">Caricamento...</div></div>
@@ -1388,6 +1414,43 @@
     <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;">
       <button class="btn" onclick="closeModalMenuVoce()">Annulla</button>
       <button class="btn btn-add" onclick="saveMenuVoce()"><i class="ti ti-check"></i> Salva</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODALE TO DO -->
+<div id="modal-todo" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:200;align-items:center;justify-content:center;padding:16px;pointer-events:none;">
+  <div style="background:white;border-radius:14px;width:100%;max-width:440px;max-height:90vh;overflow-y:auto;padding:24px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
+      <h3 style="font-size:16px;font-weight:600;color:var(--blu-notte);">Attività</h3>
+      <button onclick="closeModalTodo()" style="background:none;border:none;cursor:pointer;font-size:20px;color:var(--testo-muted);">✕</button>
+    </div>
+    <div class="form-group"><label>Titolo *</label><input id="m-todo-titolo" placeholder="Cosa va fatto"></div>
+    <div class="form-group"><label>Descrizione</label><input id="m-todo-descrizione" placeholder="Dettagli facoltativi"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+      <div class="form-group"><label>Responsabile</label><input id="m-todo-responsabile" list="todo-soci-list" autocomplete="off"><datalist id="todo-soci-list"></datalist></div>
+      <div class="form-group"><label>Scadenza</label><input id="m-todo-scadenza" type="date"></div>
+      <div class="form-group">
+        <label>Priorità</label>
+        <select id="m-todo-priorita">
+          <option value="bassa">Bassa</option>
+          <option value="media" selected>Media</option>
+          <option value="alta">Alta</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Stato</label>
+        <select id="m-todo-stato">
+          <option value="da_fare">Da fare</option>
+          <option value="in_corso">In corso</option>
+          <option value="fatto">Fatto</option>
+        </select>
+      </div>
+    </div>
+    <input type="hidden" id="m-todo-id">
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;">
+      <button class="btn" onclick="closeModalTodo()">Annulla</button>
+      <button class="btn btn-add" onclick="saveTodo()"><i class="ti ti-check"></i> Salva</button>
     </div>
   </div>
 </div>
