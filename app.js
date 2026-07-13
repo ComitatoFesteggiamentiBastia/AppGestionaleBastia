@@ -138,6 +138,7 @@ function showPage(pageId) {
   if (pageId === 'prima-nota') loadPrimaNota();
   if (pageId === 'inventario') loadInventario();
   if (pageId === 'richieste') loadRichieste();
+  if (pageId === 'servizio') loadServizio();
   if (pageId === 'database-articoli') loadCatalogoCompleto();
   if (pageId === 'menu-sagra') loadMenuSagra();
   if (pageId === 'storico-prezzi') loadStoricoPrezzi();
@@ -252,6 +253,7 @@ const PAGINE_DISPONIBILI = [
   { id: 'volontari',         label: 'Volontari',           gruppo: 'Sagra' },
   { id: 'turni',             label: 'Turni',               gruppo: 'Sagra' },
   { id: 'spesa',             label: 'Lista spesa',         gruppo: 'Sagra' },
+  { id: 'servizio',          label: 'Servizio',            gruppo: 'Sagra' },
   { id: 'inventario',        label: 'Inventario',          gruppo: 'Risorse' },
   { id: 'database-articoli', label: 'Database Articoli',   gruppo: 'Risorse' },
   { id: 'impostazioni-anno', label: 'Anni e quote',        gruppo: 'Amministrazione' },
@@ -3952,6 +3954,200 @@ async function eliminaMenuVoce(id) {
   await db.from('menu_sagra').delete().eq('id', id);
   showToast('Eliminato', 'success');
   loadMenuSagra();
+}
+
+// ===== SERVIZIO (turni Sabato/Domenica) =====
+let tutteCategorieServizio = [];
+let tuttePersoneServizio = [];
+let giornoServizioAttivo = 'sabato';
+const _servizioCollassati = new Set();
+
+async function loadServizio() {
+  await assicuraSagreCaricate();
+  const sagraId = getSagraId();
+  aggiornaHeaderSagra('servizio-sagra-header');
+  if (!sagraId) return;
+
+  const { data: categorie } = await db.from('servizio_categorie').select('*').eq('sagra_id', sagraId).order('ordine').order('created_at');
+  tutteCategorieServizio = categorie || [];
+
+  const catIds = tutteCategorieServizio.map(c => c.id);
+  if (catIds.length) {
+    const { data: persone } = await db.from('servizio_persone').select('*').in('categoria_id', catIds).order('ordine').order('created_at');
+    tuttePersoneServizio = persone || [];
+  } else {
+    tuttePersoneServizio = [];
+  }
+
+  if (!tuttiSoci || !tuttiSoci.length) await loadSoci();
+  aggiornaTabsServizio();
+  renderServizio();
+}
+
+function cambiaGiornoServizio(giorno) {
+  giornoServizioAttivo = giorno;
+  aggiornaTabsServizio();
+  renderServizio();
+}
+
+function aggiornaTabsServizio() {
+  const sab = document.getElementById('tab-servizio-sabato');
+  const dom = document.getElementById('tab-servizio-domenica');
+  if (!sab || !dom) return;
+  const attivo = 'flex:1;font-weight:600;background:var(--blu-notte);color:white;border-color:var(--blu-notte);';
+  const inattivo = 'flex:1;font-weight:600;background:white;color:var(--blu-notte);';
+  sab.setAttribute('style', giornoServizioAttivo === 'sabato' ? attivo : inattivo);
+  dom.setAttribute('style', giornoServizioAttivo === 'domenica' ? attivo : inattivo);
+}
+
+function renderServizio() {
+  const container = document.getElementById('servizio-list');
+  if (!container) return;
+
+  const categorie = tutteCategorieServizio.filter(c => c.giorno === giornoServizioAttivo);
+
+  if (!categorie.length) {
+    container.innerHTML = `<div style="padding:32px;text-align:center;color:var(--testo-muted);">Nessuna categoria per ${giornoServizioAttivo === 'sabato' ? 'Sabato' : 'Domenica'}. Creane una con "Nuova categoria".</div>`;
+    return;
+  }
+
+  container.innerHTML = categorie.map(cat => {
+    const persone = tuttePersoneServizio.filter(p => p.categoria_id === cat.id);
+    const gId = 'srv_' + cat.id;
+    const collassato = _servizioCollassati.has(gId);
+    return `
+    <div style="margin-bottom:10px;border-radius:10px;overflow:hidden;border:1px solid var(--border);">
+      <div onclick="toggleServizioCategoria('${gId}')" style="display:flex;align-items:center;justify-content:space-between;padding:10px 16px;background:var(--blu-notte);cursor:pointer;user-select:none;">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <i class="ti ti-chevron-${collassato?'right':'down'}" id="ico-${gId}" style="font-size:14px;color:rgba(255,255,255,0.6);"></i>
+          <span style="font-weight:700;color:white;font-size:14px;text-transform:uppercase;">${cat.nome}</span>
+          <span style="font-size:12px;color:rgba(255,255,255,0.5);">${persone.length} person${persone.length===1?'a':'e'}</span>
+        </div>
+        <div style="display:flex;gap:6px;" onclick="event.stopPropagation()">
+          <button class="btn btn-sm" onclick="openModalServizioPersona(null,'${cat.id}')" style="background:rgba(255,255,255,0.15);color:white;border-color:rgba(255,255,255,0.2);" title="Aggiungi persona"><i class="ti ti-user-plus"></i></button>
+          <button class="btn btn-sm" onclick='openModalServizioCategoria(${JSON.stringify(cat).replace(/"/g,"&quot;")})' style="background:rgba(255,255,255,0.15);color:white;border-color:rgba(255,255,255,0.2);" title="Rinomina categoria"><i class="ti ti-edit"></i></button>
+          <button class="btn btn-sm" onclick="eliminaServizioCategoria('${cat.id}')" style="background:rgba(255,255,255,0.15);color:white;border-color:rgba(255,255,255,0.2);" title="Elimina categoria"><i class="ti ti-trash"></i></button>
+        </div>
+      </div>
+      <div id="${gId}" style="display:${collassato?'none':'block'};">
+        ${persone.length ? persone.map(p => `
+          <div class="table-row">
+            <div style="flex:1;">
+              <div class="row-name">${p.nome}</div>
+              ${p.nota ? `<div class="row-sub">${p.nota}</div>` : ''}
+            </div>
+            ${p.fascia ? `<span class="badge badge-pietra">${p.fascia}</span>` : ''}
+            <button class="btn btn-sm" onclick='openModalServizioPersona(${JSON.stringify(p).replace(/"/g,"&quot;")},"${cat.id}")'><i class="ti ti-edit"></i></button>
+            <button class="btn btn-sm" style="color:#991B1B" onclick="eliminaServizioPersona('${p.id}')"><i class="ti ti-trash"></i></button>
+          </div>
+        `).join('') : `<div style="padding:16px;text-align:center;color:var(--testo-muted);font-size:13px;">Nessuna persona assegnata</div>`}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function toggleServizioCategoria(id) {
+  const el = document.getElementById(id);
+  const ico = document.getElementById('ico-' + id);
+  if (!el) return;
+  const aperto = el.style.display !== 'none';
+  el.style.display = aperto ? 'none' : 'block';
+  if (ico) ico.className = `ti ti-chevron-${aperto?'right':'down'}`;
+  if (aperto) _servizioCollassati.add(id); else _servizioCollassati.delete(id);
+}
+
+function openModalServizioCategoria(cat = null) {
+  document.getElementById('modal-servizio-categoria').style.display = 'flex';
+  document.getElementById('modal-servizio-categoria').style.pointerEvents = 'auto';
+  document.getElementById('titolo-modal-servizio-categoria').textContent = cat ? 'Rinomina categoria' : 'Nuova categoria';
+  document.getElementById('m-sc-id').value = cat?.id || '';
+  document.getElementById('m-sc-nome').value = cat?.nome || '';
+  document.getElementById('m-sc-giorno').value = cat?.giorno || giornoServizioAttivo;
+}
+
+function closeModalServizioCategoria() {
+  const m = document.getElementById('modal-servizio-categoria');
+  m.style.display = 'none';
+  m.style.pointerEvents = 'none';
+}
+
+async function saveServizioCategoria() {
+  const sagraId = getSagraId();
+  if (!sagraId) { showToast('Seleziona prima un\'edizione sagra', 'error'); return; }
+  const nome = document.getElementById('m-sc-nome').value.trim();
+  if (!nome) { showToast('Inserisci un nome categoria', 'error'); return; }
+  const id = document.getElementById('m-sc-id').value;
+  const giorno = document.getElementById('m-sc-giorno').value;
+
+  let error;
+  if (id) {
+    ({ error } = await db.from('servizio_categorie').update({ nome }).eq('id', id));
+  } else {
+    const ordine = tutteCategorieServizio.filter(c => c.giorno === giorno).length;
+    ({ error } = await db.from('servizio_categorie').insert({ sagra_id: sagraId, giorno, nome, ordine }));
+  }
+  if (error) { showToast('Errore: ' + error.message, 'error'); return; }
+  closeModalServizioCategoria();
+  showToast('Categoria salvata!', 'success');
+  loadServizio();
+}
+
+async function eliminaServizioCategoria(id) {
+  const persone = tuttePersoneServizio.filter(p => p.categoria_id === id);
+  const msg = persone.length
+    ? `Questa categoria contiene ${persone.length} person${persone.length===1?'a':'e'}. Eliminarla rimuoverà anche loro. Continuare?`
+    : 'Eliminare questa categoria?';
+  if (!confirm(msg)) return;
+  await db.from('servizio_categorie').delete().eq('id', id);
+  showToast('Categoria eliminata', 'success');
+  loadServizio();
+}
+
+function openModalServizioPersona(persona = null, categoriaId) {
+  document.getElementById('modal-servizio-persona').style.display = 'flex';
+  document.getElementById('modal-servizio-persona').style.pointerEvents = 'auto';
+  document.getElementById('titolo-modal-servizio-persona').textContent = persona ? 'Modifica persona' : 'Aggiungi persona';
+  document.getElementById('m-sp2-id').value = persona?.id || '';
+  document.getElementById('m-sp2-categoria-id').value = categoriaId;
+  document.getElementById('m-sp2-nome').value = persona?.nome || '';
+  document.getElementById('m-sp2-nota').value = persona?.nota || '';
+  document.getElementById('m-sp2-fascia').value = persona?.fascia || '';
+  const dl = document.getElementById('servizio-soci-list');
+  dl.innerHTML = (tuttiSoci || []).map(s => `<option value="${s.cognome} ${s.nome}">`).join('');
+}
+
+function closeModalServizioPersona() {
+  const m = document.getElementById('modal-servizio-persona');
+  m.style.display = 'none';
+  m.style.pointerEvents = 'none';
+}
+
+async function saveServizioPersona() {
+  const nome = document.getElementById('m-sp2-nome').value.trim();
+  if (!nome) { showToast('Inserisci un nome', 'error'); return; }
+  const id = document.getElementById('m-sp2-id').value;
+  const categoriaId = document.getElementById('m-sp2-categoria-id').value;
+  const nota = document.getElementById('m-sp2-nota').value.trim() || null;
+  const fascia = document.getElementById('m-sp2-fascia').value || null;
+
+  let error;
+  if (id) {
+    ({ error } = await db.from('servizio_persone').update({ nome, nota, fascia }).eq('id', id));
+  } else {
+    const ordine = tuttePersoneServizio.filter(p => p.categoria_id === categoriaId).length;
+    ({ error } = await db.from('servizio_persone').insert({ categoria_id: categoriaId, nome, nota, fascia, ordine }));
+  }
+  if (error) { showToast('Errore: ' + error.message, 'error'); return; }
+  closeModalServizioPersona();
+  showToast('Persona salvata!', 'success');
+  loadServizio();
+}
+
+async function eliminaServizioPersona(id) {
+  if (!confirm('Rimuovere questa persona dalla categoria?')) return;
+  await db.from('servizio_persone').delete().eq('id', id);
+  showToast('Rimossa', 'success');
+  loadServizio();
 }
 
 async function scaricaPDFMenu(giorno) {
