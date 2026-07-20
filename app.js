@@ -4160,8 +4160,10 @@ function openModalImpostazioniPdf() {
   const defaultPiede = menuAttivo === 'bar'
     ? '* Le pietanze contrassegnate possono contenere allergeni.'
     : "le pietanze indicate possono contenere sostanze che provocano allergie o intolleranze, in cassa è disponibile il dettaglio\nI prodotti contrassegnati da sottolineatura sono congelati\nI cibi e le bevande offerti in questa sagra sono prodotti e somministrati in locali dove si utilizzano e servono";
-  document.getElementById('ip-titolo').value = imp?.titolo || defaultTitolo;
-  document.getElementById('ip-piede').value = imp?.piede_testo || defaultPiede;
+  // Se esiste già un record salvato, rispetta esattamente quel valore (anche se vuoto/svuotato di proposito).
+  // Il default si applica SOLO la primissima volta, quando non è ancora mai stato salvato nulla.
+  document.getElementById('ip-titolo').value = imp ? (imp.titolo || '') : defaultTitolo;
+  document.getElementById('ip-piede').value = imp ? (imp.piede_testo || '') : defaultPiede;
 }
 
 function closeModalImpostazioniPdf() {
@@ -4735,10 +4737,13 @@ async function scaricaPDFMenuAttivo() {
   const sagraNome = sagraSelezionata?.nome || 'Sagra della Bastia';
   const isBar = menuAttivo === 'bar';
   const impostazioni = tutteImpostazioniPdf.find(i => i.menu === menuAttivo);
-  const titoloPdf = impostazioni?.titolo || (isBar ? 'LISTINO BAR' : 'IL MENU — ' + MENU_LABEL[menuAttivo].toUpperCase());
-  const piedePdf = impostazioni?.piede_testo || (isBar
+  const defaultTitoloPdf = isBar ? 'LISTINO BAR' : 'IL MENU — ' + MENU_LABEL[menuAttivo].toUpperCase();
+  const defaultPiedePdf = isBar
     ? '* Le pietanze contrassegnate possono contenere allergeni.'
-    : "le pietanze indicate possono contenere sostanze che provocano allergie o intolleranze, in cassa è disponibile il dettaglio\nI prodotti contrassegnati da sottolineatura sono congelati\nI cibi e le bevande offerti in questa sagra sono prodotti e somministrati in locali dove si utilizzano e servono");
+    : "le pietanze indicate possono contenere sostanze che provocano allergie o intolleranze, in cassa è disponibile il dettaglio\nI prodotti contrassegnati da sottolineatura sono congelati\nI cibi e le bevande offerti in questa sagra sono prodotti e somministrati in locali dove si utilizzano e servono";
+  // Se esiste un record salvato, rispetta il valore anche se vuoto (svuotato di proposito)
+  const titoloPdf = impostazioni ? (impostazioni.titolo || '') : defaultTitoloPdf;
+  const piedePdf = impostazioni ? (impostazioni.piede_testo || '') : defaultPiedePdf;
 
   disegnaWatermarkLogo(pdf, logoDataUrl);
 
