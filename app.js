@@ -4768,7 +4768,7 @@ async function scaricaPDFMenuAttivo() {
   const spazioDisponibile = yFineDisponibile - yStartBase;
 
   // Altezze "base" (quelle grandi che piacciono, usate quando c'è spazio)
-  const BASE = { sezioneBlock: 13, sezioneFont: 14, rowH: 10, voceFont: 13, noteFont: 9.5 };
+  const BASE = { sezioneBlock: 13, sezioneFont: 14, rowH: 10, voceFont: 13 };
   const spazioNecessarioBase = nSezioni * BASE.sezioneBlock + nVoci * BASE.rowH + nSezioni * 5;
   let scala = spazioNecessarioBase > 0 ? Math.min(1, spazioDisponibile / spazioNecessarioBase) : 1;
   scala = Math.max(scala, 0.22); // limite estremo solo per evitare testo a dimensione zero
@@ -4777,7 +4777,6 @@ async function scaricaPDFMenuAttivo() {
   const sezioneFont = BASE.sezioneFont * scala;
   const rowH = BASE.rowH * scala;
   const voceFont = BASE.voceFont * scala;
-  const noteFont = BASE.noteFont * scala;
   const gapDopoSezione = 5 * scala;
 
   let y = yStartBase;
@@ -4818,7 +4817,7 @@ async function scaricaPDFMenuAttivo() {
       }
       if (v.note) {
         pdf.setFont('helvetica', 'italic');
-        pdf.setFontSize(Math.max(6.5, noteFont));
+        pdf.setFontSize(voceFont);
         pdf.setTextColor(140, 130, 120);
         pdf.text(v.note, xDopo, y);
       }
