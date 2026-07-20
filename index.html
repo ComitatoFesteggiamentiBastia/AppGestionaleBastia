@@ -1145,7 +1145,9 @@
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
           <input type="text" id="menu-search" placeholder="Cerca piatto..." oninput="renderMenu()" style="padding:7px 12px;border:1px solid #D4C9BE;border-radius:7px;font-size:13px;width:160px;outline:none;">
+          <input type="text" id="pdf-menu-titolo" placeholder="Titolo PDF" style="padding:7px 12px;border:1px solid #D4C9BE;border-radius:7px;font-size:13px;width:180px;outline:none;">
           <button class="btn" id="btn-pdf-menu-attivo" onclick="scaricaPDFMenuAttivo()"><i class="ti ti-file-download"></i> PDF</button>
+          <button class="btn" onclick="esportaExcelMenuAttivo()"><i class="ti ti-file-spreadsheet"></i> Excel</button>
           <button class="btn" onclick="openModalGestioneSezioni()"><i class="ti ti-list-details"></i> Gestisci categorie</button>
           <button class="btn btn-add" onclick="openModalMenuVoce()"><i class="ti ti-plus"></i> Aggiungi voce</button>
         </div>

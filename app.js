@@ -4016,6 +4016,10 @@ function aggiornaTabsMenu() {
   });
   const btnPdf = document.getElementById('btn-pdf-menu-attivo');
   if (btnPdf) btnPdf.innerHTML = `<i class="ti ti-file-download"></i> PDF ${MENU_LABEL[menuAttivo]}`;
+  const inputTitolo = document.getElementById('pdf-menu-titolo');
+  if (inputTitolo) {
+    inputTitolo.value = menuAttivo === 'bar' ? 'LISTINO BAR' : 'IL MENU — ' + MENU_LABEL[menuAttivo].toUpperCase();
+  }
 }
 
 const _menuCollassati = new Set();
@@ -4628,10 +4632,41 @@ async function generaPDFServizio() {
   showToast('PDF servizio generato!', 'success');
 }
 
+let _logoDataUrlCache = null;
+async function caricaLogoDataUrl() {
+  if (_logoDataUrlCache) return _logoDataUrlCache;
+  try {
+    const res = await fetch('logo.jpg');
+    const blob = await res.blob();
+    _logoDataUrlCache = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  } catch (e) {
+    console.error('Logo non caricato per watermark:', e);
+    _logoDataUrlCache = null;
+  }
+  return _logoDataUrlCache;
+}
+
+function disegnaWatermarkLogo(pdf, logoDataUrl) {
+  if (!logoDataUrl) return;
+  const dim = 120; // mm, quadrato centrato
+  const x = (210 - dim) / 2;
+  const y = (297 - dim) / 2;
+  pdf.saveGraphicsState();
+  pdf.setGState(new pdf.GState({ opacity: 0.07 }));
+  pdf.addImage(logoDataUrl, 'JPEG', x, y, dim, dim);
+  pdf.restoreGraphicsState();
+}
+
 async function scaricaPDFMenuAttivo() {
   await caricaJsPDF();
   const { jsPDF } = window.jspdf;
   const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const logoDataUrl = await caricaLogoDataUrl();
 
   const vociMenu = tuttoMenu.filter(m => m.menu === menuAttivo && m.disponibile);
   if (!vociMenu.length) { showToast(`Nessuna voce disponibile in ${MENU_LABEL[menuAttivo]}`, 'error'); return; }
@@ -4650,6 +4685,10 @@ async function scaricaPDFMenuAttivo() {
 
   const sagraNome = sagraSelezionata?.nome || 'Sagra della Bastia';
   const isBar = menuAttivo === 'bar';
+  const titoloPdf = (document.getElementById('pdf-menu-titolo')?.value || '').trim() ||
+    (isBar ? 'LISTINO BAR' : 'IL MENU — ' + MENU_LABEL[menuAttivo].toUpperCase());
+
+  disegnaWatermarkLogo(pdf, logoDataUrl);
 
   // Header
   pdf.setFillColor(30, 45, 71);
@@ -4660,7 +4699,7 @@ async function scaricaPDFMenuAttivo() {
   pdf.text(sagraNome.toUpperCase(), 105, 14, { align: 'center' });
   pdf.setFontSize(14);
   pdf.setTextColor(200, 216, 240);
-  pdf.text(isBar ? 'LISTINO BAR' : 'IL MENU — ' + MENU_LABEL[menuAttivo].toUpperCase(), 105, 26, { align: 'center' });
+  pdf.text(titoloPdf, 105, 26, { align: 'center' });
   if (isBar) {
     pdf.setFontSize(9);
     pdf.text('valido Sabato e Domenica', 105, 32, { align: 'center' });
@@ -4669,7 +4708,7 @@ async function scaricaPDFMenuAttivo() {
   let y = isBar ? 46 : 44;
   for (const sez of ordinate) {
     const voci = gruppi[sez].slice().sort((a,b) => (a.ordine||0) - (b.ordine||0));
-    if (y > 260) { pdf.addPage(); y = 20; }
+    if (y > 260) { pdf.addPage(); disegnaWatermarkLogo(pdf, logoDataUrl); y = 20; }
 
     // Header sezione
     pdf.setFillColor(242, 237, 232);
@@ -4681,7 +4720,7 @@ async function scaricaPDFMenuAttivo() {
     y += 10;
 
     for (const v of voci) {
-      if (y > 275) { pdf.addPage(); y = 20; }
+      if (y > 275) { pdf.addPage(); disegnaWatermarkLogo(pdf, logoDataUrl); y = 20; }
       pdf.setFontSize(10);
       pdf.setFont('helvetica', 'normal');
       pdf.setTextColor(26, 26, 26);
@@ -4736,6 +4775,47 @@ async function scaricaPDFMenuAttivo() {
 
   pdf.save(`menu_${menuAttivo}_${sagraNome.replace(/\s+/g,'_')}.pdf`);
   showToast('PDF generato!', 'success');
+}
+
+function esportaExcelMenuAttivo() {
+  const vociMenu = tuttoMenu.filter(m => m.menu === menuAttivo);
+  if (!vociMenu.length) { showToast(`Nessuna voce in ${MENU_LABEL[menuAttivo]}`, 'error'); return; }
+
+  const sezioniOrdinate = tutteSezioniMenu.filter(s => s.menu === menuAttivo).sort((a,b) => a.ordine - b.ordine).map(s => s.nome);
+  const gruppi = {};
+  vociMenu.forEach(m => {
+    if (!gruppi[m.sezione]) gruppi[m.sezione] = [];
+    gruppi[m.sezione].push(m);
+  });
+  const sezioniPresenti = Object.keys(gruppi);
+  const ordinate = [
+    ...sezioniOrdinate.filter(n => sezioniPresenti.includes(n)),
+    ...sezioniPresenti.filter(n => !sezioniOrdinate.includes(n)).sort()
+  ];
+
+  const rows = [['Categoria', 'Piatto', 'Prezzo (€)', 'Disponibile', 'Allergeni/Intolleranze', 'Surgelato', 'Note']];
+  ordinate.forEach(sez => {
+    const voci = gruppi[sez].slice().sort((a,b) => (a.ordine||0) - (b.ordine||0));
+    voci.forEach(v => {
+      rows.push([
+        sez,
+        v.piatto,
+        v.prezzo != null ? parseFloat(v.prezzo) : '',
+        v.disponibile ? 'Sì' : 'No',
+        v.intolleranze ? (v.allergeni || 'Sì') : '',
+        v.surgelato ? 'Sì' : '',
+        v.note || ''
+      ]);
+    });
+  });
+
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols'] = [{ wch: 22 }, { wch: 32 }, { wch: 10 }, { wch: 10 }, { wch: 24 }, { wch: 10 }, { wch: 28 }];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, MENU_LABEL[menuAttivo].substring(0, 31));
+  const sagraNome = sagraSelezionata?.nome || 'Sagra';
+  XLSX.writeFile(wb, `menu_${menuAttivo}_${sagraNome.replace(/\s+/g,'_')}.xlsx`);
+  showToast('Excel generato!', 'success');
 }
 
 // ===== STORICO PREZZI =====
