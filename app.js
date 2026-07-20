@@ -4083,7 +4083,7 @@ function renderMenu() {
             style="${!v.disponibile?'opacity:0.5;':''}cursor:grab;">
             <i class="ti ti-grip-vertical" style="color:var(--testo-muted);"></i>
             <div style="flex:1;">
-              <div class="row-name">${v.piatto}</div>
+              <div class="row-name">${v.intolleranze ? '* ' : ''}<span style="${v.surgelato?'text-decoration:underline;':''}">${v.piatto}</span>${v.intolleranze && v.allergeni ? ` <span style="font-size:11px;font-weight:400;color:var(--testo-muted);">(${v.allergeni})</span>` : ''}</div>
               ${v.note ? `<div class="row-sub">${v.note}</div>` : ''}
             </div>
             <span style="font-weight:600;color:var(--blu-notte);white-space:nowrap;">${v.prezzo ? '€ '+parseFloat(v.prezzo).toFixed(2) : '—'}</span>
@@ -4266,6 +4266,11 @@ function toggleMenuSezione(id) {
   if (aperto) _menuCollassati.add(id); else _menuCollassati.delete(id);
 }
 
+function toggleCampoAllergeni() {
+  const checked = document.getElementById('m-menu-intolleranze').checked;
+  document.getElementById('m-menu-allergeni').style.display = checked ? 'block' : 'none';
+}
+
 function openModalMenuVoce(v = null, sezioneDefault = '') {
   document.getElementById('modal-menu-voce').style.display = 'flex';
   document.getElementById('modal-menu-voce').style.pointerEvents = 'auto';
@@ -4277,6 +4282,10 @@ function openModalMenuVoce(v = null, sezioneDefault = '') {
   document.getElementById('m-menu-prezzo').value = v?.prezzo || '';
   document.getElementById('m-menu-note').value = v?.note || '';
   document.getElementById('m-menu-disponibile').checked = v ? (v.disponibile !== false) : true;
+  document.getElementById('m-menu-intolleranze').checked = v?.intolleranze || false;
+  document.getElementById('m-menu-allergeni').value = v?.allergeni || '';
+  document.getElementById('m-menu-surgelato').checked = v?.surgelato || false;
+  toggleCampoAllergeni();
 }
 
 function closeModalMenuVoce() {
@@ -4300,7 +4309,10 @@ async function saveMenuVoce() {
     piatto,
     prezzo: parseFloat(document.getElementById('m-menu-prezzo').value) || null,
     note: document.getElementById('m-menu-note').value.trim() || null,
-    disponibile: document.getElementById('m-menu-disponibile').checked
+    disponibile: document.getElementById('m-menu-disponibile').checked,
+    intolleranze: document.getElementById('m-menu-intolleranze').checked,
+    allergeni: document.getElementById('m-menu-intolleranze').checked ? (document.getElementById('m-menu-allergeni').value.trim() || null) : null,
+    surgelato: document.getElementById('m-menu-surgelato').checked
   };
 
   const id = document.getElementById('m-menu-id').value;
@@ -4673,13 +4685,30 @@ async function scaricaPDFMenuAttivo() {
       pdf.setFontSize(10);
       pdf.setFont('helvetica', 'normal');
       pdf.setTextColor(26, 26, 26);
-      pdf.text(v.piatto, 18, y);
+      const nomePiatto = (v.intolleranze ? '* ' : '') + v.piatto;
+      pdf.text(nomePiatto, 18, y);
+      if (v.surgelato) {
+        const w = pdf.getTextWidth(nomePiatto);
+        pdf.setDrawColor(26, 26, 26);
+        pdf.line(18, y + 0.7, 18 + w, y + 0.7);
+      }
+      let xDopo = 18 + pdf.getTextWidth(nomePiatto) + 4;
+      if (v.intolleranze && v.allergeni) {
+        pdf.setFont('helvetica', 'italic');
+        pdf.setFontSize(7.5);
+        pdf.setTextColor(140, 130, 120);
+        const testoAll = `(${v.allergeni})`;
+        pdf.text(testoAll, xDopo, y);
+        xDopo += pdf.getTextWidth(testoAll) + 4;
+        pdf.setFont('helvetica', 'normal');
+        pdf.setFontSize(10);
+        pdf.setTextColor(26, 26, 26);
+      }
       if (v.note) {
         pdf.setFont('helvetica', 'italic');
         pdf.setFontSize(8);
         pdf.setTextColor(140, 130, 120);
-        const w = pdf.getTextWidth(v.piatto);
-        pdf.text(v.note, 18 + w + 5, y);
+        pdf.text(v.note, xDopo, y);
       }
       if (v.prezzo) {
         pdf.setFont('helvetica', 'bold');
@@ -4697,7 +4726,13 @@ async function scaricaPDFMenuAttivo() {
   // Footer
   pdf.setFontSize(7);
   pdf.setTextColor(150, 150, 150);
-  pdf.text('* Le pietanze contrassegnate possono contenere allergeni.', 105, 287, { align: 'center' });
+  if (isBar) {
+    pdf.text('* Le pietanze contrassegnate possono contenere allergeni.', 105, 287, { align: 'center' });
+  } else {
+    pdf.text('* le pietanze indicate possono contenere sostanze che provocano allergie o intolleranze, in cassa è disponibile il dettaglio', 105, 284, { align: 'center' });
+    pdf.text('I prodotti contrassegnati da sottolineatura sono congelati', 105, 289, { align: 'center' });
+    pdf.text('I cibi e le bevande offerti in questa sagra sono prodotti e somministrati in locali dove si utilizzano e servono', 105, 294, { align: 'center' });
+  }
 
   pdf.save(`menu_${menuAttivo}_${sagraNome.replace(/\s+/g,'_')}.pdf`);
   showToast('PDF generato!', 'success');
