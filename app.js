@@ -4747,7 +4747,7 @@ async function scaricaPDFMenuAttivo() {
 
   disegnaWatermarkLogo(pdf, logoDataUrl);
 
-  // Header
+  // Header (dimensione fissa, non si ridimensiona)
   pdf.setFillColor(30, 45, 71);
   pdf.rect(0, 0, 210, 29, 'F');
   pdf.setFontSize(22);
@@ -4758,23 +4758,43 @@ async function scaricaPDFMenuAttivo() {
   pdf.setTextColor(200, 216, 240);
   pdf.text(titoloPdf, 105, 22, { align: 'center' });
 
-  let y = 36;
+  // Calcolo automatico della scala per far stare tutto in una sola pagina,
+  // indipendentemente da quante voci/categorie ci sono
+  const nSezioni = ordinate.length;
+  const nVoci = vociMenu.length;
+  const righePiedeConteggio = piedePdf.split('\n').filter(r => r.trim()).length;
+  const yStartBase = 36;
+  const yFineDisponibile = 297 - 10 - (righePiedeConteggio > 0 ? righePiedeConteggio * 5 + 4 : 0);
+  const spazioDisponibile = yFineDisponibile - yStartBase;
+
+  // Altezze "base" (quelle grandi che piacciono, usate quando c'è spazio)
+  const BASE = { sezioneBlock: 13, sezioneFont: 14, rowH: 10, voceFont: 13, noteFont: 9.5 };
+  const spazioNecessarioBase = nSezioni * BASE.sezioneBlock + nVoci * BASE.rowH + nSezioni * 5;
+  let scala = spazioNecessarioBase > 0 ? Math.min(1, spazioDisponibile / spazioNecessarioBase) : 1;
+  scala = Math.max(scala, 0.22); // limite estremo solo per evitare testo a dimensione zero
+
+  const sezioneBlockH = BASE.sezioneBlock * scala;
+  const sezioneFont = BASE.sezioneFont * scala;
+  const rowH = BASE.rowH * scala;
+  const voceFont = BASE.voceFont * scala;
+  const noteFont = BASE.noteFont * scala;
+  const gapDopoSezione = 5 * scala;
+
+  let y = yStartBase;
   for (const sez of ordinate) {
     const voci = gruppi[sez].slice().sort((a,b) => (a.ordine||0) - (b.ordine||0));
-    if (y > 255) { pdf.addPage(); disegnaWatermarkLogo(pdf, logoDataUrl); y = 22; }
 
     // Header sezione
     pdf.setFillColor(242, 237, 232);
-    pdf.rect(14, y-5, 182, 11, 'F');
-    pdf.setFontSize(14);
+    pdf.rect(14, y - sezioneBlockH*0.4, 182, sezioneBlockH, 'F');
+    pdf.setFontSize(sezioneFont);
     pdf.setFont('helvetica', 'bold');
     pdf.setTextColor(30, 45, 71);
-    pdf.text(sez, 105, y+2.5, { align: 'center' });
-    y += 13;
+    pdf.text(sez, 105, y + sezioneBlockH*0.13, { align: 'center' });
+    y += sezioneBlockH;
 
     for (const v of voci) {
-      if (y > 273) { pdf.addPage(); disegnaWatermarkLogo(pdf, logoDataUrl); y = 22; }
-      pdf.setFontSize(13);
+      pdf.setFontSize(voceFont);
       pdf.setFont('helvetica', 'normal');
       pdf.setTextColor(26, 26, 26);
       const nomePiatto = (v.intolleranze ? '* ' : '') + v.piatto;
@@ -4782,37 +4802,37 @@ async function scaricaPDFMenuAttivo() {
       if (v.surgelato) {
         const w = pdf.getTextWidth(nomePiatto);
         pdf.setDrawColor(26, 26, 26);
-        pdf.line(18, y + 1, 18 + w, y + 1);
+        pdf.line(18, y + 1*scala, 18 + w, y + 1*scala);
       }
       let xDopo = 18 + pdf.getTextWidth(nomePiatto) + 5;
       if (v.intolleranze && v.allergeni) {
         pdf.setFont('helvetica', 'italic');
-        pdf.setFontSize(9);
+        pdf.setFontSize(Math.max(6.5, 9 * scala));
         pdf.setTextColor(140, 130, 120);
         const testoAll = `(${v.allergeni})`;
         pdf.text(testoAll, xDopo, y);
         xDopo += pdf.getTextWidth(testoAll) + 5;
         pdf.setFont('helvetica', 'normal');
-        pdf.setFontSize(13);
+        pdf.setFontSize(voceFont);
         pdf.setTextColor(26, 26, 26);
       }
       if (v.note) {
         pdf.setFont('helvetica', 'italic');
-        pdf.setFontSize(9.5);
+        pdf.setFontSize(Math.max(6.5, noteFont));
         pdf.setTextColor(140, 130, 120);
         pdf.text(v.note, xDopo, y);
       }
       if (v.prezzo) {
         pdf.setFont('helvetica', 'bold');
-        pdf.setFontSize(13);
+        pdf.setFontSize(voceFont);
         pdf.setTextColor(26, 26, 26);
         pdf.text('€ ' + parseFloat(v.prezzo).toFixed(2), 192, y, { align: 'right' });
       }
       pdf.setDrawColor(212, 201, 190);
-      pdf.line(18, y+3, 192, y+3);
-      y += 10;
+      pdf.line(18, y + rowH*0.3, 192, y + rowH*0.3);
+      y += rowH;
     }
-    y += 5;
+    y += gapDopoSezione;
   }
 
   // Footer
