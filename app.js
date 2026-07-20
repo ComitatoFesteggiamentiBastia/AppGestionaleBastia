@@ -4161,7 +4161,6 @@ function openModalImpostazioniPdf() {
     ? '* Le pietanze contrassegnate possono contenere allergeni.'
     : "le pietanze indicate possono contenere sostanze che provocano allergie o intolleranze, in cassa è disponibile il dettaglio\nI prodotti contrassegnati da sottolineatura sono congelati\nI cibi e le bevande offerti in questa sagra sono prodotti e somministrati in locali dove si utilizzano e servono";
   document.getElementById('ip-titolo').value = imp?.titolo || defaultTitolo;
-  document.getElementById('ip-validita').value = imp?.validita || (menuAttivo === 'bar' ? 'valido Sabato e Domenica' : '');
   document.getElementById('ip-piede').value = imp?.piede_testo || defaultPiede;
 }
 
@@ -4178,7 +4177,6 @@ async function saveImpostazioniPdf() {
     sagra_id: sagraId,
     menu: menuAttivo,
     titolo: document.getElementById('ip-titolo').value.trim() || null,
-    validita: document.getElementById('ip-validita').value.trim() || null,
     piede_testo: document.getElementById('ip-piede').value.trim() || null
   };
 
@@ -4732,7 +4730,6 @@ async function scaricaPDFMenuAttivo() {
   const isBar = menuAttivo === 'bar';
   const impostazioni = tutteImpostazioniPdf.find(i => i.menu === menuAttivo);
   const titoloPdf = impostazioni?.titolo || (isBar ? 'LISTINO BAR' : 'IL MENU — ' + MENU_LABEL[menuAttivo].toUpperCase());
-  const validitaPdf = impostazioni?.validita || (isBar ? 'valido Sabato e Domenica' : '');
   const piedePdf = impostazioni?.piede_testo || (isBar
     ? '* Le pietanze contrassegnate possono contenere allergeni.'
     : "le pietanze indicate possono contenere sostanze che provocano allergie o intolleranze, in cassa è disponibile il dettaglio\nI prodotti contrassegnati da sottolineatura sono congelati\nI cibi e le bevande offerti in questa sagra sono prodotti e somministrati in locali dove si utilizzano e servono");
@@ -4746,15 +4743,10 @@ async function scaricaPDFMenuAttivo() {
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(201, 160, 48);
   pdf.text(sagraNome.toUpperCase(), 105, 11, { align: 'center' });
-  pdf.setFontSize(12);
   pdf.setTextColor(200, 216, 240);
-  pdf.text(titoloPdf, 105, 19, { align: 'center' });
-  if (validitaPdf) {
-    pdf.setFontSize(8);
-    pdf.text(validitaPdf, 105, 24, { align: 'center' });
-  }
+  pdf.text(titoloPdf, 105, 21, { align: 'center' });
 
-  let y = validitaPdf ? 36 : 34;
+  let y = 34;
   for (const sez of ordinate) {
     const voci = gruppi[sez].slice().sort((a,b) => (a.ordine||0) - (b.ordine||0));
     if (y > 260) { pdf.addPage(); disegnaWatermarkLogo(pdf, logoDataUrl); y = 20; }
