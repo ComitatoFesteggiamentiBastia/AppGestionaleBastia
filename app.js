@@ -3982,6 +3982,7 @@ async function scaricaPDFTotale() {
 let tuttoMenu = [];
 
 let tutteSezioniMenu = [];
+let tutteImpostazioniPdf = [];
 let menuAttivo = 'cucina_sabato';
 const MENU_LABEL = { cucina_sabato: 'Cucina Sabato', cucina_domenica: 'Cucina Domenica', bar: 'Bar' };
 
@@ -3990,12 +3991,14 @@ async function loadMenuSagra() {
   const sagraId = getSagraId();
   aggiornaHeaderSagra('menu-sagra-header');
   if (!sagraId) return;
-  const [menuRes, sezRes] = await Promise.all([
+  const [menuRes, sezRes, impRes] = await Promise.all([
     db.from('menu_sagra').select('*').eq('sagra_id', sagraId).order('ordine').order('piatto'),
-    db.from('menu_sezioni').select('*').eq('sagra_id', sagraId).order('ordine')
+    db.from('menu_sezioni').select('*').eq('sagra_id', sagraId).order('ordine'),
+    db.from('menu_impostazioni_pdf').select('*').eq('sagra_id', sagraId)
   ]);
   tuttoMenu = menuRes.data || [];
   tutteSezioniMenu = sezRes.data || [];
+  tutteImpostazioniPdf = impRes.data || [];
   aggiornaTabsMenu();
   renderMenu();
 }
@@ -4016,10 +4019,6 @@ function aggiornaTabsMenu() {
   });
   const btnPdf = document.getElementById('btn-pdf-menu-attivo');
   if (btnPdf) btnPdf.innerHTML = `<i class="ti ti-file-download"></i> PDF ${MENU_LABEL[menuAttivo]}`;
-  const inputTitolo = document.getElementById('pdf-menu-titolo');
-  if (inputTitolo) {
-    inputTitolo.value = menuAttivo === 'bar' ? 'LISTINO BAR' : 'IL MENU — ' + MENU_LABEL[menuAttivo].toUpperCase();
-  }
 }
 
 const _menuCollassati = new Set();
@@ -4150,6 +4149,44 @@ async function dropSezione(ev, targetNome) {
   ordinate.forEach((s, i) => { s.ordine = i; });
   renderMenu();
   await Promise.all(ordinate.map(s => db.from('menu_sezioni').update({ ordine: s.ordine }).eq('id', s.id)));
+}
+
+function openModalImpostazioniPdf() {
+  document.getElementById('modal-impostazioni-pdf').style.display = 'flex';
+  document.getElementById('modal-impostazioni-pdf').style.pointerEvents = 'auto';
+  document.getElementById('titolo-modal-impostazioni-pdf').textContent = `Impostazioni PDF — ${MENU_LABEL[menuAttivo]}`;
+  const imp = tutteImpostazioniPdf.find(i => i.menu === menuAttivo);
+  const defaultTitolo = menuAttivo === 'bar' ? 'LISTINO BAR' : 'IL MENU — ' + MENU_LABEL[menuAttivo].toUpperCase();
+  const defaultPiede = menuAttivo === 'bar'
+    ? '* Le pietanze contrassegnate possono contenere allergeni.'
+    : "le pietanze indicate possono contenere sostanze che provocano allergie o intolleranze, in cassa è disponibile il dettaglio\nI prodotti contrassegnati da sottolineatura sono congelati\nI cibi e le bevande offerti in questa sagra sono prodotti e somministrati in locali dove si utilizzano e servono";
+  document.getElementById('ip-titolo').value = imp?.titolo || defaultTitolo;
+  document.getElementById('ip-validita').value = imp?.validita || (menuAttivo === 'bar' ? 'valido Sabato e Domenica' : '');
+  document.getElementById('ip-piede').value = imp?.piede_testo || defaultPiede;
+}
+
+function closeModalImpostazioniPdf() {
+  const m = document.getElementById('modal-impostazioni-pdf');
+  m.style.display = 'none';
+  m.style.pointerEvents = 'none';
+}
+
+async function saveImpostazioniPdf() {
+  const sagraId = getSagraId();
+  if (!sagraId) { showToast('Seleziona prima un\'edizione sagra', 'error'); return; }
+  const payload = {
+    sagra_id: sagraId,
+    menu: menuAttivo,
+    titolo: document.getElementById('ip-titolo').value.trim() || null,
+    validita: document.getElementById('ip-validita').value.trim() || null,
+    piede_testo: document.getElementById('ip-piede').value.trim() || null
+  };
+  const { data, error } = await db.from('menu_impostazioni_pdf').upsert(payload, { onConflict: 'sagra_id,menu' }).select().single();
+  if (error) { showToast('Errore: ' + error.message, 'error'); return; }
+  const idx = tutteImpostazioniPdf.findIndex(i => i.menu === menuAttivo);
+  if (idx >= 0) tutteImpostazioniPdf[idx] = data; else tutteImpostazioniPdf.push(data);
+  closeModalImpostazioniPdf();
+  showToast('Impostazioni salvate!', 'success');
 }
 
 function openModalGestioneSezioni() {
@@ -4685,8 +4722,12 @@ async function scaricaPDFMenuAttivo() {
 
   const sagraNome = sagraSelezionata?.nome || 'Sagra della Bastia';
   const isBar = menuAttivo === 'bar';
-  const titoloPdf = (document.getElementById('pdf-menu-titolo')?.value || '').trim() ||
-    (isBar ? 'LISTINO BAR' : 'IL MENU — ' + MENU_LABEL[menuAttivo].toUpperCase());
+  const impostazioni = tutteImpostazioniPdf.find(i => i.menu === menuAttivo);
+  const titoloPdf = impostazioni?.titolo || (isBar ? 'LISTINO BAR' : 'IL MENU — ' + MENU_LABEL[menuAttivo].toUpperCase());
+  const validitaPdf = impostazioni?.validita || (isBar ? 'valido Sabato e Domenica' : '');
+  const piedePdf = impostazioni?.piede_testo || (isBar
+    ? '* Le pietanze contrassegnate possono contenere allergeni.'
+    : "le pietanze indicate possono contenere sostanze che provocano allergie o intolleranze, in cassa è disponibile il dettaglio\nI prodotti contrassegnati da sottolineatura sono congelati\nI cibi e le bevande offerti in questa sagra sono prodotti e somministrati in locali dove si utilizzano e servono");
 
   disegnaWatermarkLogo(pdf, logoDataUrl);
 
@@ -4700,12 +4741,12 @@ async function scaricaPDFMenuAttivo() {
   pdf.setFontSize(14);
   pdf.setTextColor(200, 216, 240);
   pdf.text(titoloPdf, 105, 26, { align: 'center' });
-  if (isBar) {
+  if (validitaPdf) {
     pdf.setFontSize(9);
-    pdf.text('valido Sabato e Domenica', 105, 32, { align: 'center' });
+    pdf.text(validitaPdf, 105, 32, { align: 'center' });
   }
 
-  let y = isBar ? 46 : 44;
+  let y = validitaPdf ? 46 : 44;
   for (const sez of ordinate) {
     const voci = gruppi[sez].slice().sort((a,b) => (a.ordine||0) - (b.ordine||0));
     if (y > 260) { pdf.addPage(); disegnaWatermarkLogo(pdf, logoDataUrl); y = 20; }
@@ -4765,13 +4806,11 @@ async function scaricaPDFMenuAttivo() {
   // Footer
   pdf.setFontSize(7);
   pdf.setTextColor(150, 150, 150);
-  if (isBar) {
-    pdf.text('* Le pietanze contrassegnate possono contenere allergeni.', 105, 287, { align: 'center' });
-  } else {
-    pdf.text('* le pietanze indicate possono contenere sostanze che provocano allergie o intolleranze, in cassa è disponibile il dettaglio', 105, 284, { align: 'center' });
-    pdf.text('I prodotti contrassegnati da sottolineatura sono congelati', 105, 289, { align: 'center' });
-    pdf.text('I cibi e le bevande offerti in questa sagra sono prodotti e somministrati in locali dove si utilizzano e servono', 105, 294, { align: 'center' });
-  }
+  const righePiede = piedePdf.split('\n').filter(r => r.trim());
+  const yPiedeStart = 297 - 8 - (righePiede.length - 1) * 5;
+  righePiede.forEach((riga, i) => {
+    pdf.text(riga, 105, yPiedeStart + i * 5, { align: 'center' });
+  });
 
   pdf.save(`menu_${menuAttivo}_${sagraNome.replace(/\s+/g,'_')}.pdf`);
   showToast('PDF generato!', 'success');
