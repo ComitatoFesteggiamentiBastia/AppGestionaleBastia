@@ -4749,31 +4749,32 @@ async function scaricaPDFMenuAttivo() {
 
   // Header
   pdf.setFillColor(30, 45, 71);
-  pdf.rect(0, 0, 210, 26, 'F');
-  pdf.setFontSize(18);
+  pdf.rect(0, 0, 210, 29, 'F');
+  pdf.setFontSize(22);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(201, 160, 48);
-  pdf.text(sagraNome.toUpperCase(), 105, 11, { align: 'center' });
+  pdf.text(sagraNome.toUpperCase(), 105, 12, { align: 'center' });
+  pdf.setFontSize(16);
   pdf.setTextColor(200, 216, 240);
-  pdf.text(titoloPdf, 105, 21, { align: 'center' });
+  pdf.text(titoloPdf, 105, 22, { align: 'center' });
 
-  let y = 34;
+  let y = 36;
   for (const sez of ordinate) {
     const voci = gruppi[sez].slice().sort((a,b) => (a.ordine||0) - (b.ordine||0));
-    if (y > 260) { pdf.addPage(); disegnaWatermarkLogo(pdf, logoDataUrl); y = 20; }
+    if (y > 255) { pdf.addPage(); disegnaWatermarkLogo(pdf, logoDataUrl); y = 22; }
 
     // Header sezione
     pdf.setFillColor(242, 237, 232);
-    pdf.rect(14, y-4, 182, 9, 'F');
-    pdf.setFontSize(11);
+    pdf.rect(14, y-5, 182, 11, 'F');
+    pdf.setFontSize(14);
     pdf.setFont('helvetica', 'bold');
     pdf.setTextColor(30, 45, 71);
-    pdf.text(sez, 105, y+2, { align: 'center' });
-    y += 10;
+    pdf.text(sez, 105, y+2.5, { align: 'center' });
+    y += 13;
 
     for (const v of voci) {
-      if (y > 275) { pdf.addPage(); disegnaWatermarkLogo(pdf, logoDataUrl); y = 20; }
-      pdf.setFontSize(10);
+      if (y > 273) { pdf.addPage(); disegnaWatermarkLogo(pdf, logoDataUrl); y = 22; }
+      pdf.setFontSize(13);
       pdf.setFont('helvetica', 'normal');
       pdf.setTextColor(26, 26, 26);
       const nomePiatto = (v.intolleranze ? '* ' : '') + v.piatto;
@@ -4781,37 +4782,37 @@ async function scaricaPDFMenuAttivo() {
       if (v.surgelato) {
         const w = pdf.getTextWidth(nomePiatto);
         pdf.setDrawColor(26, 26, 26);
-        pdf.line(18, y + 0.7, 18 + w, y + 0.7);
+        pdf.line(18, y + 1, 18 + w, y + 1);
       }
-      let xDopo = 18 + pdf.getTextWidth(nomePiatto) + 4;
+      let xDopo = 18 + pdf.getTextWidth(nomePiatto) + 5;
       if (v.intolleranze && v.allergeni) {
         pdf.setFont('helvetica', 'italic');
-        pdf.setFontSize(7.5);
+        pdf.setFontSize(9);
         pdf.setTextColor(140, 130, 120);
         const testoAll = `(${v.allergeni})`;
         pdf.text(testoAll, xDopo, y);
-        xDopo += pdf.getTextWidth(testoAll) + 4;
+        xDopo += pdf.getTextWidth(testoAll) + 5;
         pdf.setFont('helvetica', 'normal');
-        pdf.setFontSize(10);
+        pdf.setFontSize(13);
         pdf.setTextColor(26, 26, 26);
       }
       if (v.note) {
         pdf.setFont('helvetica', 'italic');
-        pdf.setFontSize(8);
+        pdf.setFontSize(9.5);
         pdf.setTextColor(140, 130, 120);
         pdf.text(v.note, xDopo, y);
       }
       if (v.prezzo) {
         pdf.setFont('helvetica', 'bold');
-        pdf.setFontSize(10);
+        pdf.setFontSize(13);
         pdf.setTextColor(26, 26, 26);
         pdf.text('€ ' + parseFloat(v.prezzo).toFixed(2), 192, y, { align: 'right' });
       }
       pdf.setDrawColor(212, 201, 190);
-      pdf.line(18, y+2, 192, y+2);
-      y += 7;
+      pdf.line(18, y+3, 192, y+3);
+      y += 10;
     }
-    y += 4;
+    y += 5;
   }
 
   // Footer
