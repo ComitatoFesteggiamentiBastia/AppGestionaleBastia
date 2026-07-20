@@ -4181,16 +4181,22 @@ async function saveImpostazioniPdf() {
   };
 
   const esistente = tutteImpostazioniPdf.find(i => i.menu === menuAttivo);
-  let data, error;
+  let error;
   if (esistente) {
-    ({ data, error } = await db.from('menu_impostazioni_pdf').update(payload).eq('id', esistente.id).select().single());
+    ({ error } = await db.from('menu_impostazioni_pdf').update(payload).eq('id', esistente.id));
   } else {
-    ({ data, error } = await db.from('menu_impostazioni_pdf').insert(payload).select().single());
+    ({ error } = await db.from('menu_impostazioni_pdf').insert(payload));
   }
-  if (error) { showToast('Errore: ' + error.message, 'error'); return; }
+  if (error) {
+    console.error('Errore salvataggio impostazioni PDF:', error);
+    showToast('Errore: ' + error.message, 'error');
+    return;
+  }
 
-  const idx = tutteImpostazioniPdf.findIndex(i => i.menu === menuAttivo);
-  if (idx >= 0) tutteImpostazioniPdf[idx] = data; else tutteImpostazioniPdf.push(data);
+  // Ricarica da Supabase per garantire che quanto mostrato corrisponda esattamente al salvato
+  const { data: fresh, error: errFresh } = await db.from('menu_impostazioni_pdf').select('*').eq('sagra_id', sagraId);
+  if (!errFresh) tutteImpostazioniPdf = fresh || [];
+
   closeModalImpostazioniPdf();
   showToast('Impostazioni salvate!', 'success');
 }
