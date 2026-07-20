@@ -3981,13 +3981,19 @@ async function scaricaPDFTotale() {
 // ===== MENU SAGRA =====
 let tuttoMenu = [];
 
+let tutteSezioniMenu = [];
+
 async function loadMenuSagra() {
   await assicuraSagreCaricate();
   const sagraId = getSagraId();
   aggiornaHeaderSagra('menu-sagra-header');
   if (!sagraId) return;
-  const { data } = await db.from('menu_sagra').select('*').eq('sagra_id', sagraId).order('sezione').order('piatto');
-  tuttoMenu = data || [];
+  const [menuRes, sezRes] = await Promise.all([
+    db.from('menu_sagra').select('*').eq('sagra_id', sagraId).order('ordine').order('piatto'),
+    db.from('menu_sezioni').select('*').eq('sagra_id', sagraId).order('ordine')
+  ]);
+  tuttoMenu = menuRes.data || [];
+  tutteSezioniMenu = sezRes.data || [];
   renderMenu();
 }
 
@@ -4016,9 +4022,19 @@ function renderMenu() {
     gruppi[m.sezione].push(m);
   });
 
-  container.innerHTML = Object.entries(gruppi).map(([sez, voci]) => {
+  // Ordina le sezioni secondo l'ordine gestito in menu_sezioni; eventuali sezioni orfane (senza record) vanno in fondo, alfabetiche
+  const nomiOrdinati = tutteSezioniMenu.map(s => s.nome);
+  const sezioniPresenti = Object.keys(gruppi);
+  const ordinate = [
+    ...nomiOrdinati.filter(n => sezioniPresenti.includes(n)),
+    ...sezioniPresenti.filter(n => !nomiOrdinati.includes(n)).sort()
+  ];
+
+  container.innerHTML = ordinate.map((sez, sezIdx) => {
+    const voci = gruppi[sez];
     const gId = 'msez_' + sez.replace(/[^a-zA-Z0-9]/g,'_');
     const collassato = _menuCollassati.has(gId);
+    const sezioneRecord = tutteSezioniMenu.find(s => s.nome === sez);
     return `
     <div style="margin-bottom:10px;border-radius:10px;overflow:hidden;border:1px solid var(--border);">
       <div onclick="toggleMenuSezione('${gId}')" style="display:flex;align-items:center;justify-content:space-between;padding:10px 16px;background:var(--blu-notte);cursor:pointer;user-select:none;">
@@ -4027,13 +4043,23 @@ function renderMenu() {
           <span style="font-weight:700;color:white;font-size:14px;">${sez}</span>
           <span style="font-size:12px;color:rgba(255,255,255,0.5);">${voci.length} voci</span>
         </div>
-        <button class="btn btn-sm" onclick="event.stopPropagation();openModalMenuVoce(null,'${sez}')" style="background:rgba(255,255,255,0.15);color:white;border-color:rgba(255,255,255,0.2);">
-          <i class="ti ti-plus"></i>
-        </button>
+        <div style="display:flex;gap:4px;" onclick="event.stopPropagation()">
+          ${sezioneRecord ? `
+            <button class="btn btn-sm" onclick="spostaSezioneMenu('${sezioneRecord.id}',-1)" title="Sposta su" ${sezIdx===0?'disabled':''} style="background:rgba(255,255,255,0.15);color:white;border-color:rgba(255,255,255,0.2);"><i class="ti ti-arrow-up"></i></button>
+            <button class="btn btn-sm" onclick="spostaSezioneMenu('${sezioneRecord.id}',1)" title="Sposta giù" ${sezIdx===ordinate.length-1?'disabled':''} style="background:rgba(255,255,255,0.15);color:white;border-color:rgba(255,255,255,0.2);"><i class="ti ti-arrow-down"></i></button>
+          ` : ''}
+          <button class="btn btn-sm" onclick="openModalMenuVoce(null,'${sez}')" style="background:rgba(255,255,255,0.15);color:white;border-color:rgba(255,255,255,0.2);">
+            <i class="ti ti-plus"></i>
+          </button>
+        </div>
       </div>
       <div id="${gId}" style="display:${collassato?'none':'block'};">
-        ${voci.map(v => `
+        ${voci.map((v, i) => `
           <div class="table-row" style="${!v.disponibile?'opacity:0.5;':''}">
+            <div style="display:flex;flex-direction:column;gap:2px;">
+              <button class="btn btn-sm" onclick="spostaVoceMenu('${v.id}','${sez}',-1)" title="Sposta su" ${i===0?'disabled':''} style="padding:1px 6px;"><i class="ti ti-chevron-up" style="font-size:12px;"></i></button>
+              <button class="btn btn-sm" onclick="spostaVoceMenu('${v.id}','${sez}',1)" title="Sposta giù" ${i===voci.length-1?'disabled':''} style="padding:1px 6px;"><i class="ti ti-chevron-down" style="font-size:12px;"></i></button>
+            </div>
             <div style="flex:1;">
               <div class="row-name">${v.piatto}</div>
               ${v.note ? `<div class="row-sub">${v.note}</div>` : ''}
@@ -4049,6 +4075,134 @@ function renderMenu() {
   }).join('');
 }
 
+async function spostaSezioneMenu(id, direzione) {
+  const ordinate = tutteSezioniMenu.slice().sort((a,b) => a.ordine - b.ordine);
+  const idx = ordinate.findIndex(s => s.id === id);
+  const nuovoIdx = idx + direzione;
+  if (nuovoIdx < 0 || nuovoIdx >= ordinate.length) return;
+  const a = ordinate[idx], b = ordinate[nuovoIdx];
+  const ordineA = a.ordine, ordineB = b.ordine;
+  await Promise.all([
+    db.from('menu_sezioni').update({ ordine: ordineB }).eq('id', a.id),
+    db.from('menu_sezioni').update({ ordine: ordineA }).eq('id', b.id)
+  ]);
+  a.ordine = ordineB; b.ordine = ordineA;
+  renderMenu();
+}
+
+async function spostaVoceMenu(id, sezione, direzione) {
+  const voci = tuttoMenu.filter(v => v.sezione === sezione).slice().sort((a,b) => (a.ordine||0) - (b.ordine||0));
+  const idx = voci.findIndex(v => v.id === id);
+  const nuovoIdx = idx + direzione;
+  if (nuovoIdx < 0 || nuovoIdx >= voci.length) return;
+  const a = voci[idx], b = voci[nuovoIdx];
+  const ordineA = a.ordine || 0, ordineB = b.ordine || 0;
+  await Promise.all([
+    db.from('menu_sagra').update({ ordine: ordineB }).eq('id', a.id),
+    db.from('menu_sagra').update({ ordine: ordineA }).eq('id', b.id)
+  ]);
+  a.ordine = ordineB; b.ordine = ordineA;
+  renderMenu();
+}
+
+function openModalGestioneSezioni() {
+  document.getElementById('modal-gestione-sezioni').style.display = 'flex';
+  document.getElementById('modal-gestione-sezioni').style.pointerEvents = 'auto';
+  document.getElementById('gs-nuova-sezione').value = '';
+  renderListaSezioniModal();
+}
+
+function closeModalGestioneSezioni() {
+  const m = document.getElementById('modal-gestione-sezioni');
+  m.style.display = 'none';
+  m.style.pointerEvents = 'none';
+  renderMenu();
+  aggiornaSelectSezioniMenu();
+}
+
+function renderListaSezioniModal() {
+  const cont = document.getElementById('gs-lista-sezioni');
+  const ordinate = tutteSezioniMenu.slice().sort((a,b) => a.ordine - b.ordine);
+  if (!ordinate.length) {
+    cont.innerHTML = '<div style="padding:16px;text-align:center;color:var(--testo-muted);font-size:13px;">Nessuna sezione, creane una sopra</div>';
+    return;
+  }
+  cont.innerHTML = ordinate.map((s, i) => {
+    const nVoci = tuttoMenu.filter(v => v.sezione === s.nome).length;
+    return `
+    <div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border);">
+      <div style="display:flex;flex-direction:column;">
+        <button class="btn btn-sm" onclick="spostaSezioneMenuModal('${s.id}',-1)" ${i===0?'disabled':''} style="padding:1px 6px;"><i class="ti ti-chevron-up" style="font-size:12px;"></i></button>
+        <button class="btn btn-sm" onclick="spostaSezioneMenuModal('${s.id}',1)" ${i===ordinate.length-1?'disabled':''} style="padding:1px 6px;"><i class="ti ti-chevron-down" style="font-size:12px;"></i></button>
+      </div>
+      <input value="${s.nome}" id="gs-nome-${s.id}" style="flex:1;padding:6px 10px;border:1px solid #D4C9BE;border-radius:6px;font-size:13px;">
+      <span style="font-size:11px;color:var(--testo-muted);white-space:nowrap;">${nVoci} voci</span>
+      <button class="btn btn-sm" onclick="rinominaSezioneMenu('${s.id}')" title="Salva nome"><i class="ti ti-check"></i></button>
+      <button class="btn btn-sm" style="color:#991B1B" onclick="eliminaSezioneMenu('${s.id}','${s.nome.replace(/'/g,"\\'")}')"><i class="ti ti-trash"></i></button>
+    </div>`;
+  }).join('');
+}
+
+async function spostaSezioneMenuModal(id, direzione) {
+  await spostaSezioneMenu(id, direzione);
+  renderListaSezioniModal();
+}
+
+async function aggiungiSezioneMenu() {
+  const sagraId = getSagraId();
+  if (!sagraId) { showToast('Seleziona prima un\'edizione sagra', 'error'); return; }
+  const nome = document.getElementById('gs-nuova-sezione').value.trim();
+  if (!nome) { showToast('Inserisci un nome', 'error'); return; }
+  if (tutteSezioniMenu.some(s => s.nome.toLowerCase() === nome.toLowerCase())) {
+    showToast('Esiste già una sezione con questo nome', 'error'); return;
+  }
+  const ordine = tutteSezioniMenu.length;
+  const { data, error } = await db.from('menu_sezioni').insert({ sagra_id: sagraId, nome, ordine }).select().single();
+  if (error) { showToast('Errore: ' + error.message, 'error'); return; }
+  tutteSezioniMenu.push(data);
+  document.getElementById('gs-nuova-sezione').value = '';
+  renderListaSezioniModal();
+  showToast('Sezione aggiunta!', 'success');
+}
+
+async function rinominaSezioneMenu(id) {
+  const nuovoNome = document.getElementById('gs-nome-' + id).value.trim();
+  if (!nuovoNome) { showToast('Il nome non può essere vuoto', 'error'); return; }
+  const sezione = tutteSezioniMenu.find(s => s.id === id);
+  if (!sezione) return;
+  const vecchioNome = sezione.nome;
+  if (nuovoNome === vecchioNome) return;
+
+  const { error } = await db.from('menu_sezioni').update({ nome: nuovoNome }).eq('id', id);
+  if (error) { showToast('Errore: ' + error.message, 'error'); return; }
+  // Aggiorna anche tutte le voci che usano il vecchio nome sezione
+  await db.from('menu_sagra').update({ sezione: nuovoNome }).eq('sezione', vecchioNome);
+
+  sezione.nome = nuovoNome;
+  tuttoMenu.forEach(v => { if (v.sezione === vecchioNome) v.sezione = nuovoNome; });
+  renderListaSezioniModal();
+  showToast('Sezione rinominata!', 'success');
+}
+
+async function eliminaSezioneMenu(id, nome) {
+  const nVoci = tuttoMenu.filter(v => v.sezione === nome).length;
+  const msg = nVoci
+    ? `Questa sezione contiene ${nVoci} voci menu, che resteranno ma senza sezione gestita (finiranno in fondo all'elenco). Eliminare comunque?`
+    : 'Eliminare questa sezione?';
+  if (!confirm(msg)) return;
+  await db.from('menu_sezioni').delete().eq('id', id);
+  tutteSezioniMenu = tutteSezioniMenu.filter(s => s.id !== id);
+  renderListaSezioniModal();
+  showToast('Sezione eliminata', 'success');
+}
+
+function aggiornaSelectSezioniMenu() {
+  const sel = document.getElementById('m-menu-sezione');
+  if (!sel) return;
+  const ordinate = tutteSezioniMenu.slice().sort((a,b) => a.ordine - b.ordine);
+  sel.innerHTML = ordinate.map(s => `<option value="${s.nome}">${s.nome}</option>`).join('');
+}
+
 function toggleMenuSezione(id) {
   const el = document.getElementById(id);
   const ico = document.getElementById('ico-'+id);
@@ -4062,6 +4216,7 @@ function toggleMenuSezione(id) {
 function openModalMenuVoce(v = null, sezioneDefault = '') {
   document.getElementById('modal-menu-voce').style.display = 'flex';
   document.getElementById('modal-menu-voce').style.pointerEvents = 'auto';
+  aggiornaSelectSezioniMenu();
   document.getElementById('m-menu-id').value = v?.id || '';
   document.getElementById('m-menu-sezione').value = v?.sezione || sezioneDefault;
   document.getElementById('m-menu-piatto').value = v?.piatto || '';
@@ -4093,6 +4248,9 @@ async function saveMenuVoce() {
   };
 
   const id = document.getElementById('m-menu-id').value;
+  if (!id) {
+    payload.ordine = tuttoMenu.filter(v => v.sezione === sezione).length;
+  }
   let error;
   if (id) {
     ({ error } = await db.from('menu_sagra').update(payload).eq('id', id));
@@ -4408,8 +4566,8 @@ async function scaricaPDFMenu(giorno) {
   const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
 
   const sezioni = giorno === 'sabato'
-    ? tuttoMenu.filter(m => m.sezione.includes('SABATO') || m.sezione === 'BAR')
-    : tuttoMenu.filter(m => m.sezione.includes('DOMENICA') || m.sezione === 'BAR');
+    ? tuttoMenu.filter(m => m.sezione.includes('SABATO'))
+    : tuttoMenu.filter(m => m.sezione.includes('DOMENICA'));
 
   const gruppi = {};
   sezioni.filter(m => m.disponibile).forEach(m => {
@@ -4469,6 +4627,64 @@ async function scaricaPDFMenu(giorno) {
 
   pdf.save(`menu_${giornoLabel.toLowerCase()}_${sagraNome.replace(/\s+/g,'_')}.pdf`);
   showToast('PDF menu generato!', 'success');
+}
+
+async function scaricaPDFMenuBar() {
+  await caricaJsPDF();
+  const { jsPDF } = window.jspdf;
+  const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+
+  const voci = tuttoMenu.filter(m => m.sezione === 'BAR' && m.disponibile)
+    .slice().sort((a, b) => (a.ordine||0) - (b.ordine||0));
+
+  if (!voci.length) { showToast('Nessuna voce nella sezione BAR', 'error'); return; }
+
+  const sagraNome = sagraSelezionata?.nome || 'Sagra della Bastia';
+
+  // Header
+  pdf.setFillColor(30, 45, 71);
+  pdf.rect(0, 0, 210, 35, 'F');
+  pdf.setFontSize(22);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(201, 160, 48);
+  pdf.text(sagraNome.toUpperCase(), 105, 14, { align: 'center' });
+  pdf.setFontSize(14);
+  pdf.setTextColor(200, 216, 240);
+  pdf.text('LISTINO BAR', 105, 26, { align: 'center' });
+  pdf.setFontSize(9);
+  pdf.text('valido Sabato e Domenica', 105, 32, { align: 'center' });
+
+  let y = 46;
+  for (const v of voci) {
+    if (y > 275) { pdf.addPage(); y = 20; }
+    pdf.setFontSize(10.5);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(26, 26, 26);
+    pdf.text(v.piatto, 18, y);
+    if (v.note) {
+      pdf.setFont('helvetica', 'italic');
+      pdf.setFontSize(8);
+      pdf.setTextColor(140, 130, 120);
+      const w = pdf.getTextWidth(v.piatto);
+      pdf.text(v.note, 18 + w + 5, y);
+    }
+    if (v.prezzo) {
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(10.5);
+      pdf.setTextColor(26, 26, 26);
+      pdf.text('€ ' + parseFloat(v.prezzo).toFixed(2), 192, y, { align: 'right' });
+    }
+    pdf.setDrawColor(212, 201, 190);
+    pdf.line(18, y + 2, 192, y + 2);
+    y += 8;
+  }
+
+  pdf.setFontSize(7);
+  pdf.setTextColor(150, 150, 150);
+  pdf.text('* Le pietanze contrassegnate possono contenere allergeni.', 105, 287, { align: 'center' });
+
+  pdf.save(`menu_bar_${sagraNome.replace(/\s+/g,'_')}.pdf`);
+  showToast('PDF listino Bar generato!', 'success');
 }
 
 // ===== STORICO PREZZI =====
