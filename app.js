@@ -4181,8 +4181,16 @@ async function saveImpostazioniPdf() {
     validita: document.getElementById('ip-validita').value.trim() || null,
     piede_testo: document.getElementById('ip-piede').value.trim() || null
   };
-  const { data, error } = await db.from('menu_impostazioni_pdf').upsert(payload, { onConflict: 'sagra_id,menu' }).select().single();
+
+  const esistente = tutteImpostazioniPdf.find(i => i.menu === menuAttivo);
+  let data, error;
+  if (esistente) {
+    ({ data, error } = await db.from('menu_impostazioni_pdf').update(payload).eq('id', esistente.id).select().single());
+  } else {
+    ({ data, error } = await db.from('menu_impostazioni_pdf').insert(payload).select().single());
+  }
   if (error) { showToast('Errore: ' + error.message, 'error'); return; }
+
   const idx = tutteImpostazioniPdf.findIndex(i => i.menu === menuAttivo);
   if (idx >= 0) tutteImpostazioniPdf[idx] = data; else tutteImpostazioniPdf.push(data);
   closeModalImpostazioniPdf();
@@ -4690,7 +4698,7 @@ async function caricaLogoDataUrl() {
 
 function disegnaWatermarkLogo(pdf, logoDataUrl) {
   if (!logoDataUrl) return;
-  const dim = 120; // mm, quadrato centrato
+  const dim = 170; // mm, quadrato centrato
   const x = (210 - dim) / 2;
   const y = (297 - dim) / 2;
   pdf.saveGraphicsState();
@@ -4733,20 +4741,20 @@ async function scaricaPDFMenuAttivo() {
 
   // Header
   pdf.setFillColor(30, 45, 71);
-  pdf.rect(0, 0, 210, 35, 'F');
-  pdf.setFontSize(22);
+  pdf.rect(0, 0, 210, 26, 'F');
+  pdf.setFontSize(18);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(201, 160, 48);
-  pdf.text(sagraNome.toUpperCase(), 105, 14, { align: 'center' });
-  pdf.setFontSize(14);
+  pdf.text(sagraNome.toUpperCase(), 105, 11, { align: 'center' });
+  pdf.setFontSize(12);
   pdf.setTextColor(200, 216, 240);
-  pdf.text(titoloPdf, 105, 26, { align: 'center' });
+  pdf.text(titoloPdf, 105, 19, { align: 'center' });
   if (validitaPdf) {
-    pdf.setFontSize(9);
-    pdf.text(validitaPdf, 105, 32, { align: 'center' });
+    pdf.setFontSize(8);
+    pdf.text(validitaPdf, 105, 24, { align: 'center' });
   }
 
-  let y = validitaPdf ? 46 : 44;
+  let y = validitaPdf ? 36 : 34;
   for (const sez of ordinate) {
     const voci = gruppi[sez].slice().sort((a,b) => (a.ordine||0) - (b.ordine||0));
     if (y > 260) { pdf.addPage(); disegnaWatermarkLogo(pdf, logoDataUrl); y = 20; }
