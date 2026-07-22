@@ -5829,16 +5829,18 @@ function esportaExcelMenuAttivo() {
 // ===== STORICO PREZZI =====
 let tuttoStorico = [];
 
-function openModalStoricoManuale() {
+function openModalStoricoManuale(s = null) {
   document.getElementById('modal-storico-manuale').style.display = 'flex';
   document.getElementById('modal-storico-manuale').style.pointerEvents = 'auto';
-  document.getElementById('sm-articolo').value = '';
-  document.getElementById('sm-fornitore').value = '';
-  document.getElementById('sm-anno').value = sagraSelezionata?.anno || new Date().getFullYear();
-  document.getElementById('sm-quantita').value = '';
-  document.getElementById('sm-prezzo').value = '';
-  document.getElementById('sm-iva').value = '';
-  document.getElementById('sm-totale').value = '';
+  document.getElementById('titolo-modal-storico-manuale').textContent = s ? 'Modifica voce storico prezzi' : 'Aggiungi voce storico prezzi';
+  document.getElementById('sm-id').value = s?.id || '';
+  document.getElementById('sm-articolo').value = s?.articolo || '';
+  document.getElementById('sm-fornitore').value = s?.fornitore || '';
+  document.getElementById('sm-anno').value = s?.anno || sagraSelezionata?.anno || new Date().getFullYear();
+  document.getElementById('sm-quantita').value = s?.quantita || '';
+  document.getElementById('sm-prezzo').value = s?.prezzo_unitario || '';
+  document.getElementById('sm-iva').value = s?.iva || '';
+  document.getElementById('sm-totale').value = s?.prezzo_totale || '';
   const dlArt = document.getElementById('sm-articoli-list');
   if (dlArt) dlArt.innerHTML = catalogoSpesa.map(c => `<option value="${c.articolo}">`).join('');
   const dlForn = document.getElementById('sm-fornitori-list');
@@ -5867,16 +5869,21 @@ async function saveStoricoManuale() {
     prezzoTotale = quantita ? prezzoUnitario * quantita * (iva ? (1 + iva) : 1) : null;
   }
 
-  const { data: esistente } = await db.from('storico_prezzi')
-    .select('id').eq('articolo', articolo).eq('fornitore', fornitore).eq('anno', anno).maybeSingle();
-
+  const idModifica = document.getElementById('sm-id').value;
   const payload = { articolo, fornitore, anno, quantita, prezzo_unitario: prezzoUnitario, iva, prezzo_totale: prezzoTotale };
   let error;
-  if (esistente?.id) {
-    if (!confirm('Esiste già una voce per questo articolo/fornitore/anno. Sovrascriverla?')) return;
-    ({ error } = await db.from('storico_prezzi').update(payload).eq('id', esistente.id));
+
+  if (idModifica) {
+    ({ error } = await db.from('storico_prezzi').update(payload).eq('id', idModifica));
   } else {
-    ({ error } = await db.from('storico_prezzi').insert(payload));
+    const { data: esistente } = await db.from('storico_prezzi')
+      .select('id').eq('articolo', articolo).eq('fornitore', fornitore).eq('anno', anno).maybeSingle();
+    if (esistente?.id) {
+      if (!confirm('Esiste già una voce per questo articolo/fornitore/anno. Sovrascriverla?')) return;
+      ({ error } = await db.from('storico_prezzi').update(payload).eq('id', esistente.id));
+    } else {
+      ({ error } = await db.from('storico_prezzi').insert(payload));
+    }
   }
   if (error) { showToast('Errore: ' + error.message, 'error'); return; }
 
@@ -5946,7 +5953,8 @@ function renderStoricoPrezzi() {
       <td style="padding:7px 14px;">${s.quantita ? parseFloat(s.quantita) : '—'}</td>
       <td style="padding:7px 14px;font-weight:500;">€ ${s.prezzo_unitario ? parseFloat(s.prezzo_unitario).toFixed(2) : '—'}</td>
       <td style="padding:7px 14px;color:var(--testo-muted);">€ ${s.prezzo_totale ? parseFloat(s.prezzo_totale).toFixed(2) : '—'}</td>
-      <td style="padding:7px 14px;text-align:center;">
+      <td style="padding:7px 14px;text-align:center;white-space:nowrap;">
+        <button class="btn btn-sm" onclick='openModalStoricoManuale(${JSON.stringify(s).replace(/"/g,"&quot;")})'><i class="ti ti-edit"></i></button>
         <button class="btn btn-sm" style="color:#991B1B" onclick="eliminaStorico('${s.id}')"><i class="ti ti-trash"></i></button>
       </td>
     </tr>`).join('')}
