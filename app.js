@@ -3679,6 +3679,28 @@ async function eliminaMovimentoCassa(id) {
   loadCassa();
 }
 
+function disegnaGraficoBarreOrizzontali(pdf, items, x, y, larghezzaMax, altezzaBarra, gap) {
+  const max = Math.max(...items.map(i => i.value), 0.01);
+  let yy = y;
+  items.forEach(item => {
+    pdf.setFontSize(8.5);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(50, 50, 50);
+    pdf.text(item.label, x, yy - 1.5);
+    pdf.setFillColor(238, 235, 230);
+    pdf.rect(x, yy, larghezzaMax, altezzaBarra, 'F');
+    const w = Math.max(1.5, (item.value / max) * larghezzaMax);
+    pdf.setFillColor(item.color[0], item.color[1], item.color[2]);
+    pdf.rect(x, yy, w, altezzaBarra, 'F');
+    pdf.setFontSize(8.5);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(30, 45, 71);
+    pdf.text(`€ ${item.value.toFixed(2)}`, x + larghezzaMax + 4, yy + altezzaBarra / 2 + 1.5);
+    yy += altezzaBarra + gap;
+  });
+  return yy;
+}
+
 async function scaricaPDFCassa() {
   await caricaJsPDF();
   const { jsPDF } = window.jspdf;
@@ -3690,129 +3712,190 @@ async function scaricaPDFCassa() {
     ? tuttiMovimentiCassa
     : tuttiMovimentiCassa.filter(m => m.data && m.data.substring(0, 4) === filtroAnno);
 
-  if (!lista.length) { showToast('Nessun movimento da esportare per il periodo selezionato', 'error'); return; }
+  if (!lista.length) { showToast('Nessun movimento per il periodo selezionato', 'error'); return; }
 
   const periodoLabel = filtroAnno === 'tutti' ? 'Tutti gli anni' : `Anno ${filtroAnno}`;
 
-  function drawHeader() {
+  function drawHeader(sottotitolo) {
     pdf.setFillColor(30, 45, 71);
     pdf.rect(0, 0, 210, 28, 'F');
     pdf.setTextColor(201, 160, 48);
     pdf.setFontSize(16);
     pdf.setFont('helvetica', 'bold');
-    pdf.text('REPORT CASSA GENERALE', 14, 12);
+    pdf.text('BILANCIO FINANZIARIO', 14, 12);
     pdf.setFontSize(10);
     pdf.setFont('helvetica', 'normal');
     pdf.setTextColor(200, 216, 240);
-    pdf.text(periodoLabel, 14, 20);
+    pdf.text(sottotitolo || periodoLabel, 14, 20);
     pdf.text(oggi, 196, 20, { align: 'right' });
   }
 
-  function drawIntestazioneColonne(y) {
-    pdf.setFontSize(8);
-    pdf.setFont('helvetica', 'bold');
-    pdf.setTextColor(30, 45, 71);
-    pdf.text('Data', 16, y);
-    pdf.text('Descrizione', 42, y);
-    pdf.text('Importo', 196, y, { align: 'right' });
-    pdf.setDrawColor(212, 201, 190);
-    pdf.line(14, y + 2, 196, y + 2);
-    return y + 6;
-  }
+  // ===== Calcoli =====
+  const totEntrate = lista.filter(m => m.tipo === 'entrata').reduce((s,m) => s + parseFloat(m.importo||0), 0);
+  const totUscite = lista.filter(m => m.tipo === 'uscita').reduce((s,m) => s + parseFloat(m.importo||0), 0);
+  const saldoPeriodo = totEntrate - totUscite;
+
+  const s0 = filtroAnno !== 'tutti' ? tuttiSaldiIniziali.find(x => x.anno === parseInt(filtroAnno)) : null;
+  const saldoIniziale = s0 ? parseFloat(s0.saldo_conto_corrente || 0) + parseFloat(s0.saldo_contanti || 0) : 0;
+  const saldoFinale = saldoIniziale + saldoPeriodo;
 
   const gruppi = {};
   lista.forEach(m => {
     const cat = m.categoria || 'Senza categoria';
-    if (!gruppi[cat]) gruppi[cat] = [];
-    gruppi[cat].push(m);
+    if (!gruppi[cat]) gruppi[cat] = { entrate: 0, uscite: 0 };
+    if (m.tipo === 'entrata') gruppi[cat].entrate += parseFloat(m.importo || 0);
+    else gruppi[cat].uscite += parseFloat(m.importo || 0);
   });
-  const categorieOrdinate = Object.keys(gruppi).sort();
+  const categorieOrdinate = Object.entries(gruppi).sort((a,b) => (b[1].entrate + b[1].uscite) - (a[1].entrate + a[1].uscite));
 
+  const topEntrata = categorieOrdinate.filter(([,v]) => v.entrate > 0).sort((a,b) => b[1].entrate - a[1].entrate)[0];
+  const topUscita = categorieOrdinate.filter(([,v]) => v.uscite > 0).sort((a,b) => b[1].uscite - a[1].uscite)[0];
+
+  // ===== Pagina 1: riepilogo + grafici + testo =====
   drawHeader();
-  let y = 36;
-  let totEntrateGen = 0, totUsciteGen = 0;
+  let y = 38;
 
-  categorieOrdinate.forEach(cat => {
-    const movimenti = gruppi[cat].slice().sort((a,b) => (a.data||'').localeCompare(b.data||''));
-    const totEntrateCat = movimenti.filter(m => m.tipo === 'entrata').reduce((s,m) => s + parseFloat(m.importo||0), 0);
-    const totUsciteCat = movimenti.filter(m => m.tipo === 'uscita').reduce((s,m) => s + parseFloat(m.importo||0), 0);
-    totEntrateGen += totEntrateCat;
-    totUsciteGen += totUsciteCat;
-
-    if (y > 260) { pdf.addPage(); drawHeader(); y = 36; }
-
-    pdf.setFillColor(242, 237, 232);
-    pdf.rect(14, y - 4, 182, 7, 'F');
-    pdf.setFontSize(9);
-    pdf.setFont('helvetica', 'bold');
-    pdf.setTextColor(122, 101, 72);
-    pdf.text(cat.toUpperCase(), 16, y + 1);
+  // Box riepilogo
+  pdf.setFillColor(242, 237, 232);
+  pdf.rect(14, y, 182, 34, 'F');
+  const cellW = 182 / 4;
+  const voci = [
+    { label: 'Saldo iniziale', val: saldoIniziale, color: [80,80,80] },
+    { label: 'Entrate', val: totEntrate, color: [47,107,79] },
+    { label: 'Uscite', val: totUscite, color: [155,44,44] },
+    { label: 'Saldo finale', val: saldoFinale, color: saldoFinale>=0 ? [47,107,79] : [155,44,44] }
+  ];
+  voci.forEach((v, i) => {
+    const cx = 14 + i*cellW + cellW/2;
     pdf.setFontSize(8);
-    const saldoCat = totEntrateCat - totUsciteCat;
-    pdf.setTextColor(saldoCat >= 0 ? 47 : 155, saldoCat >= 0 ? 107 : 44, saldoCat >= 0 ? 79 : 44);
-    pdf.text(`${saldoCat >= 0 ? '+' : ''}€ ${saldoCat.toFixed(2)}`, 194, y + 1, { align: 'right' });
-    y += 9;
-    y = drawIntestazioneColonne(y);
-
-    movimenti.forEach((m, idx) => {
-      if (y > 275) { pdf.addPage(); drawHeader(); y = 36; y = drawIntestazioneColonne(y); }
-      if (idx % 2 === 0) {
-        pdf.setFillColor(247, 245, 242);
-        pdf.rect(14, y - 4, 182, 7, 'F');
-      }
-      pdf.setFontSize(8.5);
-      pdf.setFont('helvetica', 'normal');
-      pdf.setTextColor(26, 26, 26);
-      pdf.text(m.data ? formatDataIT(m.data) : '—', 16, y);
-      let desc = m.descrizione || '';
-      while (pdf.getTextWidth(desc) > 130 && desc.length > 3) desc = desc.substring(0, desc.length - 4) + '...';
-      pdf.text(desc, 42, y);
-      const isEntrata = m.tipo === 'entrata';
-      pdf.setFont('helvetica', 'bold');
-      pdf.setTextColor(isEntrata ? 47 : 155, isEntrata ? 107 : 44, isEntrata ? 79 : 44);
-      pdf.text(`${isEntrata ? '+' : '-'}€ ${parseFloat(m.importo).toFixed(2)}`, 196, y, { align: 'right' });
-      y += 7;
-    });
-    y += 4;
-  });
-
-  const saldoGen = totEntrateGen - totUsciteGen;
-  const s0 = filtroAnno !== 'tutti' ? tuttiSaldiIniziali.find(x => x.anno === parseInt(filtroAnno)) : null;
-  const saldoInizialeTot = s0 ? parseFloat(s0.saldo_conto_corrente || 0) + parseFloat(s0.saldo_contanti || 0) : 0;
-  const saldoFinaleReale = saldoInizialeTot + saldoGen;
-
-  if (y > 255) { pdf.addPage(); drawHeader(); y = 36; }
-  const altezzaBox = saldoInizialeTot ? 30 : 22;
-  pdf.setFillColor(30, 45, 71);
-  pdf.rect(14, y, 182, altezzaBox, 'F');
-  let yBox = y + 8;
-  if (saldoInizialeTot) {
-    pdf.setFontSize(9);
     pdf.setFont('helvetica', 'normal');
-    pdf.setTextColor(200, 216, 240);
-    pdf.text('Saldo iniziale anno', 20, yBox);
+    pdf.setTextColor(122, 101, 72);
+    pdf.text(v.label.toUpperCase(), cx, y + 12, { align: 'center' });
+    pdf.setFontSize(13);
     pdf.setFont('helvetica', 'bold');
-    pdf.setTextColor(201, 160, 48);
-    pdf.text(`€ ${saldoInizialeTot.toFixed(2)}`, 194, yBox, { align: 'right' });
-    yBox += 8;
-  }
+    pdf.setTextColor(v.color[0], v.color[1], v.color[2]);
+    pdf.text(`€ ${v.val.toFixed(2)}`, cx, y + 23, { align: 'center' });
+  });
+  y += 44;
+
+  // Grafico Entrate vs Uscite
+  pdf.setFontSize(10);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(30, 45, 71);
+  pdf.text('ENTRATE VS USCITE', 14, y);
+  y += 8;
+  y = disegnaGraficoBarreOrizzontali(pdf, [
+    { label: 'Entrate', value: totEntrate, color: [47,107,79] },
+    { label: 'Uscite', value: totUscite, color: [155,44,44] }
+  ], 14, y, 120, 8, 6);
+  y += 8;
+
+  // Testo esplicativo
+  pdf.setFontSize(10);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(30, 45, 71);
+  pdf.text('LETTURA DEL BILANCIO', 14, y);
+  y += 7;
+
+  const percUscite = totEntrate > 0 ? (totUscite / totEntrate * 100) : 0;
+  let narrativa = `Il periodo ${periodoLabel.toLowerCase()} chiude con un saldo di € ${saldoPeriodo.toFixed(2)} (entrate meno uscite)`;
+  narrativa += saldoIniziale ? `, che sommato al saldo iniziale di € ${saldoIniziale.toFixed(2)} porta il saldo finale a € ${saldoFinale.toFixed(2)}.` : '.';
+  narrativa += ` Le uscite corrispondono al ${percUscite.toFixed(0)}% delle entrate registrate.`;
+  if (topEntrata) narrativa += ` La voce di entrata più consistente è "${topEntrata[0]}" con € ${topEntrata[1].entrate.toFixed(2)}.`;
+  if (topUscita) narrativa += ` La voce di uscita più consistente è "${topUscita[0]}" con € ${topUscita[1].uscite.toFixed(2)}.`;
+
   pdf.setFontSize(9);
   pdf.setFont('helvetica', 'normal');
-  pdf.setTextColor(200, 216, 240);
-  pdf.text('Totale entrate', 20, yBox);
-  pdf.text('Totale uscite', 20, yBox + 8);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(140, 220, 170);
-  pdf.text(`€ ${totEntrateGen.toFixed(2)}`, 194, yBox, { align: 'right' });
-  pdf.setTextColor(240, 150, 150);
-  pdf.text(`€ ${totUsciteGen.toFixed(2)}`, 194, yBox + 8, { align: 'right' });
-  pdf.setFontSize(11);
-  pdf.setTextColor(201, 160, 48);
-  pdf.text('SALDO' + (saldoInizialeTot ? ' FINALE' : ''), 20, yBox + 16);
-  pdf.text(`${saldoFinaleReale >= 0 ? '+' : ''}€ ${saldoFinaleReale.toFixed(2)}`, 194, yBox + 16, { align: 'right' });
+  pdf.setTextColor(60, 60, 60);
+  const righeTesto = pdf.splitTextToSize(narrativa, 182);
+  pdf.text(righeTesto, 14, y);
+  y += righeTesto.length * 4.5 + 8;
 
-  pdf.save(`report_cassa_${filtroAnno}.pdf`);
-  showToast('Report PDF generato!', 'success');
+  // Grafico top categorie di spesa
+  const topSpese = categorieOrdinate.filter(([,v]) => v.uscite > 0).sort((a,b) => b[1].uscite - a[1].uscite).slice(0, 6);
+  if (topSpese.length) {
+    if (y > 240) { pdf.addPage(); drawHeader('Continua'); y = 38; }
+    pdf.setFontSize(10);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(30, 45, 71);
+    pdf.text('PRINCIPALI VOCI DI USCITA', 14, y);
+    y += 8;
+    y = disegnaGraficoBarreOrizzontali(pdf, topSpese.map(([cat,v]) => ({ label: cat, value: v.uscite, color: [155,44,44] })), 14, y, 100, 6.5, 5);
+    y += 6;
+  }
+
+  // ===== Tabella riepilogo per categoria (nuova pagina) =====
+  pdf.addPage();
+  drawHeader('Riepilogo per categoria');
+  y = 38;
+  pdf.setFontSize(8);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(30, 45, 71);
+  pdf.text('Categoria', 16, y);
+  pdf.text('Entrate', 140, y, { align: 'right' });
+  pdf.text('Uscite', 165, y, { align: 'right' });
+  pdf.text('Saldo', 194, y, { align: 'right' });
+  pdf.setDrawColor(212, 201, 190);
+  pdf.line(14, y+2, 196, y+2);
+  y += 7;
+
+  categorieOrdinate.forEach(([cat, v], idx) => {
+    if (y > 275) { pdf.addPage(); drawHeader('Riepilogo per categoria (continua)'); y = 38; }
+    if (idx % 2 === 0) { pdf.setFillColor(247, 245, 242); pdf.rect(14, y-4, 182, 7, 'F'); }
+    const saldoCat = v.entrate - v.uscite;
+    pdf.setFontSize(8.5);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(26, 26, 26);
+    pdf.text(cat, 16, y);
+    pdf.setTextColor(47, 107, 79);
+    pdf.text(v.entrate ? `€ ${v.entrate.toFixed(2)}` : '—', 140, y, { align: 'right' });
+    pdf.setTextColor(155, 44, 44);
+    pdf.text(v.uscite ? `€ ${v.uscite.toFixed(2)}` : '—', 165, y, { align: 'right' });
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(saldoCat >= 0 ? 47 : 155, saldoCat >= 0 ? 107 : 44, saldoCat >= 0 ? 79 : 44);
+    pdf.text(`${saldoCat >= 0 ? '+' : ''}€ ${saldoCat.toFixed(2)}`, 194, y, { align: 'right' });
+    y += 7;
+  });
+
+  pdf.setFontSize(7.5);
+  pdf.setFont('helvetica', 'italic');
+  pdf.setTextColor(140, 140, 140);
+  pdf.text('Per il dettaglio riga per riga di ogni movimento, esporta "Movimenti Excel".', 14, 292);
+
+  pdf.save(`bilancio_${filtroAnno}.pdf`);
+  showToast('Bilancio PDF generato!', 'success');
+}
+
+function esportaExcelMovimentiCassa() {
+  const filtroAnno = document.getElementById('cassa-filtro-anno')?.value || 'tutti';
+  const lista = filtroAnno === 'tutti'
+    ? tuttiMovimentiCassa
+    : tuttiMovimentiCassa.filter(m => m.data && m.data.substring(0, 4) === filtroAnno);
+
+  if (!lista.length) { showToast('Nessun movimento da esportare', 'error'); return; }
+
+  const ordinati = lista.slice().sort((a,b) => (a.data||'').localeCompare(b.data||''));
+  const rows = [
+    ['Data', 'Tipo', 'Categoria', 'Descrizione', 'Fornitore', 'Importo (€)', 'Metodo pagamento', 'Collegato a Sagra', 'Note'],
+    ...ordinati.map(m => [
+      m.data ? formatDataIT(m.data) : '',
+      m.tipo === 'entrata' ? 'Entrata' : 'Uscita',
+      m.categoria || '',
+      m.descrizione || '',
+      m.fornitore || '',
+      parseFloat(m.importo || 0),
+      m.metodo_pagamento || '',
+      m.collegato_sagra ? 'Sì' : 'No',
+      m.note || ''
+    ])
+  ];
+
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  ws['!cols'] = [{wch:11},{wch:9},{wch:20},{wch:34},{wch:20},{wch:12},{wch:16},{wch:14},{wch:24}];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Movimenti');
+  XLSX.writeFile(wb, `movimenti_cassa_${filtroAnno}.xlsx`);
+  showToast('Excel movimenti generato!', 'success');
 }
 
 
