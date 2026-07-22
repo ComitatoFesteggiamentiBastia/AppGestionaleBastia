@@ -2340,6 +2340,30 @@ async function toggleSpesaAcquistata(id, checked) {
         else if (nuovoMov) await sincronizzaCassaDaSagra(nuovoMov);
       }
     }
+    // Storico prezzi: registra/aggiorna solo ora che l'acquisto è confermato
+    if (articolo && articolo.prezzo_unitario) {
+      const anno = sagraSelezionata?.anno || ANNO_CORRENTE;
+      const { data: storicoEsistente } = await db.from('storico_prezzi')
+        .select('id')
+        .eq('articolo', articolo.articolo)
+        .eq('fornitore', articolo.fornitore || null)
+        .eq('anno', anno)
+        .maybeSingle();
+      const payloadStorico = {
+        articolo: articolo.articolo,
+        fornitore: articolo.fornitore || null,
+        anno,
+        prezzo_unitario: articolo.prezzo_unitario,
+        iva: articolo.iva,
+        prezzo_totale: articolo.prezzo_totale,
+        quantita: articolo.quantita
+      };
+      if (storicoEsistente?.id) {
+        await db.from('storico_prezzi').update(payloadStorico).eq('id', storicoEsistente.id);
+      } else {
+        await db.from('storico_prezzi').insert(payloadStorico);
+      }
+    }
   } else {
     // Se viene tolto lo spunto, rimuove l'uscita collegata (se creata)
     await db.from('movimenti_sagra').delete().eq('lista_spesa_id', id);
@@ -2476,10 +2500,17 @@ async function saveSpesa() {
   await aggiungiACatalogo(_articolo, _fornitore, _categoria, _stand, _unita, _prezzo, _iva);
   await loadCatalogoSpesa();
 
-  // Storico prezzi
-  if (_articolo && _prezzo) {
+  // Storico prezzi: solo per acquisti confermati (stato "comprato"), non per semplici stime in lista
+  if (_articolo && _prezzo && payload.stato === 'comprato') {
     const anno = sagraSelezionata?.anno || ANNO_CORRENTE;
-    await db.from('storico_prezzi').insert({
+    const { data: storicoEsistente } = await db.from('storico_prezzi')
+      .select('id')
+      .eq('articolo', _articolo)
+      .eq('fornitore', _fornitore || null)
+      .eq('anno', anno)
+      .maybeSingle();
+
+    const payloadStorico = {
       articolo: _articolo,
       fornitore: _fornitore || null,
       anno,
@@ -2487,7 +2518,12 @@ async function saveSpesa() {
       iva: _iva,
       prezzo_totale: payload.prezzo_totale,
       quantita: payload.quantita
-    });
+    };
+    if (storicoEsistente?.id) {
+      await db.from('storico_prezzi').update(payloadStorico).eq('id', storicoEsistente.id);
+    } else {
+      await db.from('storico_prezzi').insert(payloadStorico);
+    }
   }
 
   showToast('Salvato!', 'success');
