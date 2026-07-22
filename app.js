@@ -1475,11 +1475,15 @@ function renderMovimentiSagra() {
 function rowMovimento(m) {
   const isEntrata = m.tipo === 'entrata';
   const color = isEntrata ? 'var(--verde)' : '#991B1B';
+  const rimborsoLabel = { da_verificare: '⚠️ Rimborso da verificare', da_rimborsare: '💸 Da rimborsare', rimborsato: '✓ Rimborsato' };
+  const rimborsoBadge = (m.rimborso_stato && m.rimborso_stato !== 'nessuno')
+    ? `<span class="badge ${m.rimborso_stato === 'rimborsato' ? 'badge-ok' : 'badge-no'}">${rimborsoLabel[m.rimborso_stato]}</span>` : '';
   return `<div class="table-row">
     <div style="flex:1;">
-      <div class="row-name">${m.descrizione}${m.fornitore ? ' — <span style="color:var(--testo-muted)">' + m.fornitore + '</span>' : ''}</div>
-      <div class="row-sub">${m.categoria || ''} · ${m.data ? formatDataIT(m.data) : ''} · ${m.metodo_pagamento || ''} ${m.offerta ? '· <span style="color:var(--oro)">Offerta</span>' : ''} ${m.pagato === false ? '· <span style="color:#991B1B">Da pagare</span>' : ''}</div>
+      <div class="row-name">${m.descrizione}${m.fornitore ? ' — <span style="color:var(--testo-muted)">' + m.fornitore + '</span>' : ''}${m.fattura_url ? ` <a href="${m.fattura_url}" target="_blank" title="Vedi fattura/scontrino" onclick="event.stopPropagation()">📎</a>` : ''}</div>
+      <div class="row-sub">${m.categoria || ''} · ${m.data ? formatDataIT(m.data) : ''} · ${m.metodo_pagamento || ''} ${m.offerta ? '· <span style="color:var(--oro)">Offerta</span>' : ''} ${m.pagato === false ? '· <span style="color:#991B1B">Da pagare</span>' : ''} ${m.nota_pagamento ? '· ' + m.nota_pagamento : ''}</div>
     </div>
+    ${rimborsoBadge}
     <span style="font-weight:600;color:${color};white-space:nowrap;">€ ${parseFloat(m.importo).toFixed(2)}</span>
     <button class="btn btn-sm" onclick='openModalMovimento(${JSON.stringify(m).replace(/'/g,"\\'")})'><i class="ti ti-edit"></i></button>
     <button class="btn btn-sm" style="color:#991B1B" onclick="eliminaMovimento('${m.id}')"><i class="ti ti-trash"></i></button>
@@ -1511,6 +1515,19 @@ function openModalMovimento(m = null) {
   document.getElementById('m-mov-pagato').checked = m ? (m.pagato !== false) : true;
   document.getElementById('m-mov-offerta').checked = m?.offerta || false;
   document.getElementById('m-mov-bilancio').checked = m ? (m.a_bilancio !== false) : true;
+  document.getElementById('m-mov-nota-pagamento').value = m?.nota_pagamento || '';
+  document.getElementById('m-mov-rimborso').value = m?.rimborso_stato || 'nessuno';
+  document.getElementById('m-mov-fattura-url').value = m?.fattura_url || '';
+  document.getElementById('m-mov-fattura-file').value = '';
+  document.getElementById('m-mov-fattura-preview').innerHTML = m?.fattura_url
+    ? `<a href="${m.fattura_url}" target="_blank" style="color:var(--blu);">📎 Vedi allegato attuale</a>`
+    : '';
+}
+
+function anteprimaFatturaMovimento() {
+  const file = document.getElementById('m-mov-fattura-file').files[0];
+  if (!file) return;
+  document.getElementById('m-mov-fattura-preview').innerHTML = `<span style="color:var(--testo-muted);">📎 ${file.name} (verrà caricato al salvataggio)</span>`;
 }
 
 function closeModalMovimento() {
@@ -1526,6 +1543,21 @@ async function saveMovimento() {
   const importo = parseFloat(document.getElementById('m-mov-importo').value);
   if (!descrizione || isNaN(importo)) { showToast('Descrizione e importo obbligatori', 'error'); return; }
 
+  // Upload fattura se è stato selezionato un nuovo file
+  let fatturaUrl = document.getElementById('m-mov-fattura-url').value || null;
+  const fatturaFile = document.getElementById('m-mov-fattura-file').files[0];
+  if (fatturaFile) {
+    const ext = fatturaFile.name.split('.').pop();
+    const path = `${descrizione.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}-${Date.now()}.${ext}`;
+    const { error: eUpload } = await db.storage.from('fatture-spesa').upload(path, fatturaFile, { upsert: true });
+    if (eUpload) {
+      showToast('Errore upload fattura: ' + eUpload.message, 'error');
+    } else {
+      const { data: pub } = db.storage.from('fatture-spesa').getPublicUrl(path);
+      fatturaUrl = pub.publicUrl;
+    }
+  }
+
   const payload = {
     sagra_id: sagraId,
     tipo: document.getElementById('m-mov-tipo').value,
@@ -1537,7 +1569,10 @@ async function saveMovimento() {
     metodo_pagamento: document.getElementById('m-mov-metodo').value || null,
     pagato: document.getElementById('m-mov-pagato').checked,
     offerta: document.getElementById('m-mov-offerta').checked,
-    a_bilancio: document.getElementById('m-mov-bilancio').checked
+    a_bilancio: document.getElementById('m-mov-bilancio').checked,
+    nota_pagamento: document.getElementById('m-mov-nota-pagamento').value.trim() || null,
+    rimborso_stato: document.getElementById('m-mov-rimborso').value,
+    fattura_url: fatturaUrl
   };
 
   const id = document.getElementById('m-mov-id').value;
@@ -2248,12 +2283,14 @@ async function toggleSpesaAcquistata(id, checked) {
           tipo: 'uscita',
           categoria: articolo.categoria || 'SPESA',
           descrizione,
+          fornitore: articolo.fornitore || null,
           importo,
           data: oggi,
           metodo_pagamento: 'contanti',
           pagato: true,
           offerta: false,
           a_bilancio: true,
+          rimborso_stato: 'nessuno',
           lista_spesa_id: id
         });
         if (error) console.error('Errore registrazione uscita:', error.message);
@@ -2364,9 +2401,9 @@ async function saveSpesa() {
         const descrizione = `${payload.fornitore || 'Fornitore'}: ${payload.articolo}`;
         await db.from('movimenti_sagra').insert({
           sagra_id: sagraId, tipo: 'uscita', categoria: payload.categoria || 'SPESA',
-          descrizione, importo: payload.prezzo_totale, data: oggi,
+          descrizione, fornitore: payload.fornitore || null, importo: payload.prezzo_totale, data: oggi,
           metodo_pagamento: 'contanti', pagato: true, offerta: false, a_bilancio: true,
-          lista_spesa_id: savedId
+          rimborso_stato: 'nessuno', lista_spesa_id: savedId
         });
       }
     } else if (payload.stato !== 'comprato') {
