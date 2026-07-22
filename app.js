@@ -1576,13 +1576,14 @@ async function saveMovimento() {
   };
 
   const id = document.getElementById('m-mov-id').value;
-  let error;
+  let error, savedRow;
   if (id) {
-    ({ error } = await db.from('movimenti_sagra').update(payload).eq('id', id));
+    ({ data: savedRow, error } = await db.from('movimenti_sagra').update(payload).eq('id', id).select().single());
   } else {
-    ({ error } = await db.from('movimenti_sagra').insert(payload));
+    ({ data: savedRow, error } = await db.from('movimenti_sagra').insert(payload).select().single());
   }
   if (error) { showToast('Errore: ' + error.message, 'error'); return; }
+  if (savedRow) await sincronizzaCassaDaSagra(savedRow);
   showToast('Salvato!', 'success');
   closeModalMovimento();
   loadMovimentiSagra();
@@ -1926,6 +1927,40 @@ async function aggiungiFornitoireSeNuovo(nome) {
 async function aggiungiCategoriaSagraSeNuova(nome) {
   if (!nome || categorieSagra.find(c => c.nome === nome)) return nome;
   await db.from('categorie').insert({ tipo: 'sagra', nome });
+  await loadCategorie();
+  return nome;
+}
+
+// Specchia un movimento di Entrate/Uscite Sagra dentro la Cassa Generale,
+// con l'etichetta "Sagra {anno}", cosi la Cassa Generale riflette davvero tutti i soldi che abbiamo.
+async function sincronizzaCassaDaSagra(movSagra) {
+  if (!movSagra?.id) return;
+  const anno = sagraSelezionata?.anno || new Date().getFullYear();
+  const etichetta = `Sagra ${anno}`;
+  await aggiungiCategoriaCassaSeNuova(etichetta);
+
+  const payloadCassa = {
+    tipo: movSagra.tipo,
+    categoria: etichetta,
+    descrizione: movSagra.descrizione + (movSagra.fornitore ? ' — ' + movSagra.fornitore : ''),
+    importo: movSagra.importo,
+    data: movSagra.data,
+    metodo_pagamento: movSagra.metodo_pagamento || 'contanti',
+    collegato_sagra: true,
+    movimento_sagra_id: movSagra.id
+  };
+
+  const { data: esistente } = await db.from('movimenti_cassa').select('id').eq('movimento_sagra_id', movSagra.id).maybeSingle();
+  if (esistente?.id) {
+    await db.from('movimenti_cassa').update(payloadCassa).eq('id', esistente.id);
+  } else {
+    await db.from('movimenti_cassa').insert(payloadCassa);
+  }
+}
+
+async function aggiungiCategoriaCassaSeNuova(nome) {
+  if (!nome || categorieCassa.find(c => c.nome === nome)) return nome;
+  await db.from('categorie').insert({ tipo: 'cassa', nome });
   await loadCategorie();
   return nome;
 }
@@ -2286,7 +2321,7 @@ async function toggleSpesaAcquistata(id, checked) {
       if (!mov?.id) {
         const categoria = articolo.categoria || 'Spesa varie';
         await aggiungiCategoriaSagraSeNuova(categoria);
-        const { error } = await db.from('movimenti_sagra').insert({
+        const { data: nuovoMov, error } = await db.from('movimenti_sagra').insert({
           sagra_id: sagraId,
           tipo: 'uscita',
           categoria,
@@ -2300,8 +2335,9 @@ async function toggleSpesaAcquistata(id, checked) {
           a_bilancio: true,
           rimborso_stato: 'nessuno',
           lista_spesa_id: id
-        });
+        }).select().single();
         if (error) console.error('Errore registrazione uscita:', error.message);
+        else if (nuovoMov) await sincronizzaCassaDaSagra(nuovoMov);
       }
     }
   } else {
@@ -2408,12 +2444,13 @@ async function saveSpesa() {
         const oggi = new Date().toISOString().split('T')[0];
         const categoria = payload.categoria || 'Spesa varie';
         await aggiungiCategoriaSagraSeNuova(categoria);
-        await db.from('movimenti_sagra').insert({
+        const { data: nuovoMov } = await db.from('movimenti_sagra').insert({
           sagra_id: sagraId, tipo: 'uscita', categoria,
           descrizione: payload.articolo, fornitore: payload.fornitore || null, importo: payload.prezzo_totale, data: oggi,
           metodo_pagamento: 'contanti', pagato: true, offerta: false, a_bilancio: true,
           rimborso_stato: 'nessuno', lista_spesa_id: savedId
-        });
+        }).select().single();
+        if (nuovoMov) await sincronizzaCassaDaSagra(nuovoMov);
       }
     } else if (payload.stato !== 'comprato') {
       await db.from('movimenti_sagra').delete().eq('lista_spesa_id', savedId);
