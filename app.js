@@ -5879,6 +5879,15 @@ async function saveStoricoManuale() {
     ({ error } = await db.from('storico_prezzi').insert(payload));
   }
   if (error) { showToast('Errore: ' + error.message, 'error'); return; }
+
+  // Mantiene Database Articoli e Fornitori coerenti: registra solo se davvero nuovi,
+  // senza sovrascrivere dati già presenti per lo stesso articolo
+  if (fornitore) await aggiungiFornitoireSeNuovo(fornitore);
+  if (!articoloInDatabase(articolo)) {
+    await aggiungiACatalogo(articolo, fornitore, null, null, null, prezzoUnitario, iva);
+  }
+  await loadCatalogoSpesa();
+
   closeModalStoricoManuale();
   showToast('Voce salvata!', 'success');
   loadStoricoPrezzi();
