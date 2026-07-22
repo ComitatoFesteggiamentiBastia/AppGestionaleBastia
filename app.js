@@ -1923,6 +1923,13 @@ async function aggiungiFornitoireSeNuovo(nome) {
   renderFornitoriTabella();
 }
 
+async function aggiungiCategoriaSagraSeNuova(nome) {
+  if (!nome || categorieSagra.find(c => c.nome === nome)) return nome;
+  await db.from('categorie').insert({ tipo: 'sagra', nome });
+  await loadCategorie();
+  return nome;
+}
+
 // ===== PDF LISTA SPESA PER FORNITORE =====
 function pdfConPrezzi() {
   return document.getElementById('pdf-con-prezzi')?.checked || false;
@@ -2277,12 +2284,13 @@ async function toggleSpesaAcquistata(id, checked) {
     if (articolo && importo && importo > 0) {
       const { data: mov } = await db.from('movimenti_sagra').select('id').eq('lista_spesa_id', id).maybeSingle();
       if (!mov?.id) {
-        const descrizione = `${articolo.fornitore || 'Fornitore'}: ${articolo.articolo}`;
+        const categoria = articolo.categoria || 'Spesa varie';
+        await aggiungiCategoriaSagraSeNuova(categoria);
         const { error } = await db.from('movimenti_sagra').insert({
           sagra_id: sagraId,
           tipo: 'uscita',
-          categoria: articolo.categoria || 'SPESA',
-          descrizione,
+          categoria,
+          descrizione: articolo.articolo,
           fornitore: articolo.fornitore || null,
           importo,
           data: oggi,
@@ -2398,10 +2406,11 @@ async function saveSpesa() {
       const { data: mov } = await db.from('movimenti_sagra').select('id').eq('lista_spesa_id', savedId).maybeSingle();
       if (!mov?.id) {
         const oggi = new Date().toISOString().split('T')[0];
-        const descrizione = `${payload.fornitore || 'Fornitore'}: ${payload.articolo}`;
+        const categoria = payload.categoria || 'Spesa varie';
+        await aggiungiCategoriaSagraSeNuova(categoria);
         await db.from('movimenti_sagra').insert({
-          sagra_id: sagraId, tipo: 'uscita', categoria: payload.categoria || 'SPESA',
-          descrizione, fornitore: payload.fornitore || null, importo: payload.prezzo_totale, data: oggi,
+          sagra_id: sagraId, tipo: 'uscita', categoria,
+          descrizione: payload.articolo, fornitore: payload.fornitore || null, importo: payload.prezzo_totale, data: oggi,
           metodo_pagamento: 'contanti', pagato: true, offerta: false, a_bilancio: true,
           rimborso_stato: 'nessuno', lista_spesa_id: savedId
         });
