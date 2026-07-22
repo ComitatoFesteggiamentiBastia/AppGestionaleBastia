@@ -328,10 +328,14 @@ async function loadDashboard() {
   document.getElementById('dash-quote-pagate').textContent = pagate;
   document.getElementById('dash-quote-nopag').textContent = daPagare;
 
-  const { data: movimenti } = await db.from('movimenti_cassa').select('tipo, importo');
+  const annoCorrenteCassa = Math.max(new Date().getFullYear(), ANNO_INIZIO_CONTABILITA);
+  const { data: movimenti } = await db.from('movimenti_cassa').select('tipo, importo, data')
+    .gte('data', `${annoCorrenteCassa}-01-01`).lte('data', `${annoCorrenteCassa}-12-31`);
   let saldo = 0;
   movimenti?.forEach(m => { saldo += m.tipo === 'entrata' ? +m.importo : -m.importo; });
-  document.getElementById('dash-saldo').textContent = saldo.toFixed(2);
+  const { data: saldoInizialeData } = await db.from('saldi_iniziali_cassa').select('*').eq('anno', annoCorrenteCassa).maybeSingle();
+  if (saldoInizialeData) saldo += parseFloat(saldoInizialeData.saldo_conto_corrente || 0) + parseFloat(saldoInizialeData.saldo_contanti || 0);
+  document.getElementById('dash-saldo').textContent = '€ ' + saldo.toFixed(2);
 
   const { count: nVol } = await db.from('volontari').select('*', { count: 'exact', head: true }).eq('attivo', true);
   document.getElementById('dash-volontari').textContent = nVol ?? 0;
