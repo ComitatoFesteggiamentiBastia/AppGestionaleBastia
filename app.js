@@ -2232,7 +2232,38 @@ function aggiornaStatsSpesa() {
 
 async function toggleSpesaAcquistata(id, checked) {
   const stato = checked ? 'comprato' : 'ordinato';
-  await db.from('lista_spesa').update({ stato, acquistato: checked, data_acquisto: checked ? new Date().toISOString().split('T')[0] : null }).eq('id', id);
+  const sagraId = getSagraId();
+  const oggi = new Date().toISOString().split('T')[0];
+  await db.from('lista_spesa').update({ stato, acquistato: checked, data_acquisto: checked ? oggi : null }).eq('id', id);
+
+  if (checked) {
+    const articolo = tuttiArticoliSpesa.find(a => a.id === id);
+    const importo = articolo?.prezzo_totale || (articolo?.prezzo_unitario && articolo?.quantita ? parseFloat(articolo.prezzo_unitario) * parseFloat(articolo.quantita) : null);
+    if (articolo && importo && importo > 0) {
+      const { data: mov } = await db.from('movimenti_sagra').select('id').eq('lista_spesa_id', id).maybeSingle();
+      if (!mov?.id) {
+        const descrizione = `${articolo.fornitore || 'Fornitore'}: ${articolo.articolo}`;
+        const { error } = await db.from('movimenti_sagra').insert({
+          sagra_id: sagraId,
+          tipo: 'uscita',
+          categoria: articolo.categoria || 'SPESA',
+          descrizione,
+          importo,
+          data: oggi,
+          metodo_pagamento: 'contanti',
+          pagato: true,
+          offerta: false,
+          a_bilancio: true,
+          lista_spesa_id: id
+        });
+        if (error) console.error('Errore registrazione uscita:', error.message);
+      }
+    }
+  } else {
+    // Se viene tolto lo spunto, rimuove l'uscita collegata (se creata)
+    await db.from('movimenti_sagra').delete().eq('lista_spesa_id', id);
+  }
+
   loadSpesa();
 }
 
@@ -2312,13 +2343,36 @@ async function saveSpesa() {
     acquistato: document.getElementById('m-spesa-stato').value === 'comprato'
   };
 
-  let error;
+  let error, savedId = id;
   if (id) {
     ({ error } = await db.from('lista_spesa').update(payload).eq('id', id));
   } else {
-    ({ error } = await db.from('lista_spesa').insert(payload));
+    const { data: nuovo, error: eIns } = await db.from('lista_spesa').insert(payload).select('id').single();
+    error = eIns;
+    savedId = nuovo?.id;
   }
   if (error) { showToast('Errore: ' + error.message, 'error'); return; }
+
+  // Se lo stato è "comprato" e non esiste ancora un'uscita collegata, la crea.
+  // Se esiste già, la lascia intatta: potresti averla modificata a mano (importo, data, metodo...)
+  // e risalvare l'articolo non deve sovrascrivere le tue modifiche.
+  if (savedId) {
+    if (payload.stato === 'comprato' && payload.prezzo_totale) {
+      const { data: mov } = await db.from('movimenti_sagra').select('id').eq('lista_spesa_id', savedId).maybeSingle();
+      if (!mov?.id) {
+        const oggi = new Date().toISOString().split('T')[0];
+        const descrizione = `${payload.fornitore || 'Fornitore'}: ${payload.articolo}`;
+        await db.from('movimenti_sagra').insert({
+          sagra_id: sagraId, tipo: 'uscita', categoria: payload.categoria || 'SPESA',
+          descrizione, importo: payload.prezzo_totale, data: oggi,
+          metodo_pagamento: 'contanti', pagato: true, offerta: false, a_bilancio: true,
+          lista_spesa_id: savedId
+        });
+      }
+    } else if (payload.stato !== 'comprato') {
+      await db.from('movimenti_sagra').delete().eq('lista_spesa_id', savedId);
+    }
+  }
 
   const _articolo = document.getElementById('m-spesa-articolo').value.trim();
   const _fornitore = document.getElementById('m-spesa-fornitore').value.trim();
