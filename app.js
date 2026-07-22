@@ -2503,93 +2503,546 @@ async function eliminaSpesa(id) {
 }
 
 // ===== PRIMA NOTA =====
-let primaNotaData = [];
-const STANDS_PRIMA_NOTA = ['CASSA CENTRALE', 'RISTORANTE SABATO', 'RISTORANTE DOMENICA', 'BAR', 'TORTE', 'LOTTERIA'];
-const GIORNI_PRIMA_NOTA = ['venerdi', 'sabato', 'domenica'];
+// ===== PRIMA NOTA CASSE (fondo, prelievi, chiusure, POS, vendite per articolo) =====
+let tutteCasseSagra = [];
+let tuttiFondiCassa = [];
+let tuttiPrelieviCassa = [];
+let tutteChiusureCassa = [];
+let tuttiPosGiornalieri = [];
+let tutteVenditeMenu = [];
+let giornoPNAttivo = 'sabato';
 
 async function loadPrimaNota() {
   await assicuraSagreCaricate();
   const sagraId = getSagraId();
   aggiornaHeaderSagra('pn-sagra-header');
   if (!sagraId) return;
-  const { data } = await db.from('prima_nota').select('*').eq('sagra_id', sagraId);
-  primaNotaData = data || [];
+
+  const { data: casse } = await db.from('casse_sagra').select('*').eq('sagra_id', sagraId).order('ordine');
+  tutteCasseSagra = casse || [];
+
+  // Se non esiste ancora nessuna cassa, precrea le 3 predefinite
+  if (!tutteCasseSagra.length) {
+    const predefinite = ['Ristorante 1', 'Ristorante 2', 'Bar'];
+    const { data: nuove } = await db.from('casse_sagra')
+      .insert(predefinite.map((nome, i) => ({ sagra_id: sagraId, nome, ordine: i })))
+      .select();
+    tutteCasseSagra = nuove || [];
+  }
+
+  const casseIds = tutteCasseSagra.map(c => c.id);
+  const [fondoRes, prelieviRes, chiusureRes, posRes] = await Promise.all([
+    casseIds.length ? db.from('cassa_fondo').select('*').in('cassa_id', casseIds) : { data: [] },
+    casseIds.length ? db.from('cassa_prelievi').select('*').in('cassa_id', casseIds).order('orario') : { data: [] },
+    casseIds.length ? db.from('cassa_chiusure').select('*').in('cassa_id', casseIds) : { data: [] },
+    db.from('pos_giornaliero').select('*').eq('sagra_id', sagraId)
+  ]);
+  tuttiFondiCassa = fondoRes.data || [];
+  tuttiPrelieviCassa = prelieviRes.data || [];
+  tutteChiusureCassa = chiusureRes.data || [];
+  tuttiPosGiornalieri = posRes.data || [];
+
+  if (!tuttiSoci || !tuttiSoci.length) await loadSoci();
+  if (!tuttoMenu || !tuttoMenu.length) {
+    const { data: menuData } = await db.from('menu_sagra').select('*').eq('sagra_id', sagraId);
+    tuttoMenu = menuData || [];
+  }
+
+  aggiornaTabsPN();
+  renderPrimaNota();
+  await loadVenditeMenu();
+}
+
+function cambiaGiornoPrimaNota(giorno) {
+  giornoPNAttivo = giorno;
+  aggiornaTabsPN();
   renderPrimaNota();
 }
 
-function getPrimaNota(stand, giorno) {
-  return primaNotaData.find(p => p.stand === stand && p.giorno === giorno) || null;
+function aggiornaTabsPN() {
+  const sab = document.getElementById('tab-pn-sabato');
+  const dom = document.getElementById('tab-pn-domenica');
+  if (!sab || !dom) return;
+  const attivo = 'flex:1;font-weight:600;background:var(--blu-notte);color:white;border-color:var(--blu-notte);';
+  const inattivo = 'flex:1;font-weight:600;background:white;color:var(--blu-notte);';
+  sab.setAttribute('style', giornoPNAttivo === 'sabato' ? attivo : inattivo);
+  dom.setAttribute('style', giornoPNAttivo === 'domenica' ? attivo : inattivo);
 }
 
 function renderPrimaNota() {
-  const container = document.getElementById('prima-nota-container');
+  const container = document.getElementById('pn-casse-list');
   if (!container) return;
 
-  const giornoAttivo = document.getElementById('pn-giorno-tab')?.value || 'sabato';
+  const posGiorno = tuttiPosGiornalieri.find(p => p.giorno === giornoPNAttivo);
+  document.getElementById('pn-pos-importo').value = posGiorno?.importo || '';
+  document.getElementById('pn-pos-note').value = posGiorno?.note || '';
 
-  let html = '';
-  let totBattuto = 0, totContanti = 0, totPos = 0, totPrelievi = 0, totArrotondato = 0;
+  let totFondo = 0, totPrelievi = 0, totBattuto = 0, totIncassato = 0;
 
-  STANDS_PRIMA_NOTA.forEach(stand => {
-    const pn = getPrimaNota(stand, giornoAttivo);
-    const battuto = pn?.battuto || 0;
-    const contanti = pn?.contanti || 0;
-    const pos = pn?.pos || 0;
-    const prelievi = pn?.prelievi || 0;
-    const arrotondato = pn?.arrotondato || 0;
-    totBattuto += battuto; totContanti += contanti; totPos += pos;
-    totPrelievi += prelievi; totArrotondato += arrotondato;
+  container.innerHTML = tutteCasseSagra.map(cassa => {
+    const fondo = tuttiFondiCassa.find(f => f.cassa_id === cassa.id && f.giorno === giornoPNAttivo);
+    const prelievi = tuttiPrelieviCassa.filter(p => p.cassa_id === cassa.id && p.giorno === giornoPNAttivo);
+    const chiusura = tutteChiusureCassa.find(c => c.cassa_id === cassa.id && c.giorno === giornoPNAttivo);
+    const totPrelieviCassa = prelievi.reduce((s,p) => s + parseFloat(p.importo||0), 0);
+    const battuto = parseFloat(chiusura?.battuto || 0);
+    const incassato = parseFloat(chiusura?.incassato || 0);
+    const differenza = incassato - battuto;
 
-    html += `<tr style="border-bottom:1px solid var(--border);">
-      <td style="padding:8px 12px;font-weight:600;white-space:nowrap;">${stand}</td>
-      ${['battuto','contanti','pos','prelievi','arrotondato'].map(campo => `
-        <td style="padding:4px 6px;">
-          <input type="number" step="0.01" value="${pn?.[campo] || ''}" placeholder="0"
-            onchange="savePrimaNota('${stand}','${giornoAttivo}','${campo}',this.value)"
-            style="width:90px;padding:5px 8px;border:1px solid #D4C9BE;border-radius:6px;font-size:13px;text-align:right;outline:none;">
-        </td>
-      `).join('')}
-      <td style="padding:8px 12px;font-weight:600;color:var(--verde);text-align:right;">${(contanti + pos).toFixed(2)}</td>
-    </tr>`;
-  });
+    totFondo += parseFloat(fondo?.importo || 0);
+    totPrelievi += totPrelieviCassa;
+    totBattuto += battuto;
+    totIncassato += incassato;
 
-  html += `<tr style="background:#F2EDE4;font-weight:700;">
-    <td style="padding:10px 12px;">TOTALE</td>
-    <td style="padding:10px 12px;text-align:right;">${totBattuto.toFixed(2)}</td>
-    <td style="padding:10px 12px;text-align:right;">${totContanti.toFixed(2)}</td>
-    <td style="padding:10px 12px;text-align:right;">${totPos.toFixed(2)}</td>
-    <td style="padding:10px 12px;text-align:right;">${totPrelievi.toFixed(2)}</td>
-    <td style="padding:10px 12px;text-align:right;">${totArrotondato.toFixed(2)}</td>
-    <td style="padding:10px 12px;text-align:right;color:var(--verde);">${(totContanti + totPos).toFixed(2)}</td>
-  </tr>`;
+    return `
+    <div style="background:white;border:1px solid var(--border);border-radius:10px;margin-bottom:14px;overflow:hidden;">
+      <div style="background:var(--blu-notte);padding:10px 16px;display:flex;justify-content:space-between;align-items:center;">
+        <span style="font-weight:700;color:white;font-size:14px;"><i class="ti ti-cash-register"></i> ${cassa.nome}</span>
+        <div style="display:flex;gap:4px;">
+          <button class="btn btn-sm" onclick='openModalCassaSagra(${JSON.stringify(cassa).replace(/"/g,"&quot;")})' style="background:rgba(255,255,255,0.15);color:white;border-color:rgba(255,255,255,0.2);" title="Rinomina"><i class="ti ti-edit"></i></button>
+          <button class="btn btn-sm" onclick="eliminaCassaSagra('${cassa.id}','${cassa.nome.replace(/'/g,"\\'")}')" style="background:rgba(255,255,255,0.15);color:white;border-color:rgba(255,255,255,0.2);" title="Elimina"><i class="ti ti-trash"></i></button>
+        </div>
+      </div>
+      <div style="padding:14px 16px;">
 
-  container.innerHTML = html;
+        <!-- Fondo cassa -->
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid var(--border);">
+          <span style="font-size:12px;font-weight:600;color:var(--testo-muted);min-width:110px;">💰 Fondo cassa</span>
+          <input type="number" step="0.01" value="${fondo?.importo || ''}" placeholder="€ 0.00" id="fondo-imp-${cassa.id}"
+            style="width:100px;padding:6px 9px;border:1px solid #D4C9BE;border-radius:6px;font-size:13px;outline:none;">
+          <input type="time" value="${fondo?.orario || ''}" id="fondo-ora-${cassa.id}"
+            style="padding:6px 9px;border:1px solid #D4C9BE;border-radius:6px;font-size:13px;outline:none;">
+          <button class="btn btn-sm" onclick="salvaFondoCassa('${cassa.id}')"><i class="ti ti-check"></i> Salva</button>
+        </div>
 
-  // Aggiorna riepilogo
-  if (document.getElementById('pn-tot-incasso')) {
-    document.getElementById('pn-tot-incasso').textContent = '€ ' + totBattuto.toFixed(2);
-    document.getElementById('pn-tot-contanti').textContent = '€ ' + totContanti.toFixed(2);
-    document.getElementById('pn-tot-pos').textContent = '€ ' + totPos.toFixed(2);
+        <!-- Prelievi -->
+        <div style="margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid var(--border);">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+            <span style="font-size:12px;font-weight:600;color:var(--testo-muted);">📤 Prelievi ${totPrelieviCassa > 0 ? '· totale € '+totPrelieviCassa.toFixed(2) : ''}</span>
+            <button class="btn btn-sm" onclick="openModalPrelievo(null,'${cassa.id}')"><i class="ti ti-plus"></i> Prelievo</button>
+          </div>
+          ${prelievi.length ? prelievi.map(p => `
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;font-size:12.5px;">
+              <span>${p.orario || '—'} · € ${parseFloat(p.importo).toFixed(2)} ${p.responsabile ? '· '+p.responsabile : ''} ${p.note ? '· '+p.note : ''}</span>
+              <div style="display:flex;gap:4px;">
+                <button class="btn btn-sm" onclick='openModalPrelievo(${JSON.stringify(p).replace(/"/g,"&quot;")},"${cassa.id}")'><i class="ti ti-edit"></i></button>
+                <button class="btn btn-sm" style="color:#991B1B" onclick="eliminaPrelievo('${p.id}')"><i class="ti ti-trash"></i></button>
+              </div>
+            </div>
+          `).join('') : '<div style="font-size:12px;color:var(--testo-muted);">Nessun prelievo</div>'}
+        </div>
+
+        <!-- Chiusura -->
+        <div>
+          <span style="font-size:12px;font-weight:600;color:var(--testo-muted);display:block;margin-bottom:8px;">🔒 Chiusura serale</span>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+            <div>
+              <label style="font-size:11px;color:var(--testo-muted);display:block;">Battuto (€)</label>
+              <input type="number" step="0.01" value="${chiusura?.battuto || ''}" id="chiusura-battuto-${cassa.id}" placeholder="0.00"
+                style="width:100px;padding:6px 9px;border:1px solid #D4C9BE;border-radius:6px;font-size:13px;outline:none;">
+            </div>
+            <div>
+              <label style="font-size:11px;color:var(--testo-muted);display:block;">Incassato (€)</label>
+              <input type="number" step="0.01" value="${chiusura?.incassato || ''}" id="chiusura-incassato-${cassa.id}" placeholder="0.00"
+                style="width:100px;padding:6px 9px;border:1px solid #D4C9BE;border-radius:6px;font-size:13px;outline:none;">
+            </div>
+            <div>
+              <label style="font-size:11px;color:var(--testo-muted);display:block;">Orario</label>
+              <input type="time" value="${chiusura?.orario || ''}" id="chiusura-orario-${cassa.id}"
+                style="padding:6px 9px;border:1px solid #D4C9BE;border-radius:6px;font-size:13px;outline:none;">
+            </div>
+            <div style="flex:1;min-width:120px;">
+              <label style="font-size:11px;color:var(--testo-muted);display:block;">Nota</label>
+              <input type="text" value="${chiusura?.note || ''}" id="chiusura-nota-${cassa.id}"
+                style="width:100%;padding:6px 9px;border:1px solid #D4C9BE;border-radius:6px;font-size:13px;outline:none;">
+            </div>
+            <button class="btn btn-sm" onclick="salvaChiusuraCassa('${cassa.id}')" style="align-self:flex-end;"><i class="ti ti-check"></i> Salva</button>
+          </div>
+          ${chiusura ? `<div style="margin-top:8px;font-size:12.5px;font-weight:600;color:${Math.abs(differenza) < 0.01 ? 'var(--verde)' : '#991B1B'};">
+            Differenza incassato − battuto: ${differenza >= 0 ? '+' : ''}€ ${differenza.toFixed(2)} ${Math.abs(differenza) < 0.01 ? '✓ Quadra' : ''}
+          </div>` : ''}
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+
+  const posImporto = parseFloat(posGiorno?.importo || 0);
+  const diffTotale = totIncassato - totBattuto;
+  if (document.getElementById('pn-tot-fondo')) document.getElementById('pn-tot-fondo').textContent = '€ ' + totFondo.toFixed(2);
+  if (document.getElementById('pn-tot-prelievi')) document.getElementById('pn-tot-prelievi').textContent = '€ ' + totPrelievi.toFixed(2);
+  if (document.getElementById('pn-tot-pos')) document.getElementById('pn-tot-pos').textContent = '€ ' + posImporto.toFixed(2);
+  if (document.getElementById('pn-tot-diff')) {
+    document.getElementById('pn-tot-diff').textContent = (diffTotale >= 0 ? '+' : '') + '€ ' + diffTotale.toFixed(2);
+    document.getElementById('pn-tot-diff').style.color = Math.abs(diffTotale) < 0.01 ? 'var(--verde)' : '#991B1B';
   }
+
+  const dl = document.getElementById('pn-soci-list');
+  if (dl) dl.innerHTML = (tuttiSoci || []).map(s => `<option value="${s.cognome} ${s.nome}">`).join('');
 }
 
-async function savePrimaNota(stand, giorno, campo, valore) {
+// --- Casse ---
+function openModalCassaSagra(cassa = null) {
+  document.getElementById('modal-cassa-sagra').style.display = 'flex';
+  document.getElementById('modal-cassa-sagra').style.pointerEvents = 'auto';
+  document.getElementById('titolo-modal-cassa-sagra').textContent = cassa ? 'Rinomina cassa' : 'Nuova cassa';
+  document.getElementById('mcs-id').value = cassa?.id || '';
+  document.getElementById('mcs-nome').value = cassa?.nome || '';
+}
+function closeModalCassaSagra() {
+  const m = document.getElementById('modal-cassa-sagra');
+  m.style.display = 'none';
+  m.style.pointerEvents = 'none';
+}
+async function saveCassaSagra() {
+  const sagraId = getSagraId();
+  const nome = document.getElementById('mcs-nome').value.trim();
+  if (!nome) { showToast('Inserisci un nome', 'error'); return; }
+  const id = document.getElementById('mcs-id').value;
+  let error;
+  if (id) {
+    ({ error } = await db.from('casse_sagra').update({ nome }).eq('id', id));
+  } else {
+    const ordine = tutteCasseSagra.length;
+    ({ error } = await db.from('casse_sagra').insert({ sagra_id: sagraId, nome, ordine }));
+  }
+  if (error) { showToast('Errore: ' + error.message, 'error'); return; }
+  closeModalCassaSagra();
+  showToast('Cassa salvata!', 'success');
+  loadPrimaNota();
+}
+async function eliminaCassaSagra(id, nome) {
+  if (!confirm(`Eliminare la cassa "${nome}"? Verranno eliminati anche fondo, prelievi e chiusure collegati.`)) return;
+  await db.from('casse_sagra').delete().eq('id', id);
+  showToast('Cassa eliminata', 'success');
+  loadPrimaNota();
+}
+
+// --- Fondo cassa ---
+async function salvaFondoCassa(cassaId) {
+  const importo = parseFloat(document.getElementById(`fondo-imp-${cassaId}`).value) || 0;
+  const orario = document.getElementById(`fondo-ora-${cassaId}`).value || null;
+  const esistente = tuttiFondiCassa.find(f => f.cassa_id === cassaId && f.giorno === giornoPNAttivo);
+  let error;
+  if (esistente) {
+    ({ error } = await db.from('cassa_fondo').update({ importo, orario }).eq('id', esistente.id));
+  } else {
+    ({ error } = await db.from('cassa_fondo').insert({ cassa_id: cassaId, giorno: giornoPNAttivo, importo, orario }));
+  }
+  if (error) { showToast('Errore: ' + error.message, 'error'); return; }
+  showToast('Fondo cassa salvato!', 'success');
+  loadPrimaNota();
+}
+
+// --- Prelievi ---
+function openModalPrelievo(p = null, cassaId) {
+  document.getElementById('modal-prelievo').style.display = 'flex';
+  document.getElementById('modal-prelievo').style.pointerEvents = 'auto';
+  document.getElementById('titolo-modal-prelievo').textContent = p ? 'Modifica prelievo' : 'Nuovo prelievo';
+  document.getElementById('mp-id').value = p?.id || '';
+  document.getElementById('mp-cassa-id').value = cassaId;
+  document.getElementById('mp-importo').value = p?.importo || '';
+  document.getElementById('mp-orario').value = p?.orario || '';
+  document.getElementById('mp-responsabile').value = p?.responsabile || '';
+  document.getElementById('mp-nota').value = p?.note || '';
+  const dl = document.getElementById('pn-soci-list');
+  if (dl) dl.innerHTML = (tuttiSoci || []).map(s => `<option value="${s.cognome} ${s.nome}">`).join('');
+}
+function closeModalPrelievo() {
+  const m = document.getElementById('modal-prelievo');
+  m.style.display = 'none';
+  m.style.pointerEvents = 'none';
+}
+async function savePrelievo() {
+  const importo = parseFloat(document.getElementById('mp-importo').value);
+  if (!importo) { showToast('Inserisci un importo', 'error'); return; }
+  const cassaId = document.getElementById('mp-cassa-id').value;
+  const payload = {
+    cassa_id: cassaId,
+    giorno: giornoPNAttivo,
+    importo,
+    orario: document.getElementById('mp-orario').value || null,
+    responsabile: document.getElementById('mp-responsabile').value.trim() || null,
+    note: document.getElementById('mp-nota').value.trim() || null
+  };
+  const id = document.getElementById('mp-id').value;
+  let error;
+  if (id) {
+    ({ error } = await db.from('cassa_prelievi').update(payload).eq('id', id));
+  } else {
+    ({ error } = await db.from('cassa_prelievi').insert(payload));
+  }
+  if (error) { showToast('Errore: ' + error.message, 'error'); return; }
+  closeModalPrelievo();
+  showToast('Prelievo salvato!', 'success');
+  loadPrimaNota();
+}
+async function eliminaPrelievo(id) {
+  if (!confirm('Eliminare questo prelievo?')) return;
+  await db.from('cassa_prelievi').delete().eq('id', id);
+  showToast('Eliminato', 'success');
+  loadPrimaNota();
+}
+
+// --- Chiusura ---
+async function salvaChiusuraCassa(cassaId) {
+  const battuto = parseFloat(document.getElementById(`chiusura-battuto-${cassaId}`).value) || 0;
+  const incassato = parseFloat(document.getElementById(`chiusura-incassato-${cassaId}`).value) || 0;
+  const orario = document.getElementById(`chiusura-orario-${cassaId}`).value || null;
+  const note = document.getElementById(`chiusura-nota-${cassaId}`).value.trim() || null;
+  const esistente = tutteChiusureCassa.find(c => c.cassa_id === cassaId && c.giorno === giornoPNAttivo);
+  let error;
+  if (esistente) {
+    ({ error } = await db.from('cassa_chiusure').update({ battuto, incassato, orario, note }).eq('id', esistente.id));
+  } else {
+    ({ error } = await db.from('cassa_chiusure').insert({ cassa_id: cassaId, giorno: giornoPNAttivo, battuto, incassato, orario, note }));
+  }
+  if (error) { showToast('Errore: ' + error.message, 'error'); return; }
+  showToast('Chiusura salvata!', 'success');
+  loadPrimaNota();
+}
+
+// --- POS condiviso ---
+async function salvaPosGiornaliero() {
+  const sagraId = getSagraId();
+  const importo = parseFloat(document.getElementById('pn-pos-importo').value) || 0;
+  const note = document.getElementById('pn-pos-note').value.trim() || null;
+  const esistente = tuttiPosGiornalieri.find(p => p.giorno === giornoPNAttivo);
+  let error;
+  if (esistente) {
+    ({ error } = await db.from('pos_giornaliero').update({ importo, note }).eq('id', esistente.id));
+  } else {
+    ({ error } = await db.from('pos_giornaliero').insert({ sagra_id: sagraId, giorno: giornoPNAttivo, importo, note }));
+  }
+  if (error) { showToast('Errore: ' + error.message, 'error'); return; }
+  showToast('POS salvato!', 'success');
+  loadPrimaNota();
+}
+
+// --- Vendite per articolo (totale sagra) ---
+async function loadVenditeMenu() {
   const sagraId = getSagraId();
   if (!sagraId) return;
-  const existing = getPrimaNota(stand, giorno);
-  const val = parseFloat(valore) || 0;
-  let error;
-  if (existing?.id) {
-    ({ error } = await db.from('prima_nota').update({ [campo]: val }).eq('id', existing.id));
-  } else {
-    ({ error } = await db.from('prima_nota').insert({ sagra_id: sagraId, stand, giorno, [campo]: val }));
-  }
-  if (!error) {
-    const { data } = await db.from('prima_nota').select('*').eq('sagra_id', sagraId);
-    primaNotaData = data || [];
-    renderPrimaNota();
-  }
+  const { data } = await db.from('vendite_menu_sagra').select('*').eq('sagra_id', sagraId);
+  tutteVenditeMenu = data || [];
+  renderVenditeMenu();
 }
+
+function toggleSezioneVenditeMenu() {
+  const box = document.getElementById('pn-vendite-menu-box');
+  const ico = document.getElementById('ico-vendite-menu');
+  const aperto = box.style.display !== 'none';
+  box.style.display = aperto ? 'none' : 'block';
+  ico.style.transform = aperto ? '' : 'rotate(180deg)';
+}
+
+function renderVenditeMenu() {
+  const container = document.getElementById('pn-vendite-menu-list');
+  if (!container) return;
+  if (!tuttoMenu || !tuttoMenu.length) {
+    container.innerHTML = '<div style="padding:16px;text-align:center;color:var(--testo-muted);">Nessuna voce nel Menu Sagra. Aggiungile prima nella pagina Menu sagra.</div>';
+    return;
+  }
+  const menuLabelLocale = { cucina_sabato: 'Cucina Sabato', cucina_domenica: 'Cucina Domenica', bar: 'Bar' };
+  const gruppi = {};
+  tuttoMenu.forEach(v => {
+    const key = v.menu || 'altro';
+    if (!gruppi[key]) gruppi[key] = [];
+    gruppi[key].push(v);
+  });
+
+  let totaleIncassoAtteso = 0;
+
+  container.innerHTML = Object.entries(gruppi).map(([menuKey, voci]) => `
+    <div style="margin-bottom:16px;">
+      <div style="font-weight:700;font-size:12px;color:var(--blu-notte);text-transform:uppercase;margin-bottom:6px;">${menuLabelLocale[menuKey] || menuKey}</div>
+      ${voci.map(v => {
+        const vendita = tutteVenditeMenu.find(x => x.menu_sagra_id === v.id);
+        const qta = vendita?.quantita || 0;
+        const incasso = qta * parseFloat(v.prezzo || 0);
+        totaleIncassoAtteso += incasso;
+        return `<div style="display:flex;align-items:center;gap:10px;padding:5px 0;border-bottom:1px solid var(--border);font-size:13px;">
+          <span style="flex:1;">${v.piatto} <span style="color:var(--testo-muted);font-size:11px;">(€ ${parseFloat(v.prezzo||0).toFixed(2)})</span></span>
+          <input type="number" step="1" value="${vendita?.quantita || ''}" placeholder="0" id="vendita-qta-${v.id}"
+            style="width:70px;padding:5px 8px;border:1px solid #D4C9BE;border-radius:6px;font-size:13px;text-align:right;outline:none;"
+            onchange="salvaVenditaMenu('${v.id}', this.value)">
+          <span style="width:80px;text-align:right;color:var(--testo-muted);font-size:12px;">€ ${incasso.toFixed(2)}</span>
+        </div>`;
+      }).join('')}
+    </div>
+  `).join('') + `<div style="text-align:right;font-weight:700;color:var(--blu-notte);padding-top:8px;">Incasso atteso totale: € ${totaleIncassoAtteso.toFixed(2)}</div>`;
+}
+
+async function salvaVenditaMenu(menuSagraId, valore) {
+  const sagraId = getSagraId();
+  const quantita = parseFloat(valore) || 0;
+  const esistente = tutteVenditeMenu.find(v => v.menu_sagra_id === menuSagraId);
+  let error;
+  if (esistente) {
+    ({ error } = await db.from('vendite_menu_sagra').update({ quantita }).eq('id', esistente.id));
+  } else {
+    ({ error } = await db.from('vendite_menu_sagra').insert({ sagra_id: sagraId, menu_sagra_id: menuSagraId, quantita }));
+  }
+  if (error) { showToast('Errore: ' + error.message, 'error'); return; }
+  const idx = tutteVenditeMenu.findIndex(v => v.menu_sagra_id === menuSagraId);
+  if (idx >= 0) tutteVenditeMenu[idx].quantita = quantita;
+  else tutteVenditeMenu.push({ menu_sagra_id: menuSagraId, quantita, sagra_id: sagraId });
+  renderVenditeMenu();
+}
+
+async function scaricaPDFPrimaNota() {
+  await caricaJsPDF();
+  const { jsPDF } = window.jspdf;
+  const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const oggi = new Date().toLocaleDateString('it-IT');
+  const sagraNome = sagraSelezionata?.nome || 'Sagra';
+
+  function drawHeader(sottotitolo) {
+    pdf.setFillColor(30, 45, 71);
+    pdf.rect(0, 0, 210, 26, 'F');
+    pdf.setTextColor(201, 160, 48);
+    pdf.setFontSize(15);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text('PRIMA NOTA CASSE', 14, 11);
+    pdf.setFontSize(9);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(200, 216, 240);
+    pdf.text(sottotitolo, 14, 19);
+    pdf.text(oggi, 196, 19, { align: 'right' });
+  }
+
+  let y = 34;
+  const giorni = [{ key: 'sabato', label: 'SABATO' }, { key: 'domenica', label: 'DOMENICA' }];
+  let totGeneraleBattuto = 0, totGeneraleIncassato = 0, totGeneralePos = 0;
+
+  drawHeader(sagraNome);
+
+  giorni.forEach(({ key, label }) => {
+    if (y > 250) { pdf.addPage(); drawHeader(sagraNome); y = 34; }
+
+    pdf.setFillColor(30, 45, 71);
+    pdf.rect(14, y - 5, 182, 9, 'F');
+    pdf.setFontSize(12);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(201, 160, 48);
+    pdf.text(label, 16, y + 1);
+    y += 11;
+
+    let totFondoG = 0, totPrelieviG = 0, totBattutoG = 0, totIncassatoG = 0;
+
+    tutteCasseSagra.forEach(cassa => {
+      if (y > 265) { pdf.addPage(); drawHeader(sagraNome); y = 34; }
+      const fondo = tuttiFondiCassa.find(f => f.cassa_id === cassa.id && f.giorno === key);
+      const prelievi = tuttiPrelieviCassa.filter(p => p.cassa_id === cassa.id && p.giorno === key);
+      const chiusura = tutteChiusureCassa.find(c => c.cassa_id === cassa.id && c.giorno === key);
+      const totPrelieviCassa = prelievi.reduce((s,p) => s + parseFloat(p.importo||0), 0);
+      const battuto = parseFloat(chiusura?.battuto || 0);
+      const incassato = parseFloat(chiusura?.incassato || 0);
+      const differenza = incassato - battuto;
+      totFondoG += parseFloat(fondo?.importo || 0);
+      totPrelieviG += totPrelieviCassa;
+      totBattutoG += battuto;
+      totIncassatoG += incassato;
+
+      pdf.setFillColor(242, 237, 232);
+      pdf.rect(14, y - 4, 182, 7, 'F');
+      pdf.setFontSize(9);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(122, 101, 72);
+      pdf.text(cassa.nome, 16, y + 1);
+      y += 9;
+
+      pdf.setFontSize(8.5);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(26, 26, 26);
+      pdf.text(`Fondo cassa: € ${parseFloat(fondo?.importo||0).toFixed(2)}${fondo?.orario ? ' (' + fondo.orario + ')' : ''}`, 18, y);
+      pdf.text(`Prelievi: € ${totPrelieviCassa.toFixed(2)} (${prelievi.length})`, 105, y);
+      y += 6;
+      pdf.text(`Battuto: € ${battuto.toFixed(2)}`, 18, y);
+      pdf.text(`Incassato: € ${incassato.toFixed(2)}`, 75, y);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(Math.abs(differenza) < 0.01 ? 47 : 155, Math.abs(differenza) < 0.01 ? 107 : 44, Math.abs(differenza) < 0.01 ? 79 : 44);
+      pdf.text(`Diff: ${differenza>=0?'+':''}€ ${differenza.toFixed(2)}${Math.abs(differenza)<0.01?' (quadra)':''}`, 140, y);
+      y += 8;
+    });
+
+    const posG = tuttiPosGiornalieri.find(p => p.giorno === key);
+    const posImporto = parseFloat(posG?.importo || 0);
+    totGeneraleBattuto += totBattutoG;
+    totGeneraleIncassato += totIncassatoG;
+    totGeneralePos += posImporto;
+
+    if (y > 265) { pdf.addPage(); drawHeader(sagraNome); y = 34; }
+    pdf.setFontSize(9);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(30, 45, 71);
+    pdf.text(`Totale ${label}: Fondo € ${totFondoG.toFixed(2)} · Prelievi € ${totPrelieviG.toFixed(2)} · Battuto € ${totBattutoG.toFixed(2)} · Incassato € ${totIncassatoG.toFixed(2)} · POS € ${posImporto.toFixed(2)}`, 16, y);
+    y += 10;
+  });
+
+  // Riepilogo generale
+  if (y > 250) { pdf.addPage(); drawHeader(sagraNome); y = 34; }
+  pdf.setFillColor(30, 45, 71);
+  pdf.rect(14, y, 182, 24, 'F');
+  pdf.setFontSize(9);
+  pdf.setFont('helvetica', 'normal');
+  pdf.setTextColor(200, 216, 240);
+  pdf.text('Totale battuto', 20, y + 9);
+  pdf.text('Totale incassato', 20, y + 17);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(201, 160, 48);
+  pdf.text(`€ ${totGeneraleBattuto.toFixed(2)}`, 130, y + 9, { align: 'right' });
+  pdf.text(`€ ${totGeneraleIncassato.toFixed(2)}`, 130, y + 17, { align: 'right' });
+  pdf.setTextColor(200, 216, 240);
+  pdf.setFont('helvetica', 'normal');
+  pdf.text('POS totale', 145, y + 13);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(201, 160, 48);
+  pdf.text(`€ ${totGeneralePos.toFixed(2)}`, 194, y + 13, { align: 'right' });
+  y += 32;
+
+  // Vendite per articolo
+  if (tuttoMenu && tuttoMenu.length && tutteVenditeMenu.some(v => v.quantita > 0)) {
+    if (y > 250) { pdf.addPage(); drawHeader(sagraNome); y = 34; }
+    pdf.setFontSize(11);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(30, 45, 71);
+    pdf.text('VENDITE PER ARTICOLO (totale sagra)', 14, y);
+    y += 8;
+
+    let totaleIncassoAtteso = 0;
+    tuttoMenu.forEach(v => {
+      const vendita = tutteVenditeMenu.find(x => x.menu_sagra_id === v.id);
+      const qta = vendita?.quantita || 0;
+      if (!qta) return;
+      const incasso = qta * parseFloat(v.prezzo || 0);
+      totaleIncassoAtteso += incasso;
+      if (y > 278) { pdf.addPage(); drawHeader(sagraNome); y = 34; }
+      pdf.setFontSize(8.5);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(26, 26, 26);
+      pdf.text(v.piatto, 18, y);
+      pdf.text(String(qta), 150, y, { align: 'right' });
+      pdf.setFont('helvetica', 'bold');
+      pdf.text(`€ ${incasso.toFixed(2)}`, 194, y, { align: 'right' });
+      y += 6;
+    });
+    y += 4;
+    pdf.setFontSize(9.5);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(30, 45, 71);
+    pdf.text(`Incasso atteso totale dagli articoli: € ${totaleIncassoAtteso.toFixed(2)}`, 14, y);
+    y += 5;
+    const scarto = totGeneraleBattuto - totaleIncassoAtteso;
+    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(8.5);
+    pdf.setTextColor(Math.abs(scarto) < 1 ? 47 : 155, Math.abs(scarto) < 1 ? 107 : 44, Math.abs(scarto) < 1 ? 79 : 44);
+    pdf.text(`Scarto rispetto al battuto reale: ${scarto>=0?'+':''}€ ${scarto.toFixed(2)}`, 14, y);
+  }
+
+  pdf.save(`prima_nota_${sagraNome.replace(/\s+/g,'_')}.pdf`);
+  showToast('Report PDF generato!', 'success');
+}
+
+
 
 // ===== CATALOGO SPESA =====
 let catalogoSpesa = [];
@@ -3004,7 +3457,7 @@ Se non hai il dato richiesto nel contesto fornito, dillo chiaramente (sempre nel
 Sei breve e concreto nelle risposte — non fai sermoni, vai dritto al punto come un vero genovese che non vuole perdere tempo.`;
 
 async function loadContestoMariello() {
-  const [soci, quote, sagre, movimenti, sponsorData, spesa, inventario, primaNota] = await Promise.all([
+  const [soci, quote, sagre, movimenti, sponsorData, spesa, inventario, casse, fondo, prelievi, chiusure, pos, vendite] = await Promise.all([
     db.from('soci').select('*').eq('attivo', true),
     db.from('quote').select('*'),
     db.from('sagre').select('*'),
@@ -3012,7 +3465,12 @@ async function loadContestoMariello() {
     db.from('sponsor').select('*'),
     db.from('lista_spesa').select('*'),
     db.from('inventario').select('*'),
-    db.from('prima_nota').select('*')
+    db.from('casse_sagra').select('*'),
+    db.from('cassa_fondo').select('*'),
+    db.from('cassa_prelievi').select('*'),
+    db.from('cassa_chiusure').select('*'),
+    db.from('pos_giornaliero').select('*'),
+    db.from('vendite_menu_sagra').select('*')
   ]);
 
   return {
@@ -3024,7 +3482,12 @@ async function loadContestoMariello() {
     sponsor: sponsorData.data || [],
     lista_spesa: spesa.data || [],
     inventario: inventario.data || [],
-    prima_nota: primaNota.data || []
+    prima_nota_casse: casse.data || [],
+    prima_nota_fondo_cassa: fondo.data || [],
+    prima_nota_prelievi: prelievi.data || [],
+    prima_nota_chiusure: chiusure.data || [],
+    prima_nota_pos: pos.data || [],
+    prima_nota_vendite_menu: vendite.data || []
   };
 }
 

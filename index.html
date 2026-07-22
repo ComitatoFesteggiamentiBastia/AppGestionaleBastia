@@ -1088,39 +1088,48 @@
           <h2>Prima Nota Casse</h2>
           <div id="pn-sagra-header" style="font-size:12px;color:var(--testo-muted);margin-top:2px;"></div>
         </div>
-        <select id="pn-giorno-tab" onchange="renderPrimaNota()" style="padding:7px 12px;border:1px solid #D4C9BE;border-radius:8px;font-size:13px;outline:none;">
-          <option value="venerdi">Venerdì</option>
-          <option value="sabato" selected>Sabato</option>
-          <option value="domenica">Domenica</option>
-        </select>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="btn" onclick="scaricaPDFPrimaNota()"><i class="ti ti-file-download"></i> Report PDF</button>
+          <button class="btn btn-add" onclick="openModalCassaSagra()"><i class="ti ti-plus"></i> Nuova cassa</button>
+        </div>
       </div>
-      <!-- Riepilogo -->
-      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:20px;">
-        <div class="stat-card" style="cursor:default;"><i class="ti ti-cash"></i><div class="stat-val" id="pn-tot-incasso" style="font-size:18px;">—</div><div class="stat-lbl">Totale battuto</div></div>
-        <div class="stat-card verde" style="cursor:default;"><i class="ti ti-wallet"></i><div class="stat-val" id="pn-tot-contanti" style="font-size:18px;">—</div><div class="stat-lbl">Contanti</div></div>
-        <div class="stat-card oro" style="cursor:default;"><i class="ti ti-credit-card"></i><div class="stat-val" id="pn-tot-pos" style="font-size:18px;">—</div><div class="stat-lbl">POS</div></div>
+
+      <div style="display:flex;gap:8px;margin-bottom:18px;">
+        <button class="btn tab-pn-giorno" id="tab-pn-sabato" onclick="cambiaGiornoPrimaNota('sabato')" style="flex:1;font-weight:600;"><i class="ti ti-calendar"></i> Sabato</button>
+        <button class="btn tab-pn-giorno" id="tab-pn-domenica" onclick="cambiaGiornoPrimaNota('domenica')" style="flex:1;font-weight:600;"><i class="ti ti-calendar"></i> Domenica</button>
       </div>
-      <!-- Tabella casse -->
-      <div style="overflow-x:auto;">
-        <table style="width:100%;border-collapse:collapse;font-size:13px;background:white;border-radius:10px;overflow:hidden;border:1px solid var(--border);">
-          <thead>
-            <tr style="background:var(--blu-notte);color:white;">
-              <th style="padding:10px 12px;text-align:left;">Stand</th>
-              <th style="padding:10px 12px;text-align:right;">Battuto</th>
-              <th style="padding:10px 12px;text-align:right;">Contanti</th>
-              <th style="padding:10px 12px;text-align:right;">POS</th>
-              <th style="padding:10px 12px;text-align:right;">Prelievi</th>
-              <th style="padding:10px 12px;text-align:right;">Arrotondato</th>
-              <th style="padding:10px 12px;text-align:right;">Totale</th>
-            </tr>
-          </thead>
-          <tbody id="prima-nota-container">
-            <tr><td colspan="7" style="padding:24px;text-align:center;color:var(--testo-muted);">Caricamento...</td></tr>
-          </tbody>
-        </table>
+
+      <!-- Riepilogo del giorno -->
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:18px;">
+        <div class="stat-card" style="cursor:default;"><i class="ti ti-cash-banknote"></i><div class="stat-val" id="pn-tot-fondo" style="font-size:16px;">—</div><div class="stat-lbl">Fondo cassa tot.</div></div>
+        <div class="stat-card" style="cursor:default;"><i class="ti ti-arrow-down-circle"></i><div class="stat-val" id="pn-tot-prelievi" style="font-size:16px;">—</div><div class="stat-lbl">Prelievi tot.</div></div>
+        <div class="stat-card oro" style="cursor:default;"><i class="ti ti-credit-card"></i><div class="stat-val" id="pn-tot-pos" style="font-size:16px;">—</div><div class="stat-lbl">POS (condiviso)</div></div>
+        <div class="stat-card" id="pn-card-diff" style="cursor:default;"><i class="ti ti-scale"></i><div class="stat-val" id="pn-tot-diff" style="font-size:16px;">—</div><div class="stat-lbl">Differenza battuto/incassato</div></div>
       </div>
-      <div style="margin-top:10px;font-size:12px;color:var(--testo-muted);padding:0 4px;">I dati vengono salvati automaticamente alla modifica di ogni campo.</div>
+
+      <!-- POS del giorno -->
+      <div class="table-card" style="padding:14px 16px;margin-bottom:16px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
+        <span style="font-weight:600;color:var(--blu-notte);font-size:13px;"><i class="ti ti-credit-card"></i> POS del giorno (unico, condiviso tra le casse)</span>
+        <input type="number" step="0.01" id="pn-pos-importo" placeholder="€ 0.00" style="width:120px;padding:7px 10px;border:1px solid #D4C9BE;border-radius:7px;font-size:13px;outline:none;">
+        <input type="text" id="pn-pos-note" placeholder="Nota (facoltativa)" style="flex:1;min-width:160px;padding:7px 10px;border:1px solid #D4C9BE;border-radius:7px;font-size:13px;outline:none;">
+        <button class="btn btn-sm" onclick="salvaPosGiornaliero()"><i class="ti ti-check"></i> Salva POS</button>
+      </div>
+
+      <!-- Casse del giorno -->
+      <div id="pn-casse-list"><div style="padding:24px;text-align:center;color:var(--testo-muted);">Caricamento...</div></div>
+
+      <!-- Vendite per articolo -->
+      <div class="table-card" style="margin-top:24px;">
+        <div class="table-card-header" onclick="toggleSezioneVenditeMenu()" style="cursor:pointer;justify-content:space-between;">
+          <span><i class="ti ti-chart-bar"></i> Vendite per articolo — totale sagra (non diviso per giorno)</span>
+          <i class="ti ti-chevron-down" id="ico-vendite-menu" style="font-size:16px;color:var(--testo-muted);transition:transform 0.2s;"></i>
+        </div>
+        <div id="pn-vendite-menu-box" style="display:none;padding:12px 16px;">
+          <div id="pn-vendite-menu-list"><div style="padding:16px;text-align:center;color:var(--testo-muted);">Caricamento...</div></div>
+        </div>
+      </div>
     </div>
+
 
     <!-- IMPOSTAZIONI ANNO -->
     <div class="page" id="page-impostazioni-anno">
@@ -1469,6 +1478,44 @@
     <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;">
       <button class="btn" onclick="closeModalMenuVoce()">Annulla</button>
       <button class="btn btn-add" onclick="saveMenuVoce()"><i class="ti ti-check"></i> Salva</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODALE CASSA SAGRA (Ristorante 1, Bar...) -->
+<div id="modal-cassa-sagra" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:200;align-items:center;justify-content:center;padding:16px;pointer-events:none;">
+  <div style="background:white;border-radius:14px;width:100%;max-width:380px;padding:24px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+      <h3 style="font-size:16px;font-weight:600;color:var(--blu-notte);" id="titolo-modal-cassa-sagra">Nuova cassa</h3>
+      <button onclick="closeModalCassaSagra()" style="background:none;border:none;cursor:pointer;font-size:20px;color:var(--testo-muted);">✕</button>
+    </div>
+    <div class="form-group"><label>Nome cassa *</label><input id="mcs-nome" placeholder="Es. Ristorante 1, Bar..."></div>
+    <input type="hidden" id="mcs-id">
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;">
+      <button class="btn" onclick="closeModalCassaSagra()">Annulla</button>
+      <button class="btn btn-add" onclick="saveCassaSagra()"><i class="ti ti-check"></i> Salva</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODALE PRELIEVO CASSA -->
+<div id="modal-prelievo" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:200;align-items:center;justify-content:center;padding:16px;pointer-events:none;">
+  <div style="background:white;border-radius:14px;width:100%;max-width:400px;padding:24px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+      <h3 style="font-size:16px;font-weight:600;color:var(--blu-notte);" id="titolo-modal-prelievo">Nuovo prelievo</h3>
+      <button onclick="closeModalPrelievo()" style="background:none;border:none;cursor:pointer;font-size:20px;color:var(--testo-muted);">✕</button>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+      <div class="form-group"><label>Importo (€) *</label><input id="mp-importo" type="number" step="0.01"></div>
+      <div class="form-group"><label>Orario</label><input id="mp-orario" type="time"></div>
+      <div class="form-group" style="grid-column:1/3"><label>Responsabile</label><input id="mp-responsabile" list="pn-soci-list" autocomplete="off"><datalist id="pn-soci-list"></datalist></div>
+      <div class="form-group" style="grid-column:1/3"><label>Nota</label><input id="mp-nota"></div>
+    </div>
+    <input type="hidden" id="mp-id">
+    <input type="hidden" id="mp-cassa-id">
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;">
+      <button class="btn" onclick="closeModalPrelievo()">Annulla</button>
+      <button class="btn btn-add" onclick="savePrelievo()"><i class="ti ti-check"></i> Salva</button>
     </div>
   </div>
 </div>
