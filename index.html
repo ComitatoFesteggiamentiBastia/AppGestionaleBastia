@@ -833,21 +833,29 @@
       <div class="page-header">
         <h2>Cassa generale</h2>
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <select id="cassa-filtro-anno" onchange="renderCassa()" style="padding:7px 10px;border:1px solid #D4C9BE;border-radius:7px;font-size:13px;outline:none;font-weight:600;">
+            <option value="tutti">Tutti gli anni</option>
+          </select>
           <input type="text" id="cassa-search" placeholder="Cerca..." oninput="renderCassa()" style="padding:7px 12px;border:1px solid #D4C9BE;border-radius:7px;font-size:13px;width:140px;outline:none;">
           <select id="cassa-filtro-tipo" onchange="renderCassa()" style="padding:7px 10px;border:1px solid #D4C9BE;border-radius:7px;font-size:13px;outline:none;">
             <option value="tutti">Tutti</option>
             <option value="entrata">Entrate</option>
             <option value="uscita">Uscite</option>
           </select>
-
+          <button class="btn" onclick="scaricaPDFCassa()"><i class="ti ti-file-download"></i> Report PDF</button>
+          <button class="btn" onclick="openModalSaldoIniziale()"><i class="ti ti-cash-banknote"></i> Saldo iniziale</button>
           <button class="btn btn-add" onclick="openModalCassa()"><i class="ti ti-plus"></i> Nuovo</button>
         </div>
       </div>
       <!-- Bilancio -->
-      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:20px;">
+      <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:10px;">
         <div class="stat-card verde" style="cursor:default;"><i class="ti ti-arrow-up"></i><div class="stat-val" id="c-tot-entrate" style="font-size:16px;">—</div><div class="stat-lbl">Totale entrate</div></div>
         <div class="stat-card" style="border-top-color:#991B1B;cursor:default;"><i class="ti ti-arrow-down" style="color:#991B1B;"></i><div class="stat-val" id="c-tot-uscite" style="font-size:16px;color:#991B1B;">—</div><div class="stat-lbl">Totale uscite</div></div>
-        <div class="stat-card oro" style="cursor:default;"><i class="ti ti-wallet"></i><div class="stat-val" id="c-saldo" style="font-size:16px;">—</div><div class="stat-lbl">Saldo</div></div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:20px;">
+        <div class="stat-card" style="cursor:default;"><i class="ti ti-building-bank"></i><div class="stat-val" id="c-saldo-cc" style="font-size:16px;">—</div><div class="stat-lbl">Saldo conto corrente</div></div>
+        <div class="stat-card" style="cursor:default;"><i class="ti ti-cash"></i><div class="stat-val" id="c-saldo-contanti" style="font-size:16px;">—</div><div class="stat-lbl">Saldo contanti</div></div>
+        <div class="stat-card oro" style="cursor:default;"><i class="ti ti-wallet"></i><div class="stat-val" id="c-saldo" style="font-size:16px;">—</div><div class="stat-lbl">Saldo totale</div></div>
       </div>
       <div class="table-card"><div id="cassa-list"><div style="padding:24px;text-align:center;color:var(--testo-muted);">Caricamento...</div></div></div>
     </div>
@@ -1565,6 +1573,26 @@
     <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;">
       <button class="btn" onclick="closeModalFornitore()">Annulla</button>
       <button class="btn btn-add" onclick="saveFornitore()"><i class="ti ti-check"></i> Salva</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODALE SALDO INIZIALE -->
+<div id="modal-saldo-iniziale" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:200;align-items:center;justify-content:center;padding:16px;pointer-events:none;">
+  <div style="background:white;border-radius:14px;width:100%;max-width:420px;padding:24px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+      <h3 style="font-size:16px;font-weight:600;color:var(--blu-notte);" id="titolo-modal-saldo-iniziale">Saldo iniziale</h3>
+      <button onclick="closeModalSaldoIniziale()" style="background:none;border:none;cursor:pointer;font-size:20px;color:var(--testo-muted);">✕</button>
+    </div>
+    <div style="font-size:12.5px;color:var(--testo-muted);margin-bottom:14px;">
+      Quanto c'era in cassa/conto all'inizio di questo anno. Serve per far quadrare il saldo reale con entrate e uscite registrate.
+    </div>
+    <div class="form-group"><label>Saldo conto corrente (€)</label><input id="si-conto-corrente" type="number" step="0.01"></div>
+    <div class="form-group"><label>Saldo contanti (€)</label><input id="si-contanti" type="number" step="0.01"></div>
+    <input type="hidden" id="si-anno">
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;">
+      <button class="btn" onclick="closeModalSaldoIniziale()">Annulla</button>
+      <button class="btn btn-add" onclick="saveSaldoIniziale()"><i class="ti ti-check"></i> Salva</button>
     </div>
   </div>
 </div>

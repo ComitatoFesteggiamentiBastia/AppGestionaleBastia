@@ -3437,11 +3437,32 @@ async function eliminaQuota(id) {
 // ===== CASSA GENERALE =====
 let tuttiMovimentiCassa = [];
 
+const ANNO_INIZIO_CONTABILITA = 2026; // il bilancio parte da qui, gli anni precedenti non vengono conteggiati
+let tuttiSaldiIniziali = [];
+
 async function loadCassa() {
-  const { data } = await db.from('movimenti_cassa').select('*').order('data', { ascending: false });
-  tuttiMovimentiCassa = data || [];
+  const [movRes, saldiRes] = await Promise.all([
+    db.from('movimenti_cassa').select('*').order('data', { ascending: false }),
+    db.from('saldi_iniziali_cassa').select('*')
+  ]);
+  // Esclude qualunque movimento antecedente all'inizio della contabilità (es. 2025 e prima)
+  tuttiMovimentiCassa = (movRes.data || []).filter(m => !m.data || parseInt(m.data.substring(0, 4)) >= ANNO_INIZIO_CONTABILITA);
+  tuttiSaldiIniziali = saldiRes.data || [];
+  aggiornaSelectAnnoCassa();
   renderCassa();
-  aggiornaBilancioCassa();
+}
+
+function aggiornaSelectAnnoCassa() {
+  const sel = document.getElementById('cassa-filtro-anno');
+  if (!sel) return;
+  const annoCorrente = Math.max(new Date().getFullYear(), ANNO_INIZIO_CONTABILITA);
+  const anniPresenti = [...new Set(tuttiMovimentiCassa.filter(m => m.data).map(m => parseInt(m.data.substring(0, 4))))]
+    .filter(a => a >= ANNO_INIZIO_CONTABILITA)
+    .sort((a,b) => b - a);
+  if (!anniPresenti.includes(annoCorrente)) anniPresenti.unshift(annoCorrente);
+  const valorePrecedente = sel.value;
+  sel.innerHTML = '<option value="tutti">Tutti gli anni</option>' + anniPresenti.map(a => `<option value="${a}">${a}</option>`).join('');
+  sel.value = anniPresenti.map(String).includes(valorePrecedente) ? valorePrecedente : String(annoCorrente);
 }
 
 const _cassaCollassate = new Set();
@@ -3455,16 +3476,20 @@ function toggleGruppoCassa(cat) {
 function renderCassa() {
   const search = (document.getElementById('cassa-search')?.value || '').toLowerCase();
   const filtroTipo = document.getElementById('cassa-filtro-tipo')?.value || 'tutti';
+  const filtroAnno = document.getElementById('cassa-filtro-anno')?.value || 'tutti';
 
   let lista = tuttiMovimentiCassa;
+  if (filtroAnno !== 'tutti') lista = lista.filter(m => m.data && m.data.substring(0, 4) === filtroAnno);
   if (search) lista = lista.filter(m => JSON.stringify(m).toLowerCase().includes(search));
   if (filtroTipo !== 'tutti') lista = lista.filter(m => m.tipo === filtroTipo);
+
+  aggiornaBilancioCassa(lista);
 
   const container = document.getElementById('cassa-list');
   if (!container) return;
 
   if (!lista.length) {
-    container.innerHTML = '<div style="padding:24px;text-align:center;color:var(--testo-muted);">Nessun movimento</div>';
+    container.innerHTML = '<div style="padding:24px;text-align:center;color:var(--testo-muted);">Nessun movimento per il periodo selezionato</div>';
     return;
   }
 
@@ -3516,27 +3541,85 @@ function renderCassa() {
   }).join('');
 }
 
-function aggiornaBilancioCassa() {
-  const tutti = tuttiMovimentiCassa;
+function aggiornaBilancioCassa(lista) {
+  const tutti = lista || tuttiMovimentiCassa;
+  const filtroAnno = document.getElementById('cassa-filtro-anno')?.value || 'tutti';
+
   const entrate = tutti.filter(m => m.tipo === 'entrata').reduce((s,m) => s + parseFloat(m.importo||0), 0);
   const uscite = tutti.filter(m => m.tipo === 'uscita').reduce((s,m) => s + parseFloat(m.importo||0), 0);
-  const saldo = entrate - uscite;
 
-  // Solo movimenti NON collegati alla sagra per bilancio netto
-  const entrateNette = tutti.filter(m => m.tipo === 'entrata' && !m.collegato_sagra).reduce((s,m) => s + parseFloat(m.importo||0), 0);
-  const usciteNette = tutti.filter(m => m.tipo === 'uscita' && !m.collegato_sagra).reduce((s,m) => s + parseFloat(m.importo||0), 0);
-  const saldoNetto = entrateNette - usciteNette;
+  // Contanti vs conto corrente: metodo_pagamento 'contanti' (o assente) è contante, il resto è conto corrente
+  const isContanti = m => !m.metodo_pagamento || m.metodo_pagamento === 'contanti';
+  const entrateContanti = tutti.filter(m => m.tipo === 'entrata' && isContanti(m)).reduce((s,m) => s + parseFloat(m.importo||0), 0);
+  const usciteContanti = tutti.filter(m => m.tipo === 'uscita' && isContanti(m)).reduce((s,m) => s + parseFloat(m.importo||0), 0);
+  const entrateCC = entrate - entrateContanti;
+  const usciteCC = uscite - usciteContanti;
+
+  // Saldo iniziale: se è selezionato un anno preciso usa quello; su "tutti" somma i saldi iniziali di tutti gli anni registrati
+  let saldoInizialeCC = 0, saldoInizialeContanti = 0;
+  if (filtroAnno !== 'tutti') {
+    const s = tuttiSaldiIniziali.find(x => x.anno === parseInt(filtroAnno));
+    saldoInizialeCC = s ? parseFloat(s.saldo_conto_corrente || 0) : 0;
+    saldoInizialeContanti = s ? parseFloat(s.saldo_contanti || 0) : 0;
+  } else {
+    // Su "tutti gli anni" ha senso solo il saldo iniziale dell'anno più vecchio tracciato (gli anni successivi ripartono dal saldo finale del precedente, già incluso nei movimenti)
+    const annoMinimo = Math.min(...tuttiSaldiIniziali.map(s => s.anno), ANNO_INIZIO_CONTABILITA);
+    const s = tuttiSaldiIniziali.find(x => x.anno === annoMinimo);
+    saldoInizialeCC = s ? parseFloat(s.saldo_conto_corrente || 0) : 0;
+    saldoInizialeContanti = s ? parseFloat(s.saldo_contanti || 0) : 0;
+  }
+
+  const saldoCC = saldoInizialeCC + entrateCC - usciteCC;
+  const saldoContanti = saldoInizialeContanti + entrateContanti - usciteContanti;
+  const saldoTotale = saldoCC + saldoContanti;
 
   if (document.getElementById('c-tot-entrate')) document.getElementById('c-tot-entrate').textContent = '€ ' + entrate.toFixed(2);
   if (document.getElementById('c-tot-uscite')) document.getElementById('c-tot-uscite').textContent = '€ ' + uscite.toFixed(2);
+  if (document.getElementById('c-saldo-cc')) document.getElementById('c-saldo-cc').textContent = '€ ' + saldoCC.toFixed(2);
+  if (document.getElementById('c-saldo-contanti')) document.getElementById('c-saldo-contanti').textContent = '€ ' + saldoContanti.toFixed(2);
   if (document.getElementById('c-saldo')) {
-    document.getElementById('c-saldo').textContent = '€ ' + saldo.toFixed(2);
-    document.getElementById('c-saldo').style.color = saldo >= 0 ? 'var(--verde)' : '#991B1B';
+    document.getElementById('c-saldo').textContent = '€ ' + saldoTotale.toFixed(2);
+    document.getElementById('c-saldo').style.color = saldoTotale >= 0 ? 'var(--verde)' : '#991B1B';
   }
-  if (document.getElementById('c-saldo-netto')) {
-    document.getElementById('c-saldo-netto').textContent = '€ ' + saldoNetto.toFixed(2);
-    document.getElementById('c-saldo-netto').style.color = saldoNetto >= 0 ? 'var(--verde)' : '#991B1B';
+}
+
+function openModalSaldoIniziale() {
+  const filtroAnno = document.getElementById('cassa-filtro-anno')?.value || 'tutti';
+  const anno = filtroAnno === 'tutti' ? new Date().getFullYear() : parseInt(filtroAnno);
+  document.getElementById('modal-saldo-iniziale').style.display = 'flex';
+  document.getElementById('modal-saldo-iniziale').style.pointerEvents = 'auto';
+  document.getElementById('titolo-modal-saldo-iniziale').textContent = `Saldo iniziale — ${anno}`;
+  document.getElementById('si-anno').value = anno;
+  const s = tuttiSaldiIniziali.find(x => x.anno === anno);
+  document.getElementById('si-conto-corrente').value = s?.saldo_conto_corrente || '';
+  document.getElementById('si-contanti').value = s?.saldo_contanti || '';
+}
+
+function closeModalSaldoIniziale() {
+  const m = document.getElementById('modal-saldo-iniziale');
+  m.style.display = 'none';
+  m.style.pointerEvents = 'none';
+}
+
+async function saveSaldoIniziale() {
+  const anno = parseInt(document.getElementById('si-anno').value);
+  const payload = {
+    anno,
+    saldo_conto_corrente: parseFloat(document.getElementById('si-conto-corrente').value) || 0,
+    saldo_contanti: parseFloat(document.getElementById('si-contanti').value) || 0,
+    updated_at: new Date().toISOString()
+  };
+  const esistente = tuttiSaldiIniziali.find(s => s.anno === anno);
+  let error;
+  if (esistente) {
+    ({ error } = await db.from('saldi_iniziali_cassa').update(payload).eq('id', esistente.id));
+  } else {
+    ({ error } = await db.from('saldi_iniziali_cassa').insert(payload));
   }
+  if (error) { showToast('Errore: ' + error.message, 'error'); return; }
+  closeModalSaldoIniziale();
+  showToast('Saldo iniziale salvato!', 'success');
+  loadCassa();
 }
 
 function openModalCassa(m = null) {
@@ -3594,6 +3677,142 @@ async function eliminaMovimentoCassa(id) {
   await db.from('movimenti_cassa').delete().eq('id', id);
   showToast('Eliminato', 'success');
   loadCassa();
+}
+
+async function scaricaPDFCassa() {
+  await caricaJsPDF();
+  const { jsPDF } = window.jspdf;
+  const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const oggi = new Date().toLocaleDateString('it-IT');
+
+  const filtroAnno = document.getElementById('cassa-filtro-anno')?.value || 'tutti';
+  const lista = filtroAnno === 'tutti'
+    ? tuttiMovimentiCassa
+    : tuttiMovimentiCassa.filter(m => m.data && m.data.substring(0, 4) === filtroAnno);
+
+  if (!lista.length) { showToast('Nessun movimento da esportare per il periodo selezionato', 'error'); return; }
+
+  const periodoLabel = filtroAnno === 'tutti' ? 'Tutti gli anni' : `Anno ${filtroAnno}`;
+
+  function drawHeader() {
+    pdf.setFillColor(30, 45, 71);
+    pdf.rect(0, 0, 210, 28, 'F');
+    pdf.setTextColor(201, 160, 48);
+    pdf.setFontSize(16);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text('REPORT CASSA GENERALE', 14, 12);
+    pdf.setFontSize(10);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(200, 216, 240);
+    pdf.text(periodoLabel, 14, 20);
+    pdf.text(oggi, 196, 20, { align: 'right' });
+  }
+
+  function drawIntestazioneColonne(y) {
+    pdf.setFontSize(8);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(30, 45, 71);
+    pdf.text('Data', 16, y);
+    pdf.text('Descrizione', 42, y);
+    pdf.text('Importo', 196, y, { align: 'right' });
+    pdf.setDrawColor(212, 201, 190);
+    pdf.line(14, y + 2, 196, y + 2);
+    return y + 6;
+  }
+
+  const gruppi = {};
+  lista.forEach(m => {
+    const cat = m.categoria || 'Senza categoria';
+    if (!gruppi[cat]) gruppi[cat] = [];
+    gruppi[cat].push(m);
+  });
+  const categorieOrdinate = Object.keys(gruppi).sort();
+
+  drawHeader();
+  let y = 36;
+  let totEntrateGen = 0, totUsciteGen = 0;
+
+  categorieOrdinate.forEach(cat => {
+    const movimenti = gruppi[cat].slice().sort((a,b) => (a.data||'').localeCompare(b.data||''));
+    const totEntrateCat = movimenti.filter(m => m.tipo === 'entrata').reduce((s,m) => s + parseFloat(m.importo||0), 0);
+    const totUsciteCat = movimenti.filter(m => m.tipo === 'uscita').reduce((s,m) => s + parseFloat(m.importo||0), 0);
+    totEntrateGen += totEntrateCat;
+    totUsciteGen += totUsciteCat;
+
+    if (y > 260) { pdf.addPage(); drawHeader(); y = 36; }
+
+    pdf.setFillColor(242, 237, 232);
+    pdf.rect(14, y - 4, 182, 7, 'F');
+    pdf.setFontSize(9);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(122, 101, 72);
+    pdf.text(cat.toUpperCase(), 16, y + 1);
+    pdf.setFontSize(8);
+    const saldoCat = totEntrateCat - totUsciteCat;
+    pdf.setTextColor(saldoCat >= 0 ? 47 : 155, saldoCat >= 0 ? 107 : 44, saldoCat >= 0 ? 79 : 44);
+    pdf.text(`${saldoCat >= 0 ? '+' : ''}€ ${saldoCat.toFixed(2)}`, 194, y + 1, { align: 'right' });
+    y += 9;
+    y = drawIntestazioneColonne(y);
+
+    movimenti.forEach((m, idx) => {
+      if (y > 275) { pdf.addPage(); drawHeader(); y = 36; y = drawIntestazioneColonne(y); }
+      if (idx % 2 === 0) {
+        pdf.setFillColor(247, 245, 242);
+        pdf.rect(14, y - 4, 182, 7, 'F');
+      }
+      pdf.setFontSize(8.5);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(26, 26, 26);
+      pdf.text(m.data ? formatDataIT(m.data) : '—', 16, y);
+      let desc = m.descrizione || '';
+      while (pdf.getTextWidth(desc) > 130 && desc.length > 3) desc = desc.substring(0, desc.length - 4) + '...';
+      pdf.text(desc, 42, y);
+      const isEntrata = m.tipo === 'entrata';
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(isEntrata ? 47 : 155, isEntrata ? 107 : 44, isEntrata ? 79 : 44);
+      pdf.text(`${isEntrata ? '+' : '-'}€ ${parseFloat(m.importo).toFixed(2)}`, 196, y, { align: 'right' });
+      y += 7;
+    });
+    y += 4;
+  });
+
+  const saldoGen = totEntrateGen - totUsciteGen;
+  const s0 = filtroAnno !== 'tutti' ? tuttiSaldiIniziali.find(x => x.anno === parseInt(filtroAnno)) : null;
+  const saldoInizialeTot = s0 ? parseFloat(s0.saldo_conto_corrente || 0) + parseFloat(s0.saldo_contanti || 0) : 0;
+  const saldoFinaleReale = saldoInizialeTot + saldoGen;
+
+  if (y > 255) { pdf.addPage(); drawHeader(); y = 36; }
+  const altezzaBox = saldoInizialeTot ? 30 : 22;
+  pdf.setFillColor(30, 45, 71);
+  pdf.rect(14, y, 182, altezzaBox, 'F');
+  let yBox = y + 8;
+  if (saldoInizialeTot) {
+    pdf.setFontSize(9);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(200, 216, 240);
+    pdf.text('Saldo iniziale anno', 20, yBox);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(201, 160, 48);
+    pdf.text(`€ ${saldoInizialeTot.toFixed(2)}`, 194, yBox, { align: 'right' });
+    yBox += 8;
+  }
+  pdf.setFontSize(9);
+  pdf.setFont('helvetica', 'normal');
+  pdf.setTextColor(200, 216, 240);
+  pdf.text('Totale entrate', 20, yBox);
+  pdf.text('Totale uscite', 20, yBox + 8);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(140, 220, 170);
+  pdf.text(`€ ${totEntrateGen.toFixed(2)}`, 194, yBox, { align: 'right' });
+  pdf.setTextColor(240, 150, 150);
+  pdf.text(`€ ${totUsciteGen.toFixed(2)}`, 194, yBox + 8, { align: 'right' });
+  pdf.setFontSize(11);
+  pdf.setTextColor(201, 160, 48);
+  pdf.text('SALDO' + (saldoInizialeTot ? ' FINALE' : ''), 20, yBox + 16);
+  pdf.text(`${saldoFinaleReale >= 0 ? '+' : ''}€ ${saldoFinaleReale.toFixed(2)}`, 194, yBox + 16, { align: 'right' });
+
+  pdf.save(`report_cassa_${filtroAnno}.pdf`);
+  showToast('Report PDF generato!', 'success');
 }
 
 
