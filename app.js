@@ -5829,6 +5829,61 @@ function esportaExcelMenuAttivo() {
 // ===== STORICO PREZZI =====
 let tuttoStorico = [];
 
+function openModalStoricoManuale() {
+  document.getElementById('modal-storico-manuale').style.display = 'flex';
+  document.getElementById('modal-storico-manuale').style.pointerEvents = 'auto';
+  document.getElementById('sm-articolo').value = '';
+  document.getElementById('sm-fornitore').value = '';
+  document.getElementById('sm-anno').value = sagraSelezionata?.anno || new Date().getFullYear();
+  document.getElementById('sm-quantita').value = '';
+  document.getElementById('sm-prezzo').value = '';
+  document.getElementById('sm-iva').value = '';
+  document.getElementById('sm-totale').value = '';
+  const dlArt = document.getElementById('sm-articoli-list');
+  if (dlArt) dlArt.innerHTML = catalogoSpesa.map(c => `<option value="${c.articolo}">`).join('');
+  const dlForn = document.getElementById('sm-fornitori-list');
+  if (dlForn) dlForn.innerHTML = (tuttiFornitori || []).map(f => `<option value="${f.nome}">`).join('');
+}
+
+function closeModalStoricoManuale() {
+  const m = document.getElementById('modal-storico-manuale');
+  m.style.display = 'none';
+  m.style.pointerEvents = 'none';
+}
+
+async function saveStoricoManuale() {
+  const articolo = document.getElementById('sm-articolo').value.trim();
+  const anno = parseInt(document.getElementById('sm-anno').value);
+  const prezzoUnitario = parseFloat(document.getElementById('sm-prezzo').value);
+  if (!articolo || !anno || isNaN(prezzoUnitario)) {
+    showToast('Articolo, anno e prezzo unitario sono obbligatori', 'error');
+    return;
+  }
+  const fornitore = document.getElementById('sm-fornitore').value.trim() || null;
+  const quantita = parseFloat(document.getElementById('sm-quantita').value) || null;
+  const iva = parseFloat(document.getElementById('sm-iva').value) || null;
+  let prezzoTotale = parseFloat(document.getElementById('sm-totale').value);
+  if (isNaN(prezzoTotale)) {
+    prezzoTotale = quantita ? prezzoUnitario * quantita * (iva ? (1 + iva) : 1) : null;
+  }
+
+  const { data: esistente } = await db.from('storico_prezzi')
+    .select('id').eq('articolo', articolo).eq('fornitore', fornitore).eq('anno', anno).maybeSingle();
+
+  const payload = { articolo, fornitore, anno, quantita, prezzo_unitario: prezzoUnitario, iva, prezzo_totale: prezzoTotale };
+  let error;
+  if (esistente?.id) {
+    if (!confirm('Esiste già una voce per questo articolo/fornitore/anno. Sovrascriverla?')) return;
+    ({ error } = await db.from('storico_prezzi').update(payload).eq('id', esistente.id));
+  } else {
+    ({ error } = await db.from('storico_prezzi').insert(payload));
+  }
+  if (error) { showToast('Errore: ' + error.message, 'error'); return; }
+  closeModalStoricoManuale();
+  showToast('Voce salvata!', 'success');
+  loadStoricoPrezzi();
+}
+
 async function loadStoricoPrezzi() {
   await loadCatalogoSpesa();
   const { data } = await db.from('storico_prezzi').select('*').order('articolo').order('anno', { ascending: false });

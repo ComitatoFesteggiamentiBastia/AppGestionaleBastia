@@ -1213,6 +1213,7 @@
             <option value="tutti">Tutti gli anni</option>
           </select>
           <button class="btn" onclick="generaPDFStorico()"><i class="ti ti-file-text"></i> PDF andamento prezzi</button>
+          <button class="btn btn-add" onclick="openModalStoricoManuale()"><i class="ti ti-plus"></i> Aggiungi voce</button>
         </div>
       </div>
       <div style="overflow-x:auto;">
@@ -1776,6 +1777,33 @@
     <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;">
       <button class="btn" onclick="closeModalDatabaseArticolo()">Annulla</button>
       <button class="btn btn-add" onclick="saveDatabaseArticolo()"><i class="ti ti-check"></i> Salva</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODALE AGGIUNGI STORICO MANUALE -->
+<div id="modal-storico-manuale" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:200;align-items:center;justify-content:center;padding:16px;pointer-events:none;">
+  <div style="background:white;border-radius:14px;width:100%;max-width:440px;padding:24px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+      <h3 style="font-size:16px;font-weight:600;color:var(--blu-notte);">Aggiungi voce storico prezzi</h3>
+      <button onclick="closeModalStoricoManuale()" style="background:none;border:none;cursor:pointer;font-size:20px;color:var(--testo-muted);">✕</button>
+    </div>
+    <div class="form-group">
+      <label>Articolo *</label>
+      <input id="sm-articolo" list="sm-articoli-list" autocomplete="off" placeholder="Nome articolo">
+      <datalist id="sm-articoli-list"></datalist>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+      <div class="form-group"><label>Fornitore</label><input id="sm-fornitore" list="sm-fornitori-list" autocomplete="off"><datalist id="sm-fornitori-list"></datalist></div>
+      <div class="form-group"><label>Anno *</label><input id="sm-anno" type="number"></div>
+      <div class="form-group"><label>Quantità</label><input id="sm-quantita" type="number" step="0.01"></div>
+      <div class="form-group"><label>Prezzo unitario (€) *</label><input id="sm-prezzo" type="number" step="0.01"></div>
+      <div class="form-group"><label>IVA (es. 0.04)</label><input id="sm-iva" type="number" step="0.01"></div>
+      <div class="form-group"><label>Prezzo totale (€)</label><input id="sm-totale" type="number" step="0.01" placeholder="Auto se vuoto"></div>
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;">
+      <button class="btn" onclick="closeModalStoricoManuale()">Annulla</button>
+      <button class="btn btn-add" onclick="saveStoricoManuale()"><i class="ti ti-check"></i> Salva</button>
     </div>
   </div>
 </div>
