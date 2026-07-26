@@ -2194,7 +2194,8 @@ function renderSpesa() {
         </div>
         <div style="display:flex;align-items:center;gap:10px;">
           ${totCosto > 0 ? `<span style="font-size:12px;color:var(--blu-notte);font-weight:600;">€ ${totCosto.toFixed(2)}</span>` : ''}
-          ${ordina === 'fornitore' ? `<button class="btn btn-sm" onclick="event.stopPropagation(); segnaFornitoreOrdinato('${gruppo.replace(/'/g,"\\'")}')" title="Segna tutti gli articoli da ordinare di questo fornitore come ordinati"><i class="ti ti-truck-delivery"></i> Segna ordinato</button>` : ''}
+          ${ordina === 'fornitore' ? `<button class="btn btn-sm" onclick="event.stopPropagation(); segnaFornitoreOrdinato('${gruppo.replace(/'/g,"\\'")}')" title="Segna tutti gli articoli da ordinare di questo fornitore come ordinati"><i class="ti ti-truck-delivery"></i> Segna ordinato</button>
+          <button class="btn btn-sm" style="background:var(--verde);color:white;border-color:var(--verde);" onclick="event.stopPropagation(); apriChiusuraOrdineFornitore('${gruppo.replace(/'/g,"\\'")}')" title="Registra un'unica uscita per tutti gli articoli comprati di questo fornitore"><i class="ti ti-receipt"></i> Chiudi ordine</button>` : ''}
         </div>
       </div>
       <div id="${gId}" style="display:${collassato?'none':'block'};">
@@ -2220,6 +2221,103 @@ async function segnaFornitoreOrdinato(fornitore) {
   renderSpesa();
   aggiornaStatsSpesa();
   showToast(`${ids.length} articoli segnati come ordinati`, 'success');
+}
+
+// ===== Chiusura ordine fornitore (uscita unica raggruppata, con sconto) =====
+function apriChiusuraOrdineFornitore(fornitore) {
+  const articoli = tuttiArticoliSpesa.filter(a =>
+    (a.fornitore || 'Senza fornitore') === fornitore &&
+    a.stato === 'comprato' &&
+    !a.movimento_sagra_id
+  );
+  if (!articoli.length) {
+    showToast('Nessun articolo comprato (non ancora registrato) per questo fornitore', 'error');
+    return;
+  }
+
+  document.getElementById('modal-chiudi-ordine').style.display = 'flex';
+  document.getElementById('modal-chiudi-ordine').style.pointerEvents = 'auto';
+  document.getElementById('titolo-modal-chiudi-ordine').textContent = `Chiudi ordine — ${fornitore}`;
+  document.getElementById('co-fornitore').value = fornitore;
+  document.getElementById('co-data').value = new Date().toISOString().split('T')[0];
+  document.getElementById('co-metodo').value = 'contanti';
+  document.getElementById('co-nota').value = '';
+  document.getElementById('co-sconto').value = 0;
+
+  const lordo = articoli.reduce((s, a) => s + parseFloat(a.prezzo_totale || 0), 0);
+  document.getElementById('co-lordo').value = lordo.toFixed(2);
+  document.getElementById('co-netto').value = lordo.toFixed(2);
+
+  document.getElementById('co-lista-articoli').innerHTML = articoli.map(a => `
+    <div style="display:flex;justify-content:space-between;padding:3px 0;">
+      <span>${a.articolo}${a.quantita ? ' (' + a.quantita + (a.unita?' '+a.unita:'') + ')' : ''}</span>
+      <span style="font-weight:600;">€ ${parseFloat(a.prezzo_totale || 0).toFixed(2)}</span>
+    </div>
+  `).join('');
+
+  // Salva temporaneamente gli id coinvolti per l'invio
+  window._ordineFornitoreArticoliIds = articoli.map(a => a.id);
+  window._ordineFornitoreCategoria = articoli[0]?.categoria || 'Spesa varie';
+}
+
+function aggiornaTotaleOrdineFornitore() {
+  const lordo = parseFloat(document.getElementById('co-lordo').value) || 0;
+  const sconto = parseFloat(document.getElementById('co-sconto').value) || 0;
+  document.getElementById('co-netto').value = Math.max(0, lordo - sconto).toFixed(2);
+}
+
+function closeModalChiudiOrdine() {
+  const m = document.getElementById('modal-chiudi-ordine');
+  m.style.display = 'none';
+  m.style.pointerEvents = 'none';
+  window._ordineFornitoreArticoliIds = null;
+}
+
+async function confermaChiusuraOrdineFornitore() {
+  const sagraId = getSagraId();
+  const fornitore = document.getElementById('co-fornitore').value;
+  const ids = window._ordineFornitoreArticoliIds || [];
+  if (!ids.length) { showToast('Nessun articolo selezionato', 'error'); return; }
+
+  const lordo = parseFloat(document.getElementById('co-lordo').value) || 0;
+  const sconto = parseFloat(document.getElementById('co-sconto').value) || 0;
+  const netto = Math.max(0, lordo - sconto);
+  const categoria = window._ordineFornitoreCategoria || 'Spesa varie';
+  await aggiungiCategoriaSagraSeNuova(categoria);
+
+  const numArticoli = ids.length;
+  const descrizione = `Ordine ${fornitore} (${numArticoli} articol${numArticoli===1?'o':'i'})`;
+
+  const payload = {
+    sagra_id: sagraId,
+    tipo: 'uscita',
+    categoria,
+    descrizione,
+    fornitore,
+    importo_lordo: lordo,
+    sconto,
+    importo: netto,
+    data: document.getElementById('co-data').value,
+    metodo_pagamento: document.getElementById('co-metodo').value,
+    pagato: true,
+    offerta: false,
+    a_bilancio: true,
+    rimborso_stato: 'nessuno',
+    note: document.getElementById('co-nota').value.trim() || null
+  };
+
+  const { data: nuovoMov, error } = await db.from('movimenti_sagra').insert(payload).select().single();
+  if (error) { showToast('Errore: ' + error.message, 'error'); return; }
+
+  // Collega tutti gli articoli coinvolti a questo movimento
+  await db.from('lista_spesa').update({ movimento_sagra_id: nuovoMov.id }).in('id', ids);
+
+  // Specchia in Cassa Generale
+  await sincronizzaCassaDaSagra(nuovoMov);
+
+  closeModalChiudiOrdine();
+  showToast(`Ordine ${fornitore} registrato: € ${netto.toFixed(2)}`, 'success');
+  loadSpesa();
 }
 
 function toggleGruppoSpesa(id) {
@@ -2274,6 +2372,7 @@ function rowSpesa(a) {
     </div>
     ${badgeRimanenza}
     <span class="badge ${statoColor[a.stato] || 'badge-no'}">${statoLabel[a.stato] || a.stato}</span>
+    ${a.stato === 'comprato' ? (a.movimento_sagra_id ? '<span class="badge badge-ok" title="Uscita registrata">✓ Registrato</span>' : '<span class="badge badge-no" title="Comprato ma non ancora in un ordine chiuso">Da registrare</span>') : ''}
     <button class="btn btn-sm" onclick='openModalSpesa(${JSON.stringify(a).replace(/"/g,"&quot;")})'><i class="ti ti-edit"></i></button>
     <button class="btn btn-sm" style="color:#991B1B" onclick="eliminaSpesa('${a.id}')"><i class="ti ti-trash"></i></button>
   </div>`;
@@ -2313,37 +2412,11 @@ function aggiornaStatsSpesa() {
 
 async function toggleSpesaAcquistata(id, checked) {
   const stato = checked ? 'comprato' : 'ordinato';
-  const sagraId = getSagraId();
   const oggi = new Date().toISOString().split('T')[0];
   await db.from('lista_spesa').update({ stato, acquistato: checked, data_acquisto: checked ? oggi : null }).eq('id', id);
 
   if (checked) {
     const articolo = tuttiArticoliSpesa.find(a => a.id === id);
-    const importo = articolo?.prezzo_totale || (articolo?.prezzo_unitario && articolo?.quantita ? parseFloat(articolo.prezzo_unitario) * parseFloat(articolo.quantita) : null);
-    if (articolo && importo && importo > 0) {
-      const { data: mov } = await db.from('movimenti_sagra').select('id').eq('lista_spesa_id', id).maybeSingle();
-      if (!mov?.id) {
-        const categoria = articolo.categoria || 'Spesa varie';
-        await aggiungiCategoriaSagraSeNuova(categoria);
-        const { data: nuovoMov, error } = await db.from('movimenti_sagra').insert({
-          sagra_id: sagraId,
-          tipo: 'uscita',
-          categoria,
-          descrizione: articolo.articolo,
-          fornitore: articolo.fornitore || null,
-          importo,
-          data: oggi,
-          metodo_pagamento: 'contanti',
-          pagato: true,
-          offerta: false,
-          a_bilancio: true,
-          rimborso_stato: 'nessuno',
-          lista_spesa_id: id
-        }).select().single();
-        if (error) console.error('Errore registrazione uscita:', error.message);
-        else if (nuovoMov) await sincronizzaCassaDaSagra(nuovoMov);
-      }
-    }
     // Storico prezzi: registra/aggiorna solo ora che l'acquisto è confermato
     if (articolo && articolo.prezzo_unitario) {
       const anno = sagraSelezionata?.anno || ANNO_CORRENTE;
@@ -2368,9 +2441,6 @@ async function toggleSpesaAcquistata(id, checked) {
         await db.from('storico_prezzi').insert(payloadStorico);
       }
     }
-  } else {
-    // Se viene tolto lo spunto, rimuove l'uscita collegata (se creata)
-    await db.from('movimenti_sagra').delete().eq('lista_spesa_id', id);
   }
 
   loadSpesa();
@@ -2461,29 +2531,6 @@ async function saveSpesa() {
     savedId = nuovo?.id;
   }
   if (error) { showToast('Errore: ' + error.message, 'error'); return; }
-
-  // Se lo stato è "comprato" e non esiste ancora un'uscita collegata, la crea.
-  // Se esiste già, la lascia intatta: potresti averla modificata a mano (importo, data, metodo...)
-  // e risalvare l'articolo non deve sovrascrivere le tue modifiche.
-  if (savedId) {
-    if (payload.stato === 'comprato' && payload.prezzo_totale) {
-      const { data: mov } = await db.from('movimenti_sagra').select('id').eq('lista_spesa_id', savedId).maybeSingle();
-      if (!mov?.id) {
-        const oggi = new Date().toISOString().split('T')[0];
-        const categoria = payload.categoria || 'Spesa varie';
-        await aggiungiCategoriaSagraSeNuova(categoria);
-        const { data: nuovoMov } = await db.from('movimenti_sagra').insert({
-          sagra_id: sagraId, tipo: 'uscita', categoria,
-          descrizione: payload.articolo, fornitore: payload.fornitore || null, importo: payload.prezzo_totale, data: oggi,
-          metodo_pagamento: 'contanti', pagato: true, offerta: false, a_bilancio: true,
-          rimborso_stato: 'nessuno', lista_spesa_id: savedId
-        }).select().single();
-        if (nuovoMov) await sincronizzaCassaDaSagra(nuovoMov);
-      }
-    } else if (payload.stato !== 'comprato') {
-      await db.from('movimenti_sagra').delete().eq('lista_spesa_id', savedId);
-    }
-  }
 
   const _articolo = document.getElementById('m-spesa-articolo').value.trim();
   const _fornitore = document.getElementById('m-spesa-fornitore').value.trim();

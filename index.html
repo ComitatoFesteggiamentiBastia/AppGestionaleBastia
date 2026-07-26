@@ -1831,6 +1831,41 @@
     </div>
   </div>
 </div>
+<!-- MODALE CHIUDI ORDINE FORNITORE -->
+<div id="modal-chiudi-ordine" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:200;align-items:center;justify-content:center;padding:16px;pointer-events:none;">
+  <div style="background:white;border-radius:14px;width:100%;max-width:480px;max-height:85vh;overflow-y:auto;padding:24px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+      <h3 style="font-size:16px;font-weight:600;color:var(--blu-notte);" id="titolo-modal-chiudi-ordine">Chiudi ordine fornitore</h3>
+      <button onclick="closeModalChiudiOrdine()" style="background:none;border:none;cursor:pointer;font-size:20px;color:var(--testo-muted);">✕</button>
+    </div>
+    <div style="font-size:12.5px;color:var(--testo-muted);margin-bottom:12px;">
+      Verrà creata un'unica uscita in Entrate/Uscite Sagra con tutti gli articoli comprati elencati sotto.
+    </div>
+    <div id="co-lista-articoli" style="max-height:200px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:12.5px;"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+      <div class="form-group"><label>Importo lordo (€)</label><input id="co-lordo" type="number" step="0.01" readonly style="background:#F5F3EF;"></div>
+      <div class="form-group"><label>Sconto (€)</label><input id="co-sconto" type="number" step="0.01" value="0" oninput="aggiornaTotaleOrdineFornitore()"></div>
+      <div class="form-group" style="grid-column:1/3"><label>Importo netto (da registrare)</label><input id="co-netto" type="number" step="0.01" readonly style="background:#F5F3EF;font-weight:700;"></div>
+      <div class="form-group"><label>Data</label><input id="co-data" type="date"></div>
+      <div class="form-group">
+        <label>Metodo pagamento</label>
+        <select id="co-metodo">
+          <option value="contanti">Contanti</option>
+          <option value="bonifico">Bonifico</option>
+          <option value="carta">Carta</option>
+          <option value="altro">Altro</option>
+        </select>
+      </div>
+      <div class="form-group" style="grid-column:1/3"><label>Nota</label><input id="co-nota" placeholder="Facoltativa"></div>
+    </div>
+    <input type="hidden" id="co-fornitore">
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px;">
+      <button class="btn" onclick="closeModalChiudiOrdine()">Annulla</button>
+      <button class="btn btn-add" onclick="confermaChiusuraOrdineFornitore()"><i class="ti ti-check"></i> Registra uscita</button>
+    </div>
+  </div>
+</div>
+
 <!-- MODALE SPESA -->
 <div id="modal-spesa" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:200;align-items:center;justify-content:center;padding:16px;pointer-events:none;">
   <div style="background:white;border-radius:14px;width:100%;max-width:520px;max-height:90vh;overflow-y:auto;padding:24px;">
