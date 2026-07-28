@@ -4425,6 +4425,7 @@ function openModalCassa(m = null) {
   aggiornaMetodoCassaSelect(m?.metodo_pagamento);
   document.getElementById('m-cassa-sagra').checked = m?.collegato_sagra || false;
   document.getElementById('m-cassa-note').value = m?.note || '';
+  document.getElementById('m-cassa-movimento-sagra-id').value = m?.movimento_sagra_id || '';
 }
 
 function aggiornaMetodoCassaSelect(metodoAttuale) {
@@ -4460,15 +4461,50 @@ async function saveMovimentoCassa() {
   const importo = parseFloat(document.getElementById('m-cassa-importo').value);
   if (!descrizione || isNaN(importo)) { showToast('Descrizione e importo obbligatori', 'error'); return; }
 
+  const collegatoSagra = document.getElementById('m-cassa-sagra').checked;
+  const tipo = document.getElementById('m-cassa-tipo').value;
+  const data = document.getElementById('m-cassa-data').value;
+  const metodo = document.getElementById('m-cassa-metodo').value || null;
+  const categoria = document.getElementById('m-cassa-categoria').value.trim() || null;
+
+  let movimentoSagraId = document.getElementById('m-cassa-movimento-sagra-id').value || null;
+
+  // Se collegato alla sagra, crea/aggiorna il movimento gemello in Entrate/Uscite Sagra
+  if (collegatoSagra) {
+    await assicuraSagreCaricate();
+    const sagraId = getSagraId();
+    if (!sagraId) {
+      showToast('Nessuna edizione sagra selezionata: impossibile collegare', 'error');
+      return;
+    }
+    const categoriaSagra = categoria || 'Cassa Generale';
+    await aggiungiCategoriaSagraSeNuova(categoriaSagra);
+
+    const payloadSagra = {
+      sagra_id: sagraId, tipo, categoria: categoriaSagra, descrizione, importo, data,
+      metodo_pagamento: metodo, fondo: document.getElementById('m-cassa-fondo').value || 'Banca',
+      pagato: true, offerta: false, a_bilancio: true, rimborso_stato: 'nessuno'
+    };
+
+    if (movimentoSagraId) {
+      await db.from('movimenti_sagra').update(payloadSagra).eq('id', movimentoSagraId);
+    } else {
+      const { data: nuovoSagra, error: eSagra } = await db.from('movimenti_sagra').insert(payloadSagra).select().single();
+      if (eSagra) { showToast('Errore collegamento sagra: ' + eSagra.message, 'error'); return; }
+      movimentoSagraId = nuovoSagra.id;
+    }
+  } else if (movimentoSagraId) {
+    // Era collegato e ora è stato scollegato: rimuove il movimento gemello nella sagra
+    await db.from('movimenti_sagra').delete().eq('id', movimentoSagraId);
+    movimentoSagraId = null;
+  }
+
   const payload = {
-    tipo: document.getElementById('m-cassa-tipo').value,
-    categoria: document.getElementById('m-cassa-categoria').value.trim() || null,
-    descrizione,
-    importo,
-    data: document.getElementById('m-cassa-data').value,
-    metodo_pagamento: document.getElementById('m-cassa-metodo').value || null,
+    tipo, categoria, descrizione, importo, data,
+    metodo_pagamento: metodo,
     fondo: document.getElementById('m-cassa-fondo').value || 'Banca',
-    collegato_sagra: document.getElementById('m-cassa-sagra').checked,
+    collegato_sagra: collegatoSagra,
+    movimento_sagra_id: movimentoSagraId,
     note: document.getElementById('m-cassa-note').value.trim() || null
   };
 
