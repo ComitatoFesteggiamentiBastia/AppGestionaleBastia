@@ -1530,8 +1530,9 @@ function aggiornaMetodoMovSelect(metodoAttuale) {
       <option value="assegno">Assegno</option>
       <option value="bonifico">Bonifico</option>
       <option value="bancomat">Bancomat</option>
+      <option value="pagopa">PagoPA</option>
     `;
-    if (metodoAttuale && !['contanti','assegno','bonifico','bancomat'].includes(metodoAttuale)) {
+    if (metodoAttuale && !['contanti','assegno','bonifico','bancomat','pagopa'].includes(metodoAttuale)) {
       sel.innerHTML += `<option value="${metodoAttuale}">${metodoAttuale} (precedente)</option>`;
     }
     sel.value = metodoAttuale || 'contanti';
@@ -4520,8 +4521,9 @@ function aggiornaMetodoCassaSelect(metodoAttuale) {
       <option value="assegno">Assegno</option>
       <option value="bonifico">Bonifico</option>
       <option value="bancomat">Bancomat</option>
+      <option value="pagopa">PagoPA</option>
     `;
-    if (metodoAttuale && !['contanti','assegno','bonifico','bancomat'].includes(metodoAttuale)) {
+    if (metodoAttuale && !['contanti','assegno','bonifico','bancomat','pagopa'].includes(metodoAttuale)) {
       sel.innerHTML += `<option value="${metodoAttuale}">${metodoAttuale} (precedente)</option>`;
     }
     sel.value = metodoAttuale || 'contanti';
