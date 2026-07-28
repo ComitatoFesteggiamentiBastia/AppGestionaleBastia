@@ -1485,10 +1485,10 @@ function rowMovimento(m) {
   return `<div class="table-row">
     <div style="flex:1;">
       <div class="row-name">${m.descrizione}${m.fornitore ? ' — <span style="color:var(--testo-muted)">' + m.fornitore + '</span>' : ''}${m.fattura_url ? ` <a href="${m.fattura_url}" target="_blank" title="Vedi fattura/scontrino" onclick="event.stopPropagation()">📎</a>` : ''}</div>
-      <div class="row-sub">${m.categoria || ''} · ${m.data ? formatDataIT(m.data) : ''} · ${m.metodo_pagamento || ''} · <span style="font-weight:600;">${m.fondo || 'Banca'}</span> ${m.offerta ? '· <span style="color:var(--oro)">Offerta</span>' : ''} ${m.pagato === false ? '· <span style="color:#991B1B">Da pagare</span>' : ''} ${m.nota_pagamento ? '· ' + m.nota_pagamento : ''}</div>
+      <div class="row-sub">${m.categoria || ''} · ${m.data ? formatDataIT(m.data) : ''} · ${m.metodo_pagamento || ''} · <span style="font-weight:600;">${m.fondo === 'DORA' ? 'Dora' : (m.fondo || 'Banca')}</span> ${m.offerta ? '· <span style="color:var(--oro)">Offerta</span>' : ''} ${m.pagato === false ? '· <span style="color:#991B1B">Da pagare</span>' : ''} ${m.nota_pagamento ? '· ' + m.nota_pagamento : ''}</div>
     </div>
     ${rimborsoBadge}
-    ${m.dora ? '<span class="badge" style="background:#EDE4FB;color:#7C3AED;">DORA</span>' : ''}
+    ${m.dora ? '<span class="badge" style="background:#EDE4FB;color:#7C3AED;">Dora</span>' : ''}
     <span style="font-weight:600;color:${color};white-space:nowrap;">€ ${parseFloat(m.importo).toFixed(2)}</span>
     <button class="btn btn-sm" onclick='openModalMovimento(${JSON.stringify(m).replace(/'/g,"\\'")})'><i class="ti ti-edit"></i></button>
     <button class="btn btn-sm" style="color:#991B1B" onclick="eliminaMovimento('${m.id}')"><i class="ti ti-trash"></i></button>
@@ -1516,6 +1516,28 @@ function aggiornaBilancioSagra() {
   }
 }
 
+function aggiornaMetodoMovSelect(metodoAttuale) {
+  const fondo = document.getElementById('m-mov-fondo').value;
+  const sel = document.getElementById('m-mov-metodo');
+  if (fondo === 'DORA') {
+    sel.innerHTML = '<option value="contanti">Contanti</option>';
+    sel.value = 'contanti';
+    sel.disabled = true;
+  } else {
+    sel.disabled = false;
+    sel.innerHTML = `
+      <option value="contanti">Contanti</option>
+      <option value="assegno">Assegno</option>
+      <option value="bonifico">Bonifico</option>
+      <option value="bancomat">Bancomat</option>
+    `;
+    if (metodoAttuale && !['contanti','assegno','bonifico','bancomat'].includes(metodoAttuale)) {
+      sel.innerHTML += `<option value="${metodoAttuale}">${metodoAttuale} (precedente)</option>`;
+    }
+    sel.value = metodoAttuale || 'contanti';
+  }
+}
+
 function openModalMovimento(m = null) {
   document.getElementById('modal-movimento').style.display = 'flex';
   document.getElementById('modal-movimento').style.pointerEvents = 'auto';
@@ -1527,8 +1549,8 @@ function openModalMovimento(m = null) {
   document.getElementById('m-mov-fornitore').value = m?.fornitore || '';
   document.getElementById('m-mov-importo').value = m?.importo || '';
   document.getElementById('m-mov-data').value = m?.data || new Date().toISOString().split('T')[0];
-  document.getElementById('m-mov-metodo').value = m?.metodo_pagamento || 'contanti';
   document.getElementById('m-mov-fondo').value = m?.fondo || 'Banca';
+  aggiornaMetodoMovSelect(m?.metodo_pagamento);
   document.getElementById('m-mov-pagato').checked = m ? (m.pagato !== false) : true;
   document.getElementById('m-mov-offerta').checked = m?.offerta || false;
   document.getElementById('m-mov-bilancio').checked = m ? (m.a_bilancio !== false) : true;
@@ -4180,6 +4202,193 @@ function closeModalSaldoIniziale() {
   m.style.pointerEvents = 'none';
 }
 
+// ===== IMPORTA ESTRATTO CONTO (con controllo doppioni per data+importo) =====
+let _righeImportEstratto = [];
+
+function openModalImportEstrattoConto() {
+  document.getElementById('modal-import-estratto').style.display = 'flex';
+  document.getElementById('modal-import-estratto').style.pointerEvents = 'auto';
+  document.getElementById('ie-step-upload').style.display = 'block';
+  document.getElementById('ie-step-preview').style.display = 'none';
+  document.getElementById('ie-file').value = '';
+  document.getElementById('ie-loading').style.display = 'none';
+  _righeImportEstratto = [];
+}
+
+function closeModalImportEstrattoConto() {
+  const m = document.getElementById('modal-import-estratto');
+  m.style.display = 'none';
+  m.style.pointerEvents = 'none';
+  _righeImportEstratto = [];
+}
+
+function analizzaEstrattoConto(input) {
+  const file = input.files[0];
+  if (!file) return;
+  document.getElementById('ie-loading').style.display = 'block';
+
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const wb = XLSX.read(e.target.result, { type: 'array', cellDates: true });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: '' });
+      processaRigheEstrattoConto(rows);
+    } catch (err) {
+      showToast('Errore lettura file: ' + err.message, 'error');
+      document.getElementById('ie-loading').style.display = 'none';
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function trovaColonna(headers, candidati) {
+  const norm = h => (h || '').toString().toLowerCase().trim();
+  for (const cand of candidati) {
+    const idx = headers.findIndex(h => norm(h).includes(cand));
+    if (idx >= 0) return idx;
+  }
+  return -1;
+}
+
+function parseImportoIT(str) {
+  if (str === null || str === undefined || str === '' || str === '.' || str === '-') return null;
+  const s = String(str).trim().replace(/\./g, '').replace(',', '.').replace(/[^\d.\-]/g, '');
+  const n = parseFloat(s);
+  return isNaN(n) ? null : n;
+}
+
+function parseDataFlessibile(val) {
+  if (!val) return null;
+  if (val instanceof Date) return val.toISOString().split('T')[0];
+  const s = String(val).trim();
+  // gg/mm/aaaa o gg-mm-aaaa
+  let m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+  if (m) return `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`;
+  // aaaa-mm-gg già ok
+  m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (m) return `${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`;
+  return null;
+}
+
+function processaRigheEstrattoConto(rows) {
+  // Trova la riga di intestazione (quella che contiene sia una colonna data che una descrizione)
+  let headerRowIdx = -1, headers = [];
+  for (let i = 0; i < Math.min(rows.length, 10); i++) {
+    const norm = rows[i].map(c => (c || '').toString().toLowerCase());
+    if (norm.some(c => c.includes('data')) && norm.some(c => c.includes('descriz'))) {
+      headerRowIdx = i; headers = rows[i];
+      break;
+    }
+  }
+  if (headerRowIdx === -1) {
+    showToast('Non trovo le intestazioni (Data/Descrizione) nel file. Controlla il formato.', 'error');
+    document.getElementById('ie-loading').style.display = 'none';
+    return;
+  }
+
+  const idxData = trovaColonna(headers, ['data operazione', 'data']);
+  const idxDescrizione = trovaColonna(headers, ['descrizion', 'causale']);
+  const idxDebito = trovaColonna(headers, ['debito', 'dare', 'uscita']);
+  const idxCredito = trovaColonna(headers, ['credito', 'avere', 'entrata']);
+  const idxImporto = trovaColonna(headers, ['importo']);
+
+  if (idxData === -1 || idxDescrizione === -1) {
+    showToast('Non trovo le colonne data/descrizione nel file.', 'error');
+    document.getElementById('ie-loading').style.display = 'none';
+    return;
+  }
+
+  const dataRows = rows.slice(headerRowIdx + 1).filter(r => r.some(c => c !== '' && c != null));
+  const righeParse = [];
+
+  for (const r of dataRows) {
+    const data = parseDataFlessibile(r[idxData]);
+    const descrizione = (r[idxDescrizione] || '').toString().trim();
+    if (!data || !descrizione) continue;
+
+    let importo = null, tipo = null;
+    if (idxDebito >= 0 && idxCredito >= 0) {
+      const deb = parseImportoIT(r[idxDebito]);
+      const cred = parseImportoIT(r[idxCredito]);
+      if (deb) { importo = Math.abs(deb); tipo = 'uscita'; }
+      else if (cred) { importo = Math.abs(cred); tipo = 'entrata'; }
+    } else if (idxImporto >= 0) {
+      const val = parseImportoIT(r[idxImporto]);
+      if (val !== null) { importo = Math.abs(val); tipo = val < 0 ? 'uscita' : 'entrata'; }
+    }
+    if (!importo || !tipo) continue;
+
+    righeParse.push({ data, descrizione, importo, tipo });
+  }
+
+  if (!righeParse.length) {
+    showToast('Nessuna riga valida trovata nel file.', 'error');
+    document.getElementById('ie-loading').style.display = 'none';
+    return;
+  }
+
+  // Controllo doppioni: confronta con i movimenti già presenti (fondo Banca) per data + importo (+ tipo)
+  const esistentiBanca = tuttiMovimentiCassa.filter(m => (m.fondo || 'Banca') === 'Banca');
+  righeParse.forEach(r => {
+    const match = esistentiBanca.find(m => m.data === r.data && Math.abs(parseFloat(m.importo) - r.importo) < 0.01 && m.tipo === r.tipo);
+    r.duplicato = !!match;
+    r.descrizioneEsistente = match ? match.descrizione : null;
+    r.selezionato = !match; // pre-seleziona solo le righe nuove
+  });
+
+  _righeImportEstratto = righeParse;
+  document.getElementById('ie-loading').style.display = 'none';
+  renderPreviewImportEstratto();
+}
+
+function renderPreviewImportEstratto() {
+  document.getElementById('ie-step-upload').style.display = 'none';
+  document.getElementById('ie-step-preview').style.display = 'block';
+
+  const nuove = _righeImportEstratto.filter(r => !r.duplicato).length;
+  const doppie = _righeImportEstratto.filter(r => r.duplicato).length;
+  document.getElementById('ie-conteggio').textContent = `${_righeImportEstratto.length} righe trovate: ${nuove} nuove, ${doppie} già presenti`;
+
+  document.getElementById('ie-lista-righe').innerHTML = _righeImportEstratto.map((r, i) => `
+    <div style="display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid var(--border);${r.duplicato?'background:#FBF3DC;':''}">
+      <input type="checkbox" ${r.selezionato?'checked':''} onchange="_righeImportEstratto[${i}].selezionato=this.checked" style="width:16px;height:16px;">
+      <div style="flex:1;font-size:12.5px;">
+        <div>${formatDataIT(r.data)} · <strong>${r.tipo === 'entrata' ? '+' : '−'}€ ${r.importo.toFixed(2)}</strong> · ${r.descrizione}</div>
+        ${r.duplicato ? `<div style="color:#8A6D1D;font-size:11px;">⚠️ Possibile doppione — già presente: "${r.descrizioneEsistente}"</div>` : ''}
+      </div>
+    </div>
+  `).join('');
+}
+
+function selezionaTuttiImportEstratto(valore) {
+  _righeImportEstratto.forEach(r => r.selezionato = valore);
+  renderPreviewImportEstratto();
+}
+
+async function confermaImportEstrattoConto() {
+  const daImportare = _righeImportEstratto.filter(r => r.selezionato);
+  if (!daImportare.length) { showToast('Nessuna riga selezionata', 'error'); return; }
+
+  const payloadRighe = daImportare.map(r => ({
+    tipo: r.tipo,
+    categoria: null,
+    descrizione: r.descrizione,
+    importo: r.importo,
+    data: r.data,
+    metodo_pagamento: 'bonifico',
+    fondo: 'Banca',
+    note: 'Importato da estratto conto'
+  }));
+
+  const { error } = await db.from('movimenti_cassa').insert(payloadRighe);
+  if (error) { showToast('Errore: ' + error.message, 'error'); return; }
+
+  showToast(`${daImportare.length} movimenti importati!`, 'success');
+  closeModalImportEstrattoConto();
+  loadCassa();
+}
+
 async function saveSaldoIniziale() {
   const anno = parseInt(document.getElementById('si-anno').value);
   const payload = {
@@ -4212,9 +4421,32 @@ function openModalCassa(m = null) {
   document.getElementById('m-cassa-descrizione').value = m?.descrizione || '';
   document.getElementById('m-cassa-importo').value = m?.importo || '';
   document.getElementById('m-cassa-data').value = m?.data || new Date().toISOString().split('T')[0];
-  document.getElementById('m-cassa-metodo').value = m?.metodo_pagamento || 'contanti';
+  document.getElementById('m-cassa-fondo').value = m?.fondo || 'Banca';
+  aggiornaMetodoCassaSelect(m?.metodo_pagamento);
   document.getElementById('m-cassa-sagra').checked = m?.collegato_sagra || false;
   document.getElementById('m-cassa-note').value = m?.note || '';
+}
+
+function aggiornaMetodoCassaSelect(metodoAttuale) {
+  const fondo = document.getElementById('m-cassa-fondo').value;
+  const sel = document.getElementById('m-cassa-metodo');
+  if (fondo === 'DORA') {
+    sel.innerHTML = '<option value="contanti">Contanti</option>';
+    sel.value = 'contanti';
+    sel.disabled = true;
+  } else {
+    sel.disabled = false;
+    sel.innerHTML = `
+      <option value="contanti">Contanti</option>
+      <option value="assegno">Assegno</option>
+      <option value="bonifico">Bonifico</option>
+      <option value="bancomat">Bancomat</option>
+    `;
+    if (metodoAttuale && !['contanti','assegno','bonifico','bancomat'].includes(metodoAttuale)) {
+      sel.innerHTML += `<option value="${metodoAttuale}">${metodoAttuale} (precedente)</option>`;
+    }
+    sel.value = metodoAttuale || 'contanti';
+  }
 }
 
 function closeModalCassa() {
@@ -4235,6 +4467,7 @@ async function saveMovimentoCassa() {
     importo,
     data: document.getElementById('m-cassa-data').value,
     metodo_pagamento: document.getElementById('m-cassa-metodo').value || null,
+    fondo: document.getElementById('m-cassa-fondo').value || 'Banca',
     collegato_sagra: document.getElementById('m-cassa-sagra').checked,
     note: document.getElementById('m-cassa-note').value.trim() || null
   };
