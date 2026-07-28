@@ -1973,17 +1973,17 @@ async function aggiungiCategoriaSagraSeNuova(nome) {
   return nome;
 }
 
-// Specchia un movimento di Entrate/Uscite Sagra dentro la Cassa Generale,
-// con l'etichetta "Sagra {anno}", cosi la Cassa Generale riflette davvero tutti i soldi che abbiamo.
+// Specchia un movimento di Entrate/Uscite Sagra dentro la Cassa Generale.
+// La categoria resta quella reale (non viene forzata): a dire che è un movimento sagra
+// è SOLO il flag "Movimento Sagra" (collegato_sagra), non il testo della categoria.
 async function sincronizzaCassaDaSagra(movSagra) {
   if (!movSagra?.id) return;
-  const anno = sagraSelezionata?.anno || new Date().getFullYear();
-  const etichetta = `Sagra ${anno}`;
-  await aggiungiCategoriaCassaSeNuova(etichetta);
+  const categoria = movSagra.categoria || 'Senza categoria';
+  await aggiungiCategoriaCassaSeNuova(categoria);
 
   const payloadCassa = {
     tipo: movSagra.tipo,
-    categoria: etichetta,
+    categoria,
     descrizione: movSagra.descrizione + (movSagra.fornitore ? ' — ' + movSagra.fornitore : ''),
     importo: movSagra.importo,
     data: movSagra.data,
@@ -2007,6 +2007,83 @@ async function aggiungiCategoriaCassaSeNuova(nome) {
   await db.from('categorie').insert({ tipo: 'cassa', nome });
   await loadCategorie();
   return nome;
+}
+
+function openModalGestioneCategorieCassa() {
+  document.getElementById('modal-gestione-categorie-cassa').style.display = 'flex';
+  document.getElementById('modal-gestione-categorie-cassa').style.pointerEvents = 'auto';
+  document.getElementById('gcc-nuova').value = '';
+  renderListaCategorieCassa();
+}
+
+function closeModalGestioneCategorieCassa() {
+  const m = document.getElementById('modal-gestione-categorie-cassa');
+  m.style.display = 'none';
+  m.style.pointerEvents = 'none';
+  renderCassa();
+}
+
+function renderListaCategorieCassa() {
+  const cont = document.getElementById('gcc-lista');
+  const ordinate = categorieCassa.slice().sort((a,b) => a.nome.localeCompare(b.nome));
+  if (!ordinate.length) {
+    cont.innerHTML = '<div style="padding:16px;text-align:center;color:var(--testo-muted);font-size:13px;">Nessuna categoria, creane una sopra</div>';
+    return;
+  }
+  cont.innerHTML = ordinate.map(c => {
+    const nUso = tuttiMovimentiCassa.filter(m => m.categoria === c.nome).length;
+    return `
+    <div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border);">
+      <input value="${c.nome}" id="gcc-nome-${c.id}" style="flex:1;padding:6px 10px;border:1px solid #D4C9BE;border-radius:6px;font-size:13px;">
+      <span style="font-size:11px;color:var(--testo-muted);white-space:nowrap;">${nUso} mov.</span>
+      <button class="btn btn-sm" onclick="rinominaCategoriaCassa('${c.id}')" title="Salva nome"><i class="ti ti-check"></i></button>
+      <button class="btn btn-sm" style="color:#991B1B" onclick="eliminaCategoriaCassa('${c.id}','${c.nome.replace(/'/g,"\\'")}')"><i class="ti ti-trash"></i></button>
+    </div>`;
+  }).join('');
+}
+
+async function aggiungiCategoriaCassaManuale() {
+  const nome = document.getElementById('gcc-nuova').value.trim();
+  if (!nome) { showToast('Inserisci un nome', 'error'); return; }
+  if (categorieCassa.some(c => c.nome.toLowerCase() === nome.toLowerCase())) {
+    showToast('Categoria già esistente', 'error'); return;
+  }
+  const { error } = await db.from('categorie').insert({ tipo: 'cassa', nome });
+  if (error) { showToast('Errore: ' + error.message, 'error'); return; }
+  await loadCategorie();
+  document.getElementById('gcc-nuova').value = '';
+  renderListaCategorieCassa();
+  showToast('Categoria aggiunta!', 'success');
+}
+
+async function rinominaCategoriaCassa(id) {
+  const nuovoNome = document.getElementById('gcc-nome-' + id).value.trim();
+  if (!nuovoNome) { showToast('Il nome non può essere vuoto', 'error'); return; }
+  const cat = categorieCassa.find(c => c.id === id);
+  if (!cat || nuovoNome === cat.nome) return;
+  const vecchioNome = cat.nome;
+
+  const { error } = await db.from('categorie').update({ nome: nuovoNome }).eq('id', id);
+  if (error) { showToast('Errore: ' + error.message, 'error'); return; }
+  // Aggiorna anche i movimenti che usano il vecchio nome
+  await db.from('movimenti_cassa').update({ categoria: nuovoNome }).eq('categoria', vecchioNome);
+
+  await loadCategorie();
+  await loadCassa();
+  renderListaCategorieCassa();
+  showToast('Categoria rinominata!', 'success');
+}
+
+async function eliminaCategoriaCassa(id, nome) {
+  const nUso = tuttiMovimentiCassa.filter(m => m.categoria === nome).length;
+  const msg = nUso
+    ? `Questa categoria è usata da ${nUso} movimenti, che resteranno con quel nome ma non più selezionabile dal menu. Eliminarla comunque?`
+    : 'Eliminare questa categoria?';
+  if (!confirm(msg)) return;
+  await db.from('categorie').delete().eq('id', id);
+  await loadCategorie();
+  renderListaCategorieCassa();
+  showToast('Categoria eliminata', 'success');
 }
 
 // ===== PDF LISTA SPESA PER FORNITORE =====
@@ -4120,8 +4197,9 @@ function renderCassa() {
           return `<div class="table-row" style="padding-left:42px;">
             <div style="flex:1;">
               <div class="row-name">${m.descrizione}</div>
-              <div class="row-sub">${m.data ? formatDataIT(m.data) : ''} · ${m.metodo_pagamento || ''}</div>
+              <div class="row-sub">${m.data ? formatDataIT(m.data) : ''} · ${m.metodo_pagamento || ''} · ${m.fondo === 'DORA' ? 'Dora' : (m.fondo || 'Banca')}</div>
             </div>
+            ${m.collegato_sagra ? '<span class="badge" style="background:#FDF0DC;color:#8A6D1D;">🎪 Sagra</span>' : ''}
             <span style="font-weight:600;color:${color};white-space:nowrap;">${segno} € ${parseFloat(m.importo).toFixed(2)}</span>
             <button class="btn btn-sm" onclick='openModalCassa(${JSON.stringify(m).replace(/"/g,"&quot;")})'><i class="ti ti-edit"></i></button>
             <button class="btn btn-sm" style="color:#991B1B" onclick="eliminaMovimentoCassa('${m.id}')"><i class="ti ti-trash"></i></button>
