@@ -1512,26 +1512,33 @@ function aggiornaBilancioSagra() {
     document.getElementById('ms-dora').textContent = (doraSaldo >= 0 ? '+' : '') + '€ ' + doraSaldo.toFixed(2);
   }
   if (document.getElementById('ms-dora-dettaglio')) {
-    document.getElementById('ms-dora-dettaglio').textContent = `DORA — entrate: € ${doraEntrate.toFixed(2)} · uscite: € ${doraUscite.toFixed(2)}`;
+    document.getElementById('ms-dora-dettaglio').textContent = `Dora — entrate: € ${doraEntrate.toFixed(2)} · uscite: € ${doraUscite.toFixed(2)}`;
   }
 
-  // Contanti Banca vs Contanti Dora (per questa edizione sagra)
+  // Contanti Banca vs Cassetta/Contanti Dora (per questa edizione sagra)
   const isContanti = m => !m.metodo_pagamento || m.metodo_pagamento === 'contanti';
+  const isCassetta = m => m.metodo_pagamento === 'cassetta';
   const isBanca = m => (m.fondo || 'Banca') !== 'DORA';
   const contantiBancaEntrate = tuttiMovimenti.filter(m => m.tipo === 'entrata' && isBanca(m) && isContanti(m)).reduce((s,m) => s + parseFloat(m.importo||0), 0);
   const contantiBancaUscite = tuttiMovimenti.filter(m => m.tipo === 'uscita' && isBanca(m) && isContanti(m)).reduce((s,m) => s + parseFloat(m.importo||0), 0);
   const contantiBanca = contantiBancaEntrate - contantiBancaUscite;
+  const doraContantiEntrate = tuttiMovimenti.filter(m => m.tipo === 'entrata' && m.fondo === 'DORA' && !isCassetta(m)).reduce((s,m) => s + parseFloat(m.importo||0), 0);
+  const doraContantiUscite = tuttiMovimenti.filter(m => m.tipo === 'uscita' && m.fondo === 'DORA' && !isCassetta(m)).reduce((s,m) => s + parseFloat(m.importo||0), 0);
+  const doraContantiSaldo = doraContantiEntrate - doraContantiUscite;
   if (document.getElementById('ms-contanti-banca')) document.getElementById('ms-contanti-banca').textContent = '€ ' + contantiBanca.toFixed(2);
-  if (document.getElementById('ms-contanti-dora')) document.getElementById('ms-contanti-dora').textContent = '€ ' + doraSaldo.toFixed(2);
+  if (document.getElementById('ms-contanti-dora')) document.getElementById('ms-contanti-dora').textContent = '€ ' + doraContantiSaldo.toFixed(2);
 }
 
 function aggiornaMetodoMovSelect(metodoAttuale) {
   const fondo = document.getElementById('m-mov-fondo').value;
   const sel = document.getElementById('m-mov-metodo');
   if (fondo === 'DORA') {
-    sel.innerHTML = '<option value="contanti">Contanti</option>';
-    sel.value = 'contanti';
-    sel.disabled = true;
+    sel.disabled = false;
+    sel.innerHTML = `
+      <option value="cassetta">Cassetta</option>
+      <option value="contanti">Contanti</option>
+    `;
+    sel.value = (metodoAttuale === 'cassetta') ? 'cassetta' : 'contanti';
   } else {
     sel.disabled = false;
     sel.innerHTML = `
@@ -1749,9 +1756,12 @@ function aggiornaMetodoSponsorSelect(metodoAttuale) {
   const fondo = document.getElementById('m-sp-fondo').value;
   const sel = document.getElementById('m-sp-modo');
   if (fondo === 'DORA') {
-    sel.innerHTML = '<option value="contanti">Contanti</option>';
-    sel.value = 'contanti';
-    sel.disabled = true;
+    sel.disabled = false;
+    sel.innerHTML = `
+      <option value="cassetta">Cassetta</option>
+      <option value="contanti">Contanti</option>
+    `;
+    sel.value = (metodoAttuale === 'cassetta') ? 'cassetta' : 'contanti';
   } else {
     sel.disabled = false;
     sel.innerHTML = `
@@ -2041,6 +2051,38 @@ async function aggiungiCategoriaCassaSeNuova(nome) {
   await db.from('categorie').insert({ tipo: 'cassa', nome });
   await loadCategorie();
   return nome;
+}
+
+function openModalPrelievoCassetta() {
+  document.getElementById('modal-prelievo-cassetta').style.display = 'flex';
+  document.getElementById('modal-prelievo-cassetta').style.pointerEvents = 'auto';
+  document.getElementById('pc-importo').value = '';
+  document.getElementById('pc-data').value = new Date().toISOString().split('T')[0];
+  document.getElementById('pc-nota').value = '';
+}
+
+function closeModalPrelievoCassetta() {
+  const m = document.getElementById('modal-prelievo-cassetta');
+  m.style.display = 'none';
+  m.style.pointerEvents = 'none';
+}
+
+async function confermaPrelievoCassetta() {
+  const importo = parseFloat(document.getElementById('pc-importo').value);
+  if (!importo || importo <= 0) { showToast('Inserisci un importo valido', 'error'); return; }
+  const data = document.getElementById('pc-data').value;
+  const nota = document.getElementById('pc-nota').value.trim() || null;
+  await aggiungiCategoriaCassaSeNuova('Trasferimento a contanti');
+
+  const { error } = await db.from('movimenti_cassa').insert([
+    { tipo: 'uscita', categoria: 'Trasferimento a contanti', descrizione: 'Prelievo da Cassetta Dora', importo, data, metodo_pagamento: 'cassetta', fondo: 'DORA', note: nota },
+    { tipo: 'entrata', categoria: 'Trasferimento a contanti', descrizione: 'Prelievo da Cassetta Dora', importo, data, metodo_pagamento: 'contanti', fondo: 'DORA', note: nota }
+  ]);
+  if (error) { showToast('Errore: ' + error.message, 'error'); return; }
+
+  closeModalPrelievoCassetta();
+  showToast('Prelievo registrato!', 'success');
+  loadCassa();
 }
 
 function openModalGestioneCategorieCassa() {
@@ -4260,35 +4302,43 @@ function aggiornaBilancioCassa(lista) {
   const entrateCC = tutti.filter(m => m.tipo === 'entrata' && isBanca(m) && !isContanti(m)).reduce((s,m) => s + parseFloat(m.importo||0), 0);
   const usciteCC = tutti.filter(m => m.tipo === 'uscita' && isBanca(m) && !isContanti(m)).reduce((s,m) => s + parseFloat(m.importo||0), 0);
 
-  // Fondo DORA: un unico saldo, indipendente da metodo di pagamento
-  const entrateDora = tutti.filter(m => m.tipo === 'entrata' && isDora(m)).reduce((s,m) => s + parseFloat(m.importo||0), 0);
-  const usciteDora = tutti.filter(m => m.tipo === 'uscita' && isDora(m)).reduce((s,m) => s + parseFloat(m.importo||0), 0);
+  // Fondo DORA: stessa logica a due livelli di Banca — Cassetta (giroconti) + Contanti (spesa reale)
+  const isCassetta = m => m.metodo_pagamento === 'cassetta';
+  const entrateDoraCassetta = tutti.filter(m => m.tipo === 'entrata' && isDora(m) && isCassetta(m)).reduce((s,m) => s + parseFloat(m.importo||0), 0);
+  const usciteDoraCassetta = tutti.filter(m => m.tipo === 'uscita' && isDora(m) && isCassetta(m)).reduce((s,m) => s + parseFloat(m.importo||0), 0);
+  const entrateDoraContanti = tutti.filter(m => m.tipo === 'entrata' && isDora(m) && !isCassetta(m)).reduce((s,m) => s + parseFloat(m.importo||0), 0);
+  const usciteDoraContanti = tutti.filter(m => m.tipo === 'uscita' && isDora(m) && !isCassetta(m)).reduce((s,m) => s + parseFloat(m.importo||0), 0);
 
   // Saldo iniziale: se è selezionato un anno preciso usa quello; su "tutti" somma i saldi iniziali dell'anno più vecchio tracciato
-  let saldoInizialeCC = 0, saldoInizialeContanti = 0, saldoInizialeDora = 0;
+  let saldoInizialeCC = 0, saldoInizialeContanti = 0, saldoInizialeDoraCassetta = 0, saldoInizialeDoraContanti = 0;
   if (filtroAnno !== 'tutti') {
     const s = tuttiSaldiIniziali.find(x => x.anno === parseInt(filtroAnno));
     saldoInizialeCC = s ? parseFloat(s.saldo_conto_corrente || 0) : 0;
     saldoInizialeContanti = s ? parseFloat(s.saldo_contanti || 0) : 0;
-    saldoInizialeDora = s ? parseFloat(s.saldo_dora || 0) : 0;
+    saldoInizialeDoraCassetta = s ? parseFloat(s.saldo_dora || 0) : 0;
+    saldoInizialeDoraContanti = s ? parseFloat(s.saldo_dora_contanti || 0) : 0;
   } else {
     const annoMinimo = Math.min(...tuttiSaldiIniziali.map(s => s.anno), ANNO_INIZIO_CONTABILITA);
     const s = tuttiSaldiIniziali.find(x => x.anno === annoMinimo);
     saldoInizialeCC = s ? parseFloat(s.saldo_conto_corrente || 0) : 0;
     saldoInizialeContanti = s ? parseFloat(s.saldo_contanti || 0) : 0;
-    saldoInizialeDora = s ? parseFloat(s.saldo_dora || 0) : 0;
+    saldoInizialeDoraCassetta = s ? parseFloat(s.saldo_dora || 0) : 0;
+    saldoInizialeDoraContanti = s ? parseFloat(s.saldo_dora_contanti || 0) : 0;
   }
 
   const saldoCC = saldoInizialeCC + entrateCC - usciteCC;
   const saldoContanti = saldoInizialeContanti + entrateContanti - usciteContanti;
-  const saldoDora = saldoInizialeDora + entrateDora - usciteDora;
+  const saldoDoraCassetta = saldoInizialeDoraCassetta + entrateDoraCassetta - usciteDoraCassetta;
+  const saldoDoraContanti = saldoInizialeDoraContanti + entrateDoraContanti - usciteDoraContanti;
+  const saldoDora = saldoDoraCassetta + saldoDoraContanti;
   const saldoTotale = saldoCC + saldoContanti + saldoDora;
 
   if (document.getElementById('c-tot-entrate')) document.getElementById('c-tot-entrate').textContent = '€ ' + entrate.toFixed(2);
   if (document.getElementById('c-tot-uscite')) document.getElementById('c-tot-uscite').textContent = '€ ' + uscite.toFixed(2);
   if (document.getElementById('c-saldo-cc')) document.getElementById('c-saldo-cc').textContent = '€ ' + saldoCC.toFixed(2);
   if (document.getElementById('c-saldo-contanti')) document.getElementById('c-saldo-contanti').textContent = '€ ' + saldoContanti.toFixed(2);
-  if (document.getElementById('c-saldo-dora')) document.getElementById('c-saldo-dora').textContent = '€ ' + saldoDora.toFixed(2);
+  if (document.getElementById('c-saldo-dora-cassetta')) document.getElementById('c-saldo-dora-cassetta').textContent = '€ ' + saldoDoraCassetta.toFixed(2);
+  if (document.getElementById('c-saldo-dora')) document.getElementById('c-saldo-dora').textContent = '€ ' + saldoDoraContanti.toFixed(2);
   if (document.getElementById('c-saldo')) {
     document.getElementById('c-saldo').textContent = '€ ' + saldoTotale.toFixed(2);
     document.getElementById('c-saldo').style.color = saldoTotale >= 0 ? 'var(--verde)' : '#991B1B';
@@ -4306,6 +4356,7 @@ function openModalSaldoIniziale() {
   document.getElementById('si-conto-corrente').value = s?.saldo_conto_corrente || '';
   document.getElementById('si-contanti').value = s?.saldo_contanti || '';
   document.getElementById('si-dora').value = s?.saldo_dora || '';
+  document.getElementById('si-dora-contanti').value = s?.saldo_dora_contanti || '';
 }
 
 function closeModalSaldoIniziale() {
@@ -4508,6 +4559,7 @@ async function saveSaldoIniziale() {
     saldo_conto_corrente: parseFloat(document.getElementById('si-conto-corrente').value) || 0,
     saldo_contanti: parseFloat(document.getElementById('si-contanti').value) || 0,
     saldo_dora: parseFloat(document.getElementById('si-dora').value) || 0,
+    saldo_dora_contanti: parseFloat(document.getElementById('si-dora-contanti').value) || 0,
     updated_at: new Date().toISOString()
   };
   const esistente = tuttiSaldiIniziali.find(s => s.anno === anno);
@@ -4544,9 +4596,12 @@ function aggiornaMetodoCassaSelect(metodoAttuale) {
   const fondo = document.getElementById('m-cassa-fondo').value;
   const sel = document.getElementById('m-cassa-metodo');
   if (fondo === 'DORA') {
-    sel.innerHTML = '<option value="contanti">Contanti</option>';
-    sel.value = 'contanti';
-    sel.disabled = true;
+    sel.disabled = false;
+    sel.innerHTML = `
+      <option value="cassetta">Cassetta</option>
+      <option value="contanti">Contanti</option>
+    `;
+    sel.value = (metodoAttuale === 'cassetta') ? 'cassetta' : 'contanti';
   } else {
     sel.disabled = false;
     sel.innerHTML = `
