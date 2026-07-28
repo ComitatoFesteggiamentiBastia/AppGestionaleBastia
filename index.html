@@ -857,8 +857,8 @@
       </div>
       <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:20px;">
         <div class="stat-card" style="cursor:default;"><i class="ti ti-building-bank"></i><div class="stat-val" id="c-saldo-cc" style="font-size:16px;">—</div><div class="stat-lbl">Saldo conto corrente</div></div>
-        <div class="stat-card" style="cursor:default;"><i class="ti ti-cash"></i><div class="stat-val" id="c-saldo-contanti" style="font-size:16px;">—</div><div class="stat-lbl">Saldo contanti</div></div>
-        <div class="stat-card" style="border-top-color:#7C3AED;cursor:default;"><i class="ti ti-piggy-bank" style="color:#7C3AED;"></i><div class="stat-val" id="c-saldo-dora" style="font-size:16px;color:#7C3AED;">—</div><div class="stat-lbl">Saldo Dora</div></div>
+        <div class="stat-card" style="cursor:default;"><i class="ti ti-cash"></i><div class="stat-val" id="c-saldo-contanti" style="font-size:16px;">—</div><div class="stat-lbl">Contanti Banca</div></div>
+        <div class="stat-card" style="border-top-color:#7C3AED;cursor:default;"><i class="ti ti-piggy-bank" style="color:#7C3AED;"></i><div class="stat-val" id="c-saldo-dora" style="font-size:16px;color:#7C3AED;">—</div><div class="stat-lbl">Contanti Dora</div></div>
         <div class="stat-card oro" style="cursor:default;"><i class="ti ti-wallet"></i><div class="stat-val" id="c-saldo" style="font-size:16px;">—</div><div class="stat-lbl">Saldo totale (Banca+Dora)</div></div>
       </div>
       <div class="table-card"><div id="cassa-list"><div style="padding:24px;text-align:center;color:var(--testo-muted);">Caricamento...</div></div></div>
@@ -897,7 +897,7 @@
         </div>
       </div>
       <!-- Bilancio rapido -->
-      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:20px;">
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:10px;">
         <div class="stat-card verde" style="cursor:default;">
           <i class="ti ti-arrow-up"></i>
           <div class="stat-val" id="ms-tot-entrate" style="font-size:18px;">—</div>
@@ -917,6 +917,18 @@
           <i class="ti ti-tag" style="color:#7C3AED;"></i>
           <div class="stat-val" id="ms-dora" style="font-size:18px;color:#7C3AED;">—</div>
           <div class="stat-lbl">Di cui Dora (incluso nel totale)</div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:20px;">
+        <div class="stat-card" style="cursor:default;">
+          <i class="ti ti-cash"></i>
+          <div class="stat-val" id="ms-contanti-banca" style="font-size:16px;">—</div>
+          <div class="stat-lbl">Contanti Banca</div>
+        </div>
+        <div class="stat-card" style="border-top-color:#7C3AED;cursor:default;">
+          <i class="ti ti-piggy-bank" style="color:#7C3AED;"></i>
+          <div class="stat-val" id="ms-contanti-dora" style="font-size:16px;color:#7C3AED;">—</div>
+          <div class="stat-lbl">Contanti Dora</div>
         </div>
       </div>
       <div id="ms-dora-dettaglio" style="font-size:11px;color:var(--testo-muted);margin-top:-14px;margin-bottom:16px;"></div>
@@ -2127,7 +2139,23 @@
     </div>
     <div class="form-group"><label>Importo (€)</label><input id="m-sp-importo" type="number" step="0.01" placeholder="Solo per offerte in €"></div>
     <div class="form-group"><label>Dettaglio</label><input id="m-sp-dettaglio" placeholder="Es. Trapunta lotteria, mano d'opera..."></div>
-    <div class="form-group"><label>Modo pagamento</label><input id="m-sp-modo" placeholder="Contanti, bonifico..."></div>
+    <div class="form-group">
+      <label>Fondo</label>
+      <select id="m-sp-fondo" style="width:100%;padding:9px 12px;border:1px solid #D4C9BE;border-radius:8px;font-size:14px;outline:none;" onchange="aggiornaMetodoSponsorSelect()">
+        <option value="Banca">Banca</option>
+        <option value="DORA">DORA</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Modo pagamento</label>
+      <select id="m-sp-modo" style="width:100%;padding:9px 12px;border:1px solid #D4C9BE;border-radius:8px;font-size:14px;outline:none;">
+        <option value="contanti">Contanti</option>
+        <option value="assegno">Assegno</option>
+        <option value="bonifico">Bonifico</option>
+        <option value="bancomat">Bancomat</option>
+        <option value="pagopa">PagoPA</option>
+      </select>
+    </div>
     <div class="form-group"><label>Note</label><input id="m-sp-note"></div>
     <div class="form-group">
       <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;">

@@ -1514,6 +1514,15 @@ function aggiornaBilancioSagra() {
   if (document.getElementById('ms-dora-dettaglio')) {
     document.getElementById('ms-dora-dettaglio').textContent = `DORA — entrate: € ${doraEntrate.toFixed(2)} · uscite: € ${doraUscite.toFixed(2)}`;
   }
+
+  // Contanti Banca vs Contanti Dora (per questa edizione sagra)
+  const isContanti = m => !m.metodo_pagamento || m.metodo_pagamento === 'contanti';
+  const isBanca = m => (m.fondo || 'Banca') !== 'DORA';
+  const contantiBancaEntrate = tuttiMovimenti.filter(m => m.tipo === 'entrata' && isBanca(m) && isContanti(m)).reduce((s,m) => s + parseFloat(m.importo||0), 0);
+  const contantiBancaUscite = tuttiMovimenti.filter(m => m.tipo === 'uscita' && isBanca(m) && isContanti(m)).reduce((s,m) => s + parseFloat(m.importo||0), 0);
+  const contantiBanca = contantiBancaEntrate - contantiBancaUscite;
+  if (document.getElementById('ms-contanti-banca')) document.getElementById('ms-contanti-banca').textContent = '€ ' + contantiBanca.toFixed(2);
+  if (document.getElementById('ms-contanti-dora')) document.getElementById('ms-contanti-dora').textContent = '€ ' + doraSaldo.toFixed(2);
 }
 
 function aggiornaMetodoMovSelect(metodoAttuale) {
@@ -1736,6 +1745,29 @@ function renderSponsor() {
   tbody.innerHTML = righeAttuali + righeMancanti;
 }
 
+function aggiornaMetodoSponsorSelect(metodoAttuale) {
+  const fondo = document.getElementById('m-sp-fondo').value;
+  const sel = document.getElementById('m-sp-modo');
+  if (fondo === 'DORA') {
+    sel.innerHTML = '<option value="contanti">Contanti</option>';
+    sel.value = 'contanti';
+    sel.disabled = true;
+  } else {
+    sel.disabled = false;
+    sel.innerHTML = `
+      <option value="contanti">Contanti</option>
+      <option value="assegno">Assegno</option>
+      <option value="bonifico">Bonifico</option>
+      <option value="bancomat">Bancomat</option>
+      <option value="pagopa">PagoPA</option>
+    `;
+    if (metodoAttuale && !['contanti','assegno','bonifico','bancomat','pagopa'].includes((metodoAttuale||'').toLowerCase())) {
+      sel.innerHTML += `<option value="${metodoAttuale}">${metodoAttuale} (precedente)</option>`;
+    }
+    sel.value = metodoAttuale || 'contanti';
+  }
+}
+
 function openModalSponsor(s = null) {
   document.getElementById('modal-sponsor').style.display = 'flex';
   document.getElementById('modal-sponsor').style.pointerEvents = 'auto';
@@ -1744,7 +1776,8 @@ function openModalSponsor(s = null) {
   document.getElementById('m-sp-tipo').value = s?.tipo || 'offerta';
   document.getElementById('m-sp-importo').value = s?.importo || '';
   document.getElementById('m-sp-dettaglio').value = s?.dettaglio || '';
-  document.getElementById('m-sp-modo').value = s?.modo_pagamento || '';
+  document.getElementById('m-sp-fondo').value = s?.fondo || 'Banca';
+  aggiornaMetodoSponsorSelect(s?.modo_pagamento);
   document.getElementById('m-sp-ricevuto').checked = s?.ricevuto || false;
   document.getElementById('m-sp-ricevuta').value = s?.ricevuta_stato || 'da_fare';
   document.getElementById('m-sp-pubblica').checked = s?.pubblica_sito || false;
@@ -1806,6 +1839,7 @@ async function saveSponsor() {
   const tipo = document.getElementById('m-sp-tipo').value;
   const dettaglio = document.getElementById('m-sp-dettaglio').value.trim() || null;
   const modo = document.getElementById('m-sp-modo').value.trim() || null;
+  const fondo = document.getElementById('m-sp-fondo').value || 'Banca';
 
   // Upload logo se è stato selezionato un nuovo file
   let logoUrl = document.getElementById('m-sp-logo-url').value || null;
@@ -1855,7 +1889,7 @@ async function saveSponsor() {
     const oggi = new Date().toISOString().split('T')[0];
     const descrizione = `Sponsor: ${ditta}${dettaglio ? ' — ' + dettaglio : ''}`;
 
-    const { error: eSagra } = await db.from('movimenti_sagra').insert({
+    const { data: nuovoMovSponsor, error: eSagra } = await db.from('movimenti_sagra').insert({
       sagra_id: sagraId,
       tipo: 'entrata',
       categoria: 'SPONSOR',
@@ -1863,10 +1897,12 @@ async function saveSponsor() {
       importo,
       data: oggi,
       metodo_pagamento: (modo || 'contanti').toLowerCase(),
+      fondo,
       pagato: true,
       offerta: false,
       a_bilancio: true
-    });
+    }).select().single();
+    if (!eSagra && nuovoMovSponsor) await sincronizzaCassaDaSagra(nuovoMovSponsor);
     if (eSagra) console.error('Errore movimenti_sagra:', eSagra.message, eSagra.details);
 
     if (!eSagra) {
