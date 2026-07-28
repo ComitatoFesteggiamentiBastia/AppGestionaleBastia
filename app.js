@@ -1870,6 +1870,7 @@ async function saveSponsor() {
     sagra_id: sagraId,
     ditta, tipo, importo, dettaglio,
     modo_pagamento: modo,
+    fondo,
     ricevuto: ricevutoNuovo,
     ricevuta_stato: ricevutaStato,
     pubblica_sito: pubblicaSito,
@@ -1879,27 +1880,28 @@ async function saveSponsor() {
 
   const id = document.getElementById('m-sp-id').value;
 
-  // Controlla se era già ricevuto (per non duplicare)
-  let eraGiaRicevuto = false;
+  // Recupera lo stato/collegamento precedente
+  let movimentoSagraId = null;
   if (id) {
-    const { data: existing } = await db.from('sponsor').select('ricevuto').eq('id', id).single();
-    eraGiaRicevuto = existing?.ricevuto || false;
+    const { data: existing } = await db.from('sponsor').select('movimento_sagra_id').eq('id', id).single();
+    movimentoSagraId = existing?.movimento_sagra_id || null;
   }
 
-  let error;
+  let error, sponsorId = id;
   if (id) {
     ({ error } = await db.from('sponsor').update(payload).eq('id', id));
   } else {
-    ({ error } = await db.from('sponsor').insert(payload));
+    const { data: nuovoSponsor, error: eIns } = await db.from('sponsor').insert(payload).select('id').single();
+    error = eIns;
+    sponsorId = nuovoSponsor?.id;
   }
   if (error) { showToast('Errore: ' + error.message, 'error'); return; }
 
-  // Registra automaticamente se diventa ricevuto per la prima volta e ha importo
-  if (ricevutoNuovo && !eraGiaRicevuto && importo && importo > 0) {
+  // Sincronizza SEMPRE il movimento collegato in Entrate/Uscite Sagra (non solo la prima volta)
+  if (ricevutoNuovo && importo && importo > 0) {
     const oggi = new Date().toISOString().split('T')[0];
     const descrizione = `Sponsor: ${ditta}${dettaglio ? ' — ' + dettaglio : ''}`;
-
-    const { data: nuovoMovSponsor, error: eSagra } = await db.from('movimenti_sagra').insert({
+    const datiMovimento = {
       sagra_id: sagraId,
       tipo: 'entrata',
       categoria: 'SPONSOR',
@@ -1911,15 +1913,26 @@ async function saveSponsor() {
       pagato: true,
       offerta: false,
       a_bilancio: true
-    }).select().single();
-    if (!eSagra && nuovoMovSponsor) await sincronizzaCassaDaSagra(nuovoMovSponsor);
-    if (eSagra) console.error('Errore movimenti_sagra:', eSagra.message, eSagra.details);
+    };
 
-    if (!eSagra) {
-      showToast('Sponsor salvato e registrato nelle entrate sagra!', 'success');
+    let movSponsorAggiornato;
+    if (movimentoSagraId) {
+      const { data, error: eUpd } = await db.from('movimenti_sagra').update(datiMovimento).eq('id', movimentoSagraId).select().single();
+      if (eUpd) console.error('Errore aggiornamento movimento sponsor:', eUpd.message);
+      movSponsorAggiornato = data;
     } else {
-      showToast('Sponsor salvato ma errore registrazione movimenti', 'error');
+      const { data, error: eIns } = await db.from('movimenti_sagra').insert(datiMovimento).select().single();
+      if (eIns) console.error('Errore creazione movimento sponsor:', eIns.message);
+      movSponsorAggiornato = data;
+      if (movSponsorAggiornato) await db.from('sponsor').update({ movimento_sagra_id: movSponsorAggiornato.id }).eq('id', sponsorId);
     }
+    if (movSponsorAggiornato) await sincronizzaCassaDaSagra(movSponsorAggiornato);
+    showToast('Sponsor salvato e sincronizzato nelle entrate sagra!', 'success');
+  } else if (!ricevutoNuovo && movimentoSagraId) {
+    // Se non è più "ricevuto", rimuove il movimento collegato (e a cascata lo specchio in Cassa Generale)
+    await db.from('movimenti_sagra').delete().eq('id', movimentoSagraId);
+    await db.from('sponsor').update({ movimento_sagra_id: null }).eq('id', sponsorId);
+    showToast('Sponsor salvato!', 'success');
   } else {
     showToast('Sponsor salvato!', 'success');
   }
