@@ -1485,7 +1485,7 @@ function rowMovimento(m) {
   return `<div class="table-row">
     <div style="flex:1;">
       <div class="row-name">${m.descrizione}${m.fornitore ? ' — <span style="color:var(--testo-muted)">' + m.fornitore + '</span>' : ''}${m.fattura_url ? ` <a href="${m.fattura_url}" target="_blank" title="Vedi fattura/scontrino" onclick="event.stopPropagation()">📎</a>` : ''}</div>
-      <div class="row-sub">${m.categoria || ''} · ${m.data ? formatDataIT(m.data) : ''} · ${m.metodo_pagamento || ''} ${m.offerta ? '· <span style="color:var(--oro)">Offerta</span>' : ''} ${m.pagato === false ? '· <span style="color:#991B1B">Da pagare</span>' : ''} ${m.nota_pagamento ? '· ' + m.nota_pagamento : ''}</div>
+      <div class="row-sub">${m.categoria || ''} · ${m.data ? formatDataIT(m.data) : ''} · ${m.metodo_pagamento || ''} · <span style="font-weight:600;">${m.fondo || 'Banca'}</span> ${m.offerta ? '· <span style="color:var(--oro)">Offerta</span>' : ''} ${m.pagato === false ? '· <span style="color:#991B1B">Da pagare</span>' : ''} ${m.nota_pagamento ? '· ' + m.nota_pagamento : ''}</div>
     </div>
     ${rimborsoBadge}
     ${m.dora ? '<span class="badge" style="background:#EDE4FB;color:#7C3AED;">DORA</span>' : ''}
@@ -1528,6 +1528,7 @@ function openModalMovimento(m = null) {
   document.getElementById('m-mov-importo').value = m?.importo || '';
   document.getElementById('m-mov-data').value = m?.data || new Date().toISOString().split('T')[0];
   document.getElementById('m-mov-metodo').value = m?.metodo_pagamento || 'contanti';
+  document.getElementById('m-mov-fondo').value = m?.fondo || 'Banca';
   document.getElementById('m-mov-pagato').checked = m ? (m.pagato !== false) : true;
   document.getElementById('m-mov-offerta').checked = m?.offerta || false;
   document.getElementById('m-mov-bilancio').checked = m ? (m.a_bilancio !== false) : true;
@@ -1584,6 +1585,7 @@ async function saveMovimento() {
     importo,
     data: document.getElementById('m-mov-data').value,
     metodo_pagamento: document.getElementById('m-mov-metodo').value || null,
+    fondo: document.getElementById('m-mov-fondo').value || 'Banca',
     pagato: document.getElementById('m-mov-pagato').checked,
     offerta: document.getElementById('m-mov-offerta').checked,
     a_bilancio: document.getElementById('m-mov-bilancio').checked,
@@ -1964,6 +1966,7 @@ async function sincronizzaCassaDaSagra(movSagra) {
     importo: movSagra.importo,
     data: movSagra.data,
     metodo_pagamento: movSagra.metodo_pagamento || 'contanti',
+    fondo: movSagra.fondo || 'Banca',
     collegato_sagra: true,
     dora: movSagra.dora || false,
     movimento_sagra_id: movSagra.id
@@ -4113,35 +4116,45 @@ function aggiornaBilancioCassa(lista) {
   const entrate = tutti.filter(m => m.tipo === 'entrata').reduce((s,m) => s + parseFloat(m.importo||0), 0);
   const uscite = tutti.filter(m => m.tipo === 'uscita').reduce((s,m) => s + parseFloat(m.importo||0), 0);
 
-  // Contanti vs conto corrente: metodo_pagamento 'contanti' (o assente) è contante, il resto è conto corrente
-  const isContanti = m => !m.metodo_pagamento || m.metodo_pagamento === 'contanti';
-  const entrateContanti = tutti.filter(m => m.tipo === 'entrata' && isContanti(m)).reduce((s,m) => s + parseFloat(m.importo||0), 0);
-  const usciteContanti = tutti.filter(m => m.tipo === 'uscita' && isContanti(m)).reduce((s,m) => s + parseFloat(m.importo||0), 0);
-  const entrateCC = entrate - entrateContanti;
-  const usciteCC = uscite - usciteContanti;
+  const isDora = m => m.fondo === 'DORA';
+  const isBanca = m => !isDora(m);
 
-  // Saldo iniziale: se è selezionato un anno preciso usa quello; su "tutti" somma i saldi iniziali di tutti gli anni registrati
-  let saldoInizialeCC = 0, saldoInizialeContanti = 0;
+  // Fondo Banca: contanti vs conto corrente in base al metodo_pagamento
+  const isContanti = m => !m.metodo_pagamento || m.metodo_pagamento === 'contanti';
+  const entrateContanti = tutti.filter(m => m.tipo === 'entrata' && isBanca(m) && isContanti(m)).reduce((s,m) => s + parseFloat(m.importo||0), 0);
+  const usciteContanti = tutti.filter(m => m.tipo === 'uscita' && isBanca(m) && isContanti(m)).reduce((s,m) => s + parseFloat(m.importo||0), 0);
+  const entrateCC = tutti.filter(m => m.tipo === 'entrata' && isBanca(m) && !isContanti(m)).reduce((s,m) => s + parseFloat(m.importo||0), 0);
+  const usciteCC = tutti.filter(m => m.tipo === 'uscita' && isBanca(m) && !isContanti(m)).reduce((s,m) => s + parseFloat(m.importo||0), 0);
+
+  // Fondo DORA: un unico saldo, indipendente da metodo di pagamento
+  const entrateDora = tutti.filter(m => m.tipo === 'entrata' && isDora(m)).reduce((s,m) => s + parseFloat(m.importo||0), 0);
+  const usciteDora = tutti.filter(m => m.tipo === 'uscita' && isDora(m)).reduce((s,m) => s + parseFloat(m.importo||0), 0);
+
+  // Saldo iniziale: se è selezionato un anno preciso usa quello; su "tutti" somma i saldi iniziali dell'anno più vecchio tracciato
+  let saldoInizialeCC = 0, saldoInizialeContanti = 0, saldoInizialeDora = 0;
   if (filtroAnno !== 'tutti') {
     const s = tuttiSaldiIniziali.find(x => x.anno === parseInt(filtroAnno));
     saldoInizialeCC = s ? parseFloat(s.saldo_conto_corrente || 0) : 0;
     saldoInizialeContanti = s ? parseFloat(s.saldo_contanti || 0) : 0;
+    saldoInizialeDora = s ? parseFloat(s.saldo_dora || 0) : 0;
   } else {
-    // Su "tutti gli anni" ha senso solo il saldo iniziale dell'anno più vecchio tracciato (gli anni successivi ripartono dal saldo finale del precedente, già incluso nei movimenti)
     const annoMinimo = Math.min(...tuttiSaldiIniziali.map(s => s.anno), ANNO_INIZIO_CONTABILITA);
     const s = tuttiSaldiIniziali.find(x => x.anno === annoMinimo);
     saldoInizialeCC = s ? parseFloat(s.saldo_conto_corrente || 0) : 0;
     saldoInizialeContanti = s ? parseFloat(s.saldo_contanti || 0) : 0;
+    saldoInizialeDora = s ? parseFloat(s.saldo_dora || 0) : 0;
   }
 
   const saldoCC = saldoInizialeCC + entrateCC - usciteCC;
   const saldoContanti = saldoInizialeContanti + entrateContanti - usciteContanti;
-  const saldoTotale = saldoCC + saldoContanti;
+  const saldoDora = saldoInizialeDora + entrateDora - usciteDora;
+  const saldoTotale = saldoCC + saldoContanti + saldoDora;
 
   if (document.getElementById('c-tot-entrate')) document.getElementById('c-tot-entrate').textContent = '€ ' + entrate.toFixed(2);
   if (document.getElementById('c-tot-uscite')) document.getElementById('c-tot-uscite').textContent = '€ ' + uscite.toFixed(2);
   if (document.getElementById('c-saldo-cc')) document.getElementById('c-saldo-cc').textContent = '€ ' + saldoCC.toFixed(2);
   if (document.getElementById('c-saldo-contanti')) document.getElementById('c-saldo-contanti').textContent = '€ ' + saldoContanti.toFixed(2);
+  if (document.getElementById('c-saldo-dora')) document.getElementById('c-saldo-dora').textContent = '€ ' + saldoDora.toFixed(2);
   if (document.getElementById('c-saldo')) {
     document.getElementById('c-saldo').textContent = '€ ' + saldoTotale.toFixed(2);
     document.getElementById('c-saldo').style.color = saldoTotale >= 0 ? 'var(--verde)' : '#991B1B';
@@ -4158,6 +4171,7 @@ function openModalSaldoIniziale() {
   const s = tuttiSaldiIniziali.find(x => x.anno === anno);
   document.getElementById('si-conto-corrente').value = s?.saldo_conto_corrente || '';
   document.getElementById('si-contanti').value = s?.saldo_contanti || '';
+  document.getElementById('si-dora').value = s?.saldo_dora || '';
 }
 
 function closeModalSaldoIniziale() {
@@ -4172,6 +4186,7 @@ async function saveSaldoIniziale() {
     anno,
     saldo_conto_corrente: parseFloat(document.getElementById('si-conto-corrente').value) || 0,
     saldo_contanti: parseFloat(document.getElementById('si-contanti').value) || 0,
+    saldo_dora: parseFloat(document.getElementById('si-dora').value) || 0,
     updated_at: new Date().toISOString()
   };
   const esistente = tuttiSaldiIniziali.find(s => s.anno === anno);

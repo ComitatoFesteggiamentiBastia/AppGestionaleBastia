@@ -853,10 +853,11 @@
         <div class="stat-card verde" style="cursor:default;"><i class="ti ti-arrow-up"></i><div class="stat-val" id="c-tot-entrate" style="font-size:16px;">—</div><div class="stat-lbl">Totale entrate</div></div>
         <div class="stat-card" style="border-top-color:#991B1B;cursor:default;"><i class="ti ti-arrow-down" style="color:#991B1B;"></i><div class="stat-val" id="c-tot-uscite" style="font-size:16px;color:#991B1B;">—</div><div class="stat-lbl">Totale uscite</div></div>
       </div>
-      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:20px;">
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:20px;">
         <div class="stat-card" style="cursor:default;"><i class="ti ti-building-bank"></i><div class="stat-val" id="c-saldo-cc" style="font-size:16px;">—</div><div class="stat-lbl">Saldo conto corrente</div></div>
         <div class="stat-card" style="cursor:default;"><i class="ti ti-cash"></i><div class="stat-val" id="c-saldo-contanti" style="font-size:16px;">—</div><div class="stat-lbl">Saldo contanti</div></div>
-        <div class="stat-card oro" style="cursor:default;"><i class="ti ti-wallet"></i><div class="stat-val" id="c-saldo" style="font-size:16px;">—</div><div class="stat-lbl">Saldo totale</div></div>
+        <div class="stat-card" style="border-top-color:#7C3AED;cursor:default;"><i class="ti ti-piggy-bank" style="color:#7C3AED;"></i><div class="stat-val" id="c-saldo-dora" style="font-size:16px;color:#7C3AED;">—</div><div class="stat-lbl">Saldo DORA</div></div>
+        <div class="stat-card oro" style="cursor:default;"><i class="ti ti-wallet"></i><div class="stat-val" id="c-saldo" style="font-size:16px;">—</div><div class="stat-lbl">Saldo totale (Banca+DORA)</div></div>
       </div>
       <div class="table-card"><div id="cassa-list"><div style="padding:24px;text-align:center;color:var(--testo-muted);">Caricamento...</div></div></div>
     </div>
@@ -1644,6 +1645,7 @@
     </div>
     <div class="form-group"><label>Saldo conto corrente (€)</label><input id="si-conto-corrente" type="number" step="0.01"></div>
     <div class="form-group"><label>Saldo contanti (€)</label><input id="si-contanti" type="number" step="0.01"></div>
+    <div class="form-group"><label>Saldo DORA (€)</label><input id="si-dora" type="number" step="0.01"></div>
     <input type="hidden" id="si-anno">
     <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;">
       <button class="btn" onclick="closeModalSaldoIniziale()">Annulla</button>
@@ -1988,6 +1990,13 @@
           <option value="bonifico">Bonifico</option>
           <option value="carta">Carta/Bancomat</option>
           <option value="altro">Altro</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Fondo</label>
+        <select id="m-mov-fondo" style="width:100%;padding:9px 12px;border:1px solid #D4C9BE;border-radius:8px;font-size:14px;outline:none;">
+          <option value="Banca">Banca</option>
+          <option value="DORA">DORA</option>
         </select>
       </div>
       <div class="form-group" style="grid-column:1/3;display:flex;gap:20px;align-items:center;padding-top:4px;">
