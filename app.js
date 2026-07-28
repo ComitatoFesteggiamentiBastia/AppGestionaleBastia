@@ -1488,7 +1488,7 @@ function rowMovimento(m) {
       <div class="row-sub">${m.categoria || ''} · ${m.data ? formatDataIT(m.data) : ''} · ${m.metodo_pagamento || ''} · <span style="font-weight:600;">${m.fondo === 'DORA' ? 'Dora' : (m.fondo || 'Banca')}</span> ${m.offerta ? '· <span style="color:var(--oro)">Offerta</span>' : ''} ${m.pagato === false ? '· <span style="color:#991B1B">Da pagare</span>' : ''} ${m.nota_pagamento ? '· ' + m.nota_pagamento : ''}</div>
     </div>
     ${rimborsoBadge}
-    ${m.dora ? '<span class="badge" style="background:#EDE4FB;color:#7C3AED;">Dora</span>' : ''}
+    ${m.fondo === 'DORA' ? '<span class="badge" style="background:#EDE4FB;color:#7C3AED;">Dora</span>' : ''}
     <span style="font-weight:600;color:${color};white-space:nowrap;">€ ${parseFloat(m.importo).toFixed(2)}</span>
     <button class="btn btn-sm" onclick='openModalMovimento(${JSON.stringify(m).replace(/'/g,"\\'")})'><i class="ti ti-edit"></i></button>
     <button class="btn btn-sm" style="color:#991B1B" onclick="eliminaMovimento('${m.id}')"><i class="ti ti-trash"></i></button>
@@ -1505,8 +1505,8 @@ function aggiornaBilancioSagra() {
   document.getElementById('ms-utile').style.color = utile >= 0 ? 'var(--verde)' : '#991B1B';
 
   // DORA: conteggiato anche a parte, ma resta incluso nei totali sopra (non va escluso dal bilancio)
-  const doraEntrate = tuttiMovimenti.filter(m => m.tipo === 'entrata' && m.dora).reduce((s, m) => s + parseFloat(m.importo), 0);
-  const doraUscite = tuttiMovimenti.filter(m => m.tipo === 'uscita' && m.dora).reduce((s, m) => s + parseFloat(m.importo), 0);
+  const doraEntrate = tuttiMovimenti.filter(m => m.tipo === 'entrata' && m.fondo === 'DORA').reduce((s, m) => s + parseFloat(m.importo), 0);
+  const doraUscite = tuttiMovimenti.filter(m => m.tipo === 'uscita' && m.fondo === 'DORA').reduce((s, m) => s + parseFloat(m.importo), 0);
   const doraSaldo = doraEntrate - doraUscite;
   if (document.getElementById('ms-dora')) {
     document.getElementById('ms-dora').textContent = (doraSaldo >= 0 ? '+' : '') + '€ ' + doraSaldo.toFixed(2);
@@ -1555,7 +1555,6 @@ function openModalMovimento(m = null) {
   document.getElementById('m-mov-pagato').checked = m ? (m.pagato !== false) : true;
   document.getElementById('m-mov-offerta').checked = m?.offerta || false;
   document.getElementById('m-mov-bilancio').checked = m ? (m.a_bilancio !== false) : true;
-  document.getElementById('m-mov-dora').checked = m?.dora || false;
   document.getElementById('m-mov-nota-pagamento').value = m?.nota_pagamento || '';
   document.getElementById('m-mov-rimborso').value = m?.rimborso_stato || 'nessuno';
   document.getElementById('m-mov-fattura-url').value = m?.fattura_url || '';
@@ -1612,7 +1611,6 @@ async function saveMovimento() {
     pagato: document.getElementById('m-mov-pagato').checked,
     offerta: document.getElementById('m-mov-offerta').checked,
     a_bilancio: document.getElementById('m-mov-bilancio').checked,
-    dora: document.getElementById('m-mov-dora').checked,
     nota_pagamento: document.getElementById('m-mov-nota-pagamento').value.trim() || null,
     rimborso_stato: document.getElementById('m-mov-rimborso').value,
     fattura_url: fatturaUrl
@@ -1991,7 +1989,6 @@ async function sincronizzaCassaDaSagra(movSagra) {
     metodo_pagamento: movSagra.metodo_pagamento || 'contanti',
     fondo: movSagra.fondo || 'Banca',
     collegato_sagra: true,
-    dora: movSagra.dora || false,
     movimento_sagra_id: movSagra.id
   };
 
