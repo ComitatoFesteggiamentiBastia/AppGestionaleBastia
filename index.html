@@ -1766,6 +1766,7 @@
         </select>
       </div>
       <div class="form-group" style="grid-column:1/3"><label>Descrizione *</label><input id="m-cassa-descrizione"></div>
+      <div class="form-group" style="grid-column:1/3"><label>Fornitore/Controparte</label><input id="m-cassa-fornitore" list="cassa-fornitori-list" autocomplete="off"><datalist id="cassa-fornitori-list"></datalist></div>
       <div class="form-group"><label>Importo (€) *</label><input id="m-cassa-importo" type="number" step="0.01"></div>
       <div class="form-group"><label>Data</label><input id="m-cassa-data" type="date"></div>
       <div class="form-group">
@@ -1793,7 +1794,6 @@
 
     </div>
     <input type="hidden" id="m-cassa-id">
-    <input type="hidden" id="m-cassa-movimento-sagra-id">
     <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;">
       <button class="btn" onclick="closeModalCassa()">Annulla</button>
       <button class="btn btn-add" onclick="saveMovimentoCassa()"><i class="ti ti-check"></i> Salva</button>

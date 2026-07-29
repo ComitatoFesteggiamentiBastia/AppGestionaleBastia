@@ -329,7 +329,7 @@ async function loadDashboard() {
   document.getElementById('dash-quote-nopag').textContent = daPagare;
 
   const annoCorrenteCassa = Math.max(new Date().getFullYear(), ANNO_INIZIO_CONTABILITA);
-  const { data: movimenti } = await db.from('movimenti_cassa').select('tipo, importo, data')
+  const { data: movimenti } = await db.from('movimenti').select('tipo, importo, data')
     .gte('data', `${annoCorrenteCassa}-01-01`).lte('data', `${annoCorrenteCassa}-12-31`);
   let saldo = 0;
   movimenti?.forEach(m => { saldo += m.tipo === 'entrata' ? +m.importo : -m.importo; });
@@ -663,13 +663,15 @@ async function rinnovaQuota(id) {
 
   // Registra entrata in cassa generale
   const nomeSocio = socio ? `${socio.cognome} ${socio.nome}` : 'Socio';
-  await db.from('movimenti_cassa').insert({
+  await db.from('movimenti').insert({
     tipo: 'entrata',
     categoria: 'Quote associative',
-    descrizione: `Quota ${ANNO_CORRENTE} — ${nomeSocio}`,
+    descrizione: `Quota ${ANNO_CORRENTE}`,
+    fornitore: nomeSocio,
     importo: quota,
     data: oggi,
-    metodo_pagamento: 'contanti'
+    metodo_pagamento: 'contanti',
+    fondo: 'Banca'
   });
 
   showToast('Quota rinnovata!', 'success');
@@ -772,10 +774,11 @@ async function convalidaRichiesta(id) {
   if (error) { showToast('Errore creazione socio: ' + error.message, 'error'); return; }
 
   await db.from('quote').insert({ socio_id: socioId, anno: ANNO_CORRENTE, pagato: true, data_pagamento: oggi, importo });
-  await db.from('movimenti_cassa').insert({
+  await db.from('movimenti').insert({
     tipo: 'entrata', categoria: 'Quote associative',
-    descrizione: `Quota ${ANNO_CORRENTE} — ${r.cognome} ${r.nome} (nuova iscrizione)`,
-    importo, data: oggi, metodo_pagamento: 'contanti'
+    descrizione: `Quota ${ANNO_CORRENTE} (nuova iscrizione)`,
+    fornitore: `${r.cognome} ${r.nome}`,
+    importo, data: oggi, metodo_pagamento: 'contanti', fondo: 'Banca'
   });
   await db.from('richieste_iscrizione').update({ stato: 'convalidata', socio_id: socioId, convalidata_at: new Date().toISOString() }).eq('id', id);
 
@@ -1186,13 +1189,15 @@ async function rinnovaMassivo() {
     const { error: e2 } = await db.from('quote').insert({ socio_id: id, anno: ANNO_CORRENTE, importo: quota, pagato: true, data_pagamento: oggi });
 
     // Entrata in cassa generale
-    const { error: e3 } = await db.from('movimenti_cassa').insert({
+    const { error: e3 } = await db.from('movimenti').insert({
       tipo: 'entrata',
       categoria: 'Quote associative',
-      descrizione: `Quota ${ANNO_CORRENTE} — ${nomeSocio}`,
+      descrizione: `Quota ${ANNO_CORRENTE}`,
+      fornitore: nomeSocio,
       importo: quota,
       data: oggi,
-      metodo_pagamento: 'contanti'
+      metodo_pagamento: 'contanti',
+      fondo: 'Banca'
     });
 
     if (e1 || e2 || e3) err++; else ok++;
@@ -1445,7 +1450,7 @@ async function loadMovimentiSagra() {
     document.getElementById('ms-entrate-list').innerHTML = '<div style="padding:16px;color:var(--testo-muted)">Nessuna edizione selezionata — vai su Edizioni Sagra</div>';
     return;
   }
-  const { data } = await db.from('movimenti_sagra').select('*').eq('sagra_id', sagraId).order('data');
+  const { data } = await db.from('movimenti').select('*').eq('sagra_id', sagraId).order('data');
   tuttiMovimenti = data || [];
   renderMovimentiSagra();
   aggiornaBilancioSagra();
@@ -1558,7 +1563,7 @@ function aggiornaMetodoMovSelect(metodoAttuale) {
 function openModalMovimento(m = null) {
   document.getElementById('modal-movimento').style.display = 'flex';
   document.getElementById('modal-movimento').style.pointerEvents = 'auto';
-  buildCategorieSelect('m-mov-categoria', 'sagra');
+  buildCategorieSelect('m-mov-categoria', 'cassa');
   document.getElementById('m-mov-id').value = m?.id || '';
   document.getElementById('m-mov-tipo').value = m?.tipo || 'entrata';
   document.getElementById('m-mov-categoria').value = m?.categoria || '';
@@ -1633,14 +1638,13 @@ async function saveMovimento() {
   };
 
   const id = document.getElementById('m-mov-id').value;
-  let error, savedRow;
+  let error;
   if (id) {
-    ({ data: savedRow, error } = await db.from('movimenti_sagra').update(payload).eq('id', id).select().single());
+    ({ error } = await db.from('movimenti').update(payload).eq('id', id));
   } else {
-    ({ data: savedRow, error } = await db.from('movimenti_sagra').insert(payload).select().single());
+    ({ error } = await db.from('movimenti').insert(payload));
   }
   if (error) { showToast('Errore: ' + error.message, 'error'); return; }
-  if (savedRow) await sincronizzaCassaDaSagra(savedRow);
   showToast('Salvato!', 'success');
   closeModalMovimento();
   loadMovimentiSagra();
@@ -1648,7 +1652,7 @@ async function saveMovimento() {
 
 async function eliminaMovimento(id) {
   if (!confirm('Eliminare questo movimento?')) return;
-  await db.from('movimenti_sagra').delete().eq('id', id);
+  await db.from('movimenti').delete().eq('id', id);
   showToast('Eliminato', 'success');
   loadMovimentiSagra();
 }
@@ -1900,12 +1904,13 @@ async function saveSponsor() {
   // Sincronizza SEMPRE il movimento collegato in Entrate/Uscite Sagra (non solo la prima volta)
   if (ricevutoNuovo && importo && importo > 0) {
     const oggi = new Date().toISOString().split('T')[0];
-    const descrizione = `Sponsor: ${ditta}${dettaglio ? ' — ' + dettaglio : ''}`;
+    await aggiungiCategoriaCassaSeNuova('SPONSOR');
     const datiMovimento = {
       sagra_id: sagraId,
       tipo: 'entrata',
       categoria: 'SPONSOR',
-      descrizione,
+      descrizione: dettaglio || 'Contributo sponsor',
+      fornitore: ditta,
       importo,
       data: oggi,
       metodo_pagamento: (modo || 'contanti').toLowerCase(),
@@ -1915,22 +1920,18 @@ async function saveSponsor() {
       a_bilancio: true
     };
 
-    let movSponsorAggiornato;
     if (movimentoSagraId) {
-      const { data, error: eUpd } = await db.from('movimenti_sagra').update(datiMovimento).eq('id', movimentoSagraId).select().single();
+      const { error: eUpd } = await db.from('movimenti').update(datiMovimento).eq('id', movimentoSagraId);
       if (eUpd) console.error('Errore aggiornamento movimento sponsor:', eUpd.message);
-      movSponsorAggiornato = data;
     } else {
-      const { data, error: eIns } = await db.from('movimenti_sagra').insert(datiMovimento).select().single();
+      const { data: nuovoMov, error: eIns } = await db.from('movimenti').insert(datiMovimento).select().single();
       if (eIns) console.error('Errore creazione movimento sponsor:', eIns.message);
-      movSponsorAggiornato = data;
-      if (movSponsorAggiornato) await db.from('sponsor').update({ movimento_sagra_id: movSponsorAggiornato.id }).eq('id', sponsorId);
+      if (nuovoMov) await db.from('sponsor').update({ movimento_sagra_id: nuovoMov.id }).eq('id', sponsorId);
     }
-    if (movSponsorAggiornato) await sincronizzaCassaDaSagra(movSponsorAggiornato);
     showToast('Sponsor salvato e sincronizzato nelle entrate sagra!', 'success');
   } else if (!ricevutoNuovo && movimentoSagraId) {
-    // Se non è più "ricevuto", rimuove il movimento collegato (e a cascata lo specchio in Cassa Generale)
-    await db.from('movimenti_sagra').delete().eq('id', movimentoSagraId);
+    // Se non è più "ricevuto", rimuove il movimento collegato
+    await db.from('movimenti').delete().eq('id', movimentoSagraId);
     await db.from('sponsor').update({ movimento_sagra_id: null }).eq('id', sponsorId);
     showToast('Sponsor salvato!', 'success');
   } else {
@@ -2024,41 +2025,6 @@ async function aggiungiFornitoireSeNuovo(nome) {
   renderFornitoriTabella();
 }
 
-async function aggiungiCategoriaSagraSeNuova(nome) {
-  if (!nome || categorieSagra.find(c => c.nome === nome)) return nome;
-  await db.from('categorie').insert({ tipo: 'sagra', nome });
-  await loadCategorie();
-  return nome;
-}
-
-// Specchia un movimento di Entrate/Uscite Sagra dentro la Cassa Generale.
-// La categoria resta quella reale (non viene forzata): a dire che è un movimento sagra
-// è SOLO il flag "Movimento Sagra" (collegato_sagra), non il testo della categoria.
-async function sincronizzaCassaDaSagra(movSagra) {
-  if (!movSagra?.id) return;
-  const categoria = movSagra.categoria || 'Senza categoria';
-  await aggiungiCategoriaCassaSeNuova(categoria);
-
-  const payloadCassa = {
-    tipo: movSagra.tipo,
-    categoria,
-    descrizione: movSagra.descrizione + (movSagra.fornitore ? ' — ' + movSagra.fornitore : ''),
-    importo: movSagra.importo,
-    data: movSagra.data,
-    metodo_pagamento: movSagra.metodo_pagamento || 'contanti',
-    fondo: movSagra.fondo || 'Banca',
-    collegato_sagra: true,
-    movimento_sagra_id: movSagra.id
-  };
-
-  const { data: esistente } = await db.from('movimenti_cassa').select('id').eq('movimento_sagra_id', movSagra.id).maybeSingle();
-  if (esistente?.id) {
-    await db.from('movimenti_cassa').update(payloadCassa).eq('id', esistente.id);
-  } else {
-    await db.from('movimenti_cassa').insert(payloadCassa);
-  }
-}
-
 async function aggiungiCategoriaCassaSeNuova(nome) {
   if (!nome || categorieCassa.find(c => c.nome === nome)) return nome;
   await db.from('categorie').insert({ tipo: 'cassa', nome });
@@ -2087,7 +2053,7 @@ async function confermaPrelievoCassetta() {
   const nota = document.getElementById('pc-nota').value.trim() || null;
   await aggiungiCategoriaCassaSeNuova('Trasferimento a contanti');
 
-  const { error } = await db.from('movimenti_cassa').insert([
+  const { error } = await db.from('movimenti').insert([
     { tipo: 'uscita', categoria: 'Trasferimento a contanti', descrizione: 'Prelievo da Cassetta Dora', importo, data, metodo_pagamento: 'cassetta', fondo: 'DORA', note: nota },
     { tipo: 'entrata', categoria: 'Trasferimento a contanti', descrizione: 'Prelievo da Cassetta Dora', importo, data, metodo_pagamento: 'contanti', fondo: 'DORA', note: nota }
   ]);
@@ -2155,7 +2121,7 @@ async function rinominaCategoriaCassa(id) {
   const { error } = await db.from('categorie').update({ nome: nuovoNome }).eq('id', id);
   if (error) { showToast('Errore: ' + error.message, 'error'); return; }
   // Aggiorna anche i movimenti che usano il vecchio nome
-  await db.from('movimenti_cassa').update({ categoria: nuovoNome }).eq('categoria', vecchioNome);
+  await db.from('movimenti').update({ categoria: nuovoNome }).eq('categoria', vecchioNome);
 
   await loadCategorie();
   await loadCassa();
@@ -2489,10 +2455,10 @@ async function confermaChiusuraOrdineFornitore() {
   const sconto = parseFloat(document.getElementById('co-sconto').value) || 0;
   const netto = Math.max(0, lordo - sconto);
   const categoria = window._ordineFornitoreCategoria || 'Spesa varie';
-  await aggiungiCategoriaSagraSeNuova(categoria);
+  await aggiungiCategoriaCassaSeNuova(categoria);
 
   const numArticoli = ids.length;
-  const descrizione = `Ordine ${fornitore} (${numArticoli} articol${numArticoli===1?'o':'i'})`;
+  const descrizione = `Ordine (${numArticoli} articol${numArticoli===1?'o':'i'})`;
 
   const payload = {
     sagra_id: sagraId,
@@ -2505,6 +2471,7 @@ async function confermaChiusuraOrdineFornitore() {
     importo: netto,
     data: document.getElementById('co-data').value,
     metodo_pagamento: document.getElementById('co-metodo').value,
+    fondo: 'Banca',
     pagato: true,
     offerta: false,
     a_bilancio: true,
@@ -2512,14 +2479,11 @@ async function confermaChiusuraOrdineFornitore() {
     note: document.getElementById('co-nota').value.trim() || null
   };
 
-  const { data: nuovoMov, error } = await db.from('movimenti_sagra').insert(payload).select().single();
+  const { data: nuovoMov, error } = await db.from('movimenti').insert(payload).select().single();
   if (error) { showToast('Errore: ' + error.message, 'error'); return; }
 
   // Collega tutti gli articoli coinvolti a questo movimento
   await db.from('lista_spesa').update({ movimento_sagra_id: nuovoMov.id }).in('id', ids);
-
-  // Specchia in Cassa Generale
-  await sincronizzaCassaDaSagra(nuovoMov);
 
   closeModalChiudiOrdine();
   showToast(`Ordine ${fornitore} registrato: € ${netto.toFixed(2)}`, 'success');
@@ -3754,7 +3718,7 @@ async function loadContestoMariello() {
     db.from('soci').select('*').eq('attivo', true),
     db.from('quote').select('*'),
     db.from('sagre').select('*'),
-    db.from('movimenti_sagra').select('*'),
+    db.from('movimenti').select('*'),
     db.from('sponsor').select('*'),
     db.from('lista_spesa').select('*'),
     db.from('inventario').select('*'),
@@ -3771,7 +3735,7 @@ async function loadContestoMariello() {
     soci: soci.data || [],
     quote: quote.data || [],
     sagre: sagre.data || [],
-    movimenti_sagra: movimenti.data || [],
+    movimenti: movimenti.data || [],
     sponsor: sponsorData.data || [],
     lista_spesa: spesa.data || [],
     inventario: inventario.data || [],
@@ -4198,7 +4162,7 @@ let tuttiSaldiIniziali = [];
 
 async function loadCassa() {
   const [movRes, saldiRes] = await Promise.all([
-    db.from('movimenti_cassa').select('*').order('data', { ascending: false }),
+    db.from('movimenti').select('*').order('data', { ascending: false }),
     db.from('saldi_iniziali_cassa').select('*')
   ]);
   // Esclude qualunque movimento antecedente all'inizio della contabilità (es. 2025 e prima)
@@ -4285,10 +4249,10 @@ function renderCassa() {
           const segno = isEntrata ? '+' : '-';
           return `<div class="table-row" style="padding-left:42px;">
             <div style="flex:1;">
-              <div class="row-name">${m.descrizione}</div>
+              <div class="row-name">${m.descrizione}${m.fornitore ? ' — <span style="color:var(--testo-muted);font-weight:400;">' + m.fornitore + '</span>' : ''}${m.fattura_url ? ` <a href="${m.fattura_url}" target="_blank" title="Vedi fattura/scontrino" onclick="event.stopPropagation()">📎</a>` : ''}</div>
               <div class="row-sub">${m.data ? formatDataIT(m.data) : ''} · ${m.metodo_pagamento || ''} · ${m.fondo === 'DORA' ? 'Dora' : (m.fondo || 'Banca')}</div>
             </div>
-            ${m.collegato_sagra ? '<span class="badge" style="background:#FDF0DC;color:#8A6D1D;">🎪 Sagra</span>' : ''}
+            ${m.sagra_id ? '<span class="badge" style="background:#FDF0DC;color:#8A6D1D;">🎪 Sagra</span>' : ''}
             <span style="font-weight:600;color:${color};white-space:nowrap;">${segno} € ${parseFloat(m.importo).toFixed(2)}</span>
             <button class="btn btn-sm" onclick='openModalCassa(${JSON.stringify(m).replace(/"/g,"&quot;")})'><i class="ti ti-edit"></i></button>
             <button class="btn btn-sm" style="color:#991B1B" onclick="eliminaMovimentoCassa('${m.id}')"><i class="ti ti-trash"></i></button>
@@ -4557,7 +4521,7 @@ async function confermaImportEstrattoConto() {
     note: 'Importato da estratto conto'
   }));
 
-  const { error } = await db.from('movimenti_cassa').insert(payloadRighe);
+  const { error } = await db.from('movimenti').insert(payloadRighe);
   if (error) { showToast('Errore: ' + error.message, 'error'); return; }
 
   showToast(`${daImportare.length} movimenti importati!`, 'success');
@@ -4596,13 +4560,15 @@ function openModalCassa(m = null) {
   document.getElementById('m-cassa-tipo').value = m?.tipo || 'entrata';
   document.getElementById('m-cassa-categoria').value = m?.categoria || '';
   document.getElementById('m-cassa-descrizione').value = m?.descrizione || '';
+  document.getElementById('m-cassa-fornitore') && (document.getElementById('m-cassa-fornitore').value = m?.fornitore || '');
+  const dlFornCassa = document.getElementById('cassa-fornitori-list');
+  if (dlFornCassa) dlFornCassa.innerHTML = (tuttiFornitori || []).map(f => `<option value="${f.nome}">`).join('');
   document.getElementById('m-cassa-importo').value = m?.importo || '';
   document.getElementById('m-cassa-data').value = m?.data || new Date().toISOString().split('T')[0];
   document.getElementById('m-cassa-fondo').value = m?.fondo || 'Banca';
   aggiornaMetodoCassaSelect(m?.metodo_pagamento);
-  document.getElementById('m-cassa-sagra').checked = m?.collegato_sagra || false;
+  document.getElementById('m-cassa-sagra').checked = !!m?.sagra_id;
   document.getElementById('m-cassa-note').value = m?.note || '';
-  document.getElementById('m-cassa-movimento-sagra-id').value = m?.movimento_sagra_id || '';
 }
 
 function aggiornaMetodoCassaSelect(metodoAttuale) {
@@ -4642,59 +4608,33 @@ async function saveMovimentoCassa() {
   const importo = parseFloat(document.getElementById('m-cassa-importo').value);
   if (!descrizione || isNaN(importo)) { showToast('Descrizione e importo obbligatori', 'error'); return; }
 
-  const collegatoSagra = document.getElementById('m-cassa-sagra').checked;
-  const tipo = document.getElementById('m-cassa-tipo').value;
-  const data = document.getElementById('m-cassa-data').value;
-  const metodo = document.getElementById('m-cassa-metodo').value || null;
-  const categoria = document.getElementById('m-cassa-categoria').value.trim() || null;
-
-  let movimentoSagraId = document.getElementById('m-cassa-movimento-sagra-id').value || null;
-
-  // Se collegato alla sagra, crea/aggiorna il movimento gemello in Entrate/Uscite Sagra
-  if (collegatoSagra) {
+  const movimentoSagra = document.getElementById('m-cassa-sagra').checked;
+  let sagraId = null;
+  if (movimentoSagra) {
     await assicuraSagreCaricate();
-    const sagraId = getSagraId();
-    if (!sagraId) {
-      showToast('Nessuna edizione sagra selezionata: impossibile collegare', 'error');
-      return;
-    }
-    const categoriaSagra = categoria || 'Cassa Generale';
-    await aggiungiCategoriaSagraSeNuova(categoriaSagra);
-
-    const payloadSagra = {
-      sagra_id: sagraId, tipo, categoria: categoriaSagra, descrizione, importo, data,
-      metodo_pagamento: metodo, fondo: document.getElementById('m-cassa-fondo').value || 'Banca',
-      pagato: true, offerta: false, a_bilancio: true, rimborso_stato: 'nessuno'
-    };
-
-    if (movimentoSagraId) {
-      await db.from('movimenti_sagra').update(payloadSagra).eq('id', movimentoSagraId);
-    } else {
-      const { data: nuovoSagra, error: eSagra } = await db.from('movimenti_sagra').insert(payloadSagra).select().single();
-      if (eSagra) { showToast('Errore collegamento sagra: ' + eSagra.message, 'error'); return; }
-      movimentoSagraId = nuovoSagra.id;
-    }
-  } else if (movimentoSagraId) {
-    // Era collegato e ora è stato scollegato: rimuove il movimento gemello nella sagra
-    await db.from('movimenti_sagra').delete().eq('id', movimentoSagraId);
-    movimentoSagraId = null;
+    sagraId = getSagraId();
+    if (!sagraId) { showToast('Nessuna edizione sagra selezionata: impossibile collegare', 'error'); return; }
   }
 
   const payload = {
-    tipo, categoria, descrizione, importo, data,
-    metodo_pagamento: metodo,
+    tipo: document.getElementById('m-cassa-tipo').value,
+    categoria: document.getElementById('m-cassa-categoria').value.trim() || null,
+    descrizione,
+    fornitore: document.getElementById('m-cassa-fornitore') ? (document.getElementById('m-cassa-fornitore').value.trim() || null) : null,
+    importo,
+    data: document.getElementById('m-cassa-data').value,
+    metodo_pagamento: document.getElementById('m-cassa-metodo').value || null,
     fondo: document.getElementById('m-cassa-fondo').value || 'Banca',
-    collegato_sagra: collegatoSagra,
-    movimento_sagra_id: movimentoSagraId,
+    sagra_id: sagraId,
     note: document.getElementById('m-cassa-note').value.trim() || null
   };
 
   const id = document.getElementById('m-cassa-id').value;
   let error;
   if (id) {
-    ({ error } = await db.from('movimenti_cassa').update(payload).eq('id', id));
+    ({ error } = await db.from('movimenti').update(payload).eq('id', id));
   } else {
-    ({ error } = await db.from('movimenti_cassa').insert(payload));
+    ({ error } = await db.from('movimenti').insert(payload));
   }
   if (error) { showToast('Errore: ' + error.message, 'error'); return; }
   showToast('Salvato!', 'success');
@@ -4704,7 +4644,7 @@ async function saveMovimentoCassa() {
 
 async function eliminaMovimentoCassa(id) {
   if (!confirm('Eliminare questo movimento?')) return;
-  await db.from('movimenti_cassa').delete().eq('id', id);
+  await db.from('movimenti').delete().eq('id', id);
   showToast('Eliminato', 'success');
   loadCassa();
 }
@@ -4915,7 +4855,7 @@ function esportaExcelMovimentiCassa() {
       m.fornitore || '',
       parseFloat(m.importo || 0),
       m.metodo_pagamento || '',
-      m.collegato_sagra ? 'Sì' : 'No',
+      m.sagra_id ? 'Sì' : 'No',
       m.note || ''
     ])
   ];
@@ -4924,7 +4864,7 @@ function esportaExcelMovimentiCassa() {
   ws['!cols'] = [{wch:11},{wch:9},{wch:20},{wch:34},{wch:20},{wch:12},{wch:16},{wch:14},{wch:24}];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Movimenti');
-  XLSX.writeFile(wb, `movimenti_cassa_${filtroAnno}.xlsx`);
+  XLSX.writeFile(wb, `movimenti_${filtroAnno}.xlsx`);
   showToast('Excel movimenti generato!', 'success');
 }
 
