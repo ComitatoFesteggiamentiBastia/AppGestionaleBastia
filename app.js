@@ -6109,6 +6109,10 @@ function disegnaWatermarkLogo(pdf, logoDataUrl) {
   pdf.restoreGraphicsState();
 }
 
+function nomeSagraSenzaAnno(nome) {
+  return (nome || '').replace(/\s*\d{4}\s*$/, '').trim();
+}
+
 async function scaricaPDFMenuAttivo() {
   await caricaJsPDF();
   const { jsPDF } = window.jspdf;
@@ -6149,7 +6153,7 @@ async function scaricaPDFMenuAttivo() {
   pdf.setFontSize(22);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(201, 160, 48);
-  pdf.text(sagraNome.toUpperCase(), 105, 12, { align: 'center' });
+  pdf.text(nomeSagraSenzaAnno(sagraNome).toUpperCase(), 105, 12, { align: 'center' });
   pdf.setFontSize(16);
   pdf.setTextColor(200, 216, 240);
   pdf.text(titoloPdf, 105, 22, { align: 'center' });
@@ -6286,6 +6290,138 @@ function esportaExcelMenuAttivo() {
   const sagraNome = sagraSelezionata?.nome || 'Sagra';
   XLSX.writeFile(wb, `menu_${menuAttivo}_${sagraNome.replace(/\s+/g,'_')}.xlsx`);
   showToast('Excel generato!', 'success');
+}
+
+async function scaricaPDFComandaA5() {
+  await caricaJsPDF();
+  const { jsPDF } = window.jspdf;
+  const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a5' });
+
+  const vociMenu = tuttoMenu.filter(m => m.menu === menuAttivo && m.disponibile);
+  if (!vociMenu.length) { showToast(`Nessuna voce disponibile in ${MENU_LABEL[menuAttivo]}`, 'error'); return; }
+
+  const sezioniOrdinate = tutteSezioniMenu.filter(s => s.menu === menuAttivo).sort((a,b) => a.ordine - b.ordine).map(s => s.nome);
+  const gruppi = {};
+  vociMenu.forEach(m => {
+    if (!gruppi[m.sezione]) gruppi[m.sezione] = [];
+    gruppi[m.sezione].push(m);
+  });
+  const sezioniPresenti = Object.keys(gruppi);
+  const ordinate = [
+    ...sezioniOrdinate.filter(n => sezioniPresenti.includes(n)),
+    ...sezioniPresenti.filter(n => !sezioniOrdinate.includes(n)).sort()
+  ];
+
+  const sagraNome = sagraSelezionata?.nome || 'Sagra della Bastia';
+  const impostazioni = tutteImpostazioniPdf.find(i => i.menu === menuAttivo);
+  const titoloPdf = impostazioni?.titolo || 'IL MENU — ' + MENU_LABEL[menuAttivo].toUpperCase();
+
+  // Pagina A5: 148 x 210 mm
+  const PAGE_W = 148;
+  const MARGIN = 10;
+  const COL_QTA_X = PAGE_W - MARGIN - 22; // riquadro quantità a destra
+  const COL_QTA_W = 16;
+  const COL_PREZZO_X = COL_QTA_X - 4;
+
+  function drawHeader() {
+    pdf.setFillColor(30, 45, 71);
+    pdf.rect(0, 0, PAGE_W, 22, 'F');
+    pdf.setFontSize(14);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(201, 160, 48);
+    pdf.text(nomeSagraSenzaAnno(sagraNome).toUpperCase(), PAGE_W/2, 9, { align: 'center' });
+    pdf.setFontSize(10);
+    pdf.setTextColor(200, 216, 240);
+    pdf.text(titoloPdf, PAGE_W/2, 16, { align: 'center' });
+  }
+
+  drawHeader();
+  let y = 30;
+
+  // Intestazione colonne
+  function drawIntestazioneColonne(yy) {
+    pdf.setFontSize(8);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(30, 45, 71);
+    pdf.text('Piatto', MARGIN, yy);
+    pdf.text('Prezzo', COL_PREZZO_X, yy, { align: 'right' });
+    pdf.text('Qtà', COL_QTA_X + COL_QTA_W, yy, { align: 'right' });
+    pdf.setDrawColor(212, 201, 190);
+    pdf.line(MARGIN, yy + 1.5, PAGE_W - MARGIN, yy + 1.5);
+    return yy + 5;
+  }
+
+  for (const sez of ordinate) {
+    const voci = gruppi[sez].slice().sort((a,b) => (a.ordine||0) - (b.ordine||0));
+    if (y > 255) { pdf.addPage(); drawHeader(); y = 30; }
+
+    pdf.setFillColor(242, 237, 232);
+    pdf.rect(MARGIN, y - 3.5, PAGE_W - MARGIN*2, 6, 'F');
+    pdf.setFontSize(8.5);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(122, 101, 72);
+    pdf.text(sez, MARGIN + 2, y + 0.5);
+    y += 7;
+    y = drawIntestazioneColonne(y);
+
+    for (const v of voci) {
+      if (y > 270) { pdf.addPage(); drawHeader(); y = 30; y = drawIntestazioneColonne(y); }
+
+      pdf.setFontSize(8.5);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(26, 26, 26);
+      let nomePiatto = (v.intolleranze ? '* ' : '') + v.piatto;
+      const larghezzaMaxNome = COL_PREZZO_X - MARGIN - 4;
+      while (pdf.getTextWidth(nomePiatto) > larghezzaMaxNome && nomePiatto.length > 3) {
+        nomePiatto = nomePiatto.substring(0, nomePiatto.length - 4) + '...';
+      }
+      pdf.text(nomePiatto, MARGIN, y);
+
+      if (v.surgelato) {
+        const w = pdf.getTextWidth(nomePiatto);
+        pdf.setDrawColor(26, 26, 26);
+        pdf.line(MARGIN, y + 0.7, MARGIN + w, y + 0.7);
+      }
+
+      if (v.prezzo) {
+        pdf.setFont('helvetica', 'bold');
+        pdf.text('€ ' + parseFloat(v.prezzo).toFixed(2), COL_PREZZO_X, y, { align: 'right' });
+        pdf.setFont('helvetica', 'normal');
+      }
+
+      // Riquadro vuoto per scrivere la quantità a mano
+      pdf.setDrawColor(150, 150, 150);
+      pdf.rect(COL_QTA_X, y - 4, COL_QTA_W, 5.5);
+
+      // Seconda riga: allergeni e/o note, se presenti
+      let yDettagli = y;
+      const dettagli = [];
+      if (v.intolleranze && v.allergeni) dettagli.push(`(${v.allergeni})`);
+      if (v.note) dettagli.push(v.note);
+      if (dettagli.length) {
+        yDettagli += 4;
+        pdf.setFont('helvetica', 'italic');
+        pdf.setFontSize(7);
+        pdf.setTextColor(140, 130, 120);
+        let testoDettagli = dettagli.join(' · ');
+        while (pdf.getTextWidth(testoDettagli) > (PAGE_W - MARGIN*2) && testoDettagli.length > 3) {
+          testoDettagli = testoDettagli.substring(0, testoDettagli.length - 4) + '...';
+        }
+        pdf.text(testoDettagli, MARGIN, yDettagli);
+        pdf.setFont('helvetica', 'normal');
+        pdf.setFontSize(8.5);
+        pdf.setTextColor(26, 26, 26);
+      }
+
+      pdf.setDrawColor(225, 220, 212);
+      pdf.line(MARGIN, yDettagli + 2, PAGE_W - MARGIN, yDettagli + 2);
+      y = yDettagli + 7.5;
+    }
+    y += 3;
+  }
+
+  pdf.save(`comanda_${menuAttivo}_a5.pdf`);
+  showToast('Comanda A5 generata!', 'success');
 }
 
 // ===== STORICO PREZZI =====
