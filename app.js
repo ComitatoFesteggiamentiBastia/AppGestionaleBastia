@@ -6296,6 +6296,7 @@ async function scaricaPDFComandaA5() {
   await caricaJsPDF();
   const { jsPDF } = window.jspdf;
   const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+  const logoDataUrl = await caricaLogoDataUrl();
 
   const vociMenu = tuttoMenu.filter(m => m.menu === menuAttivo && m.disponibile);
   if (!vociMenu.length) { showToast(`Nessuna voce disponibile in ${MENU_LABEL[menuAttivo]}`, 'error'); return; }
@@ -6313,127 +6314,140 @@ async function scaricaPDFComandaA5() {
   ];
 
   const sagraNome = sagraSelezionata?.nome || 'Sagra della Bastia';
+  const isBar = menuAttivo === 'bar';
   const impostazioni = tutteImpostazioniPdf.find(i => i.menu === menuAttivo);
-  const titoloPdf = impostazioni?.titolo || 'IL MENU — ' + MENU_LABEL[menuAttivo].toUpperCase();
+  const defaultTitoloPdf = isBar ? 'LISTINO BAR' : 'IL MENU — ' + MENU_LABEL[menuAttivo].toUpperCase();
+  const defaultPiedePdf = isBar
+    ? '* Le pietanze contrassegnate possono contenere allergeni.'
+    : "le pietanze indicate possono contenere sostanze che provocano allergie o intolleranze, in cassa è disponibile il dettaglio\nI prodotti contrassegnati da sottolineatura sono congelati";
+  const titoloPdf = impostazioni ? (impostazioni.titolo || '') : defaultTitoloPdf;
+  const piedePdf = impostazioni ? (impostazioni.piede_testo || '') : defaultPiedePdf;
 
-  // A4 orizzontale (297x210) = due metà A5 (148.5 ciascuna) affiancate, per stampare 2 copie a foglio
+  // A4 orizzontale (297x210) = due metà (148.5 ciascuna) affiancate, stesso impaginato del menu
+  // grande ma adattato in larghezza/altezza, con in più la colonna Quantità
   const PAGE_W = 148.5;
-  const MARGIN = 10;
-  const COL_QTA_X = PAGE_W - MARGIN - 22;
-  const COL_QTA_W = 16;
-  const COL_PREZZO_X = COL_QTA_X - 4;
+  const PAGE_H = 210;
+  const MARGIN_L = 12;
+  const MARGIN_R = 12;
+  const QTA_W = 13;
+  const QTA_GAP = 3;
+  const PREZZO_X = PAGE_W - MARGIN_R - QTA_W - QTA_GAP;
+  const RIGA_FINE = PREZZO_X;
 
   function disegnaCopia(OX) {
-    function drawHeader() {
-      pdf.setFillColor(30, 45, 71);
-      pdf.rect(OX, 0, PAGE_W, 22, 'F');
-      pdf.setFontSize(14);
-      pdf.setFont('helvetica', 'bold');
-      pdf.setTextColor(201, 160, 48);
-      pdf.text(nomeSagraSenzaAnno(sagraNome).toUpperCase(), OX + PAGE_W/2, 9, { align: 'center' });
-      pdf.setFontSize(10);
-      pdf.setTextColor(200, 216, 240);
-      pdf.text(titoloPdf, OX + PAGE_W/2, 16, { align: 'center' });
+    if (logoDataUrl) {
+      pdf.saveGraphicsState();
+      pdf.setGState(new pdf.GState({ opacity: 0.07 }));
+      const dim = 110;
+      pdf.addImage(logoDataUrl, 'JPEG', OX + (PAGE_W-dim)/2, (PAGE_H-dim)/2, dim, dim);
+      pdf.restoreGraphicsState();
     }
 
-    function drawIntestazioneColonne(yy) {
-      pdf.setFontSize(8);
-      pdf.setFont('helvetica', 'bold');
-      pdf.setTextColor(30, 45, 71);
-      pdf.text('Piatto', OX + MARGIN, yy);
-      pdf.text('Prezzo', OX + COL_PREZZO_X, yy, { align: 'right' });
-      pdf.text('Qtà', OX + COL_QTA_X + COL_QTA_W, yy, { align: 'right' });
-      pdf.setDrawColor(212, 201, 190);
-      pdf.line(OX + MARGIN, yy + 1.5, OX + PAGE_W - MARGIN, yy + 1.5);
-      return yy + 5;
-    }
+    // Header (stessa impostazione del menu grande, altezza adattata alla pagina più bassa)
+    pdf.setFillColor(30, 45, 71);
+    pdf.rect(OX, 0, PAGE_W, 22, 'F');
+    pdf.setFontSize(16);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(201, 160, 48);
+    pdf.text(nomeSagraSenzaAnno(sagraNome).toUpperCase(), OX + PAGE_W/2, 9, { align: 'center' });
+    pdf.setFontSize(11);
+    pdf.setTextColor(200, 216, 240);
+    pdf.text(titoloPdf, OX + PAGE_W/2, 17, { align: 'center' });
 
-    drawHeader();
-    let y = 30;
+    // Stesso calcolo auto-adattivo del menu grande, sulla superficie più piccola
+    const nSezioni = ordinate.length;
+    const nVoci = vociMenu.length;
+    const righePiedeConteggio = piedePdf.split('\n').filter(r => r.trim()).length;
+    const yStartBase = 28;
+    const yFineDisponibile = PAGE_H - 6 - (righePiedeConteggio > 0 ? righePiedeConteggio * 3.5 + 3 : 0);
+    const spazioDisponibile = yFineDisponibile - yStartBase;
+
+    const BASE = { sezioneBlock: 9, sezioneFont: 10, rowH: 7, voceFont: 9 };
+    const spazioNecessarioBase = nSezioni * BASE.sezioneBlock + nVoci * BASE.rowH + nSezioni * 3.5;
+    let scala = spazioNecessarioBase > 0 ? spazioDisponibile / spazioNecessarioBase : 1;
+    scala = Math.max(0.4, Math.min(scala, 1.5));
+
+    const sezioneBlockH = BASE.sezioneBlock * scala;
+    const sezioneFont = BASE.sezioneFont * scala;
+    const rowH = BASE.rowH * scala;
+    const voceFont = BASE.voceFont * scala;
+    const gapDopoSezione = 3.5 * scala;
+
+    const altezzaContenutoReale = nSezioni * sezioneBlockH + nVoci * rowH + nSezioni * gapDopoSezione;
+    const margineExtra = Math.max(0, spazioDisponibile - altezzaContenutoReale);
+    let y = yStartBase + margineExtra / 2;
+
+    // Intestazione colonna Qtà una sola volta, appena prima delle voci
+    pdf.setFontSize(Math.max(6, 7 * scala));
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(30, 45, 71);
+    pdf.text('Qtà', OX + PAGE_W - MARGIN_R, y - 3, { align: 'right' });
 
     for (const sez of ordinate) {
       const voci = gruppi[sez].slice().sort((a,b) => (a.ordine||0) - (b.ordine||0));
-      // Nota: su A4 orizzontale niente salto pagina, il contenuto deve stare nell'altezza 210mm
 
       pdf.setFillColor(242, 237, 232);
-      pdf.rect(OX + MARGIN, y - 3.5, PAGE_W - MARGIN*2, 6, 'F');
-      pdf.setFontSize(8.5);
+      pdf.rect(OX + MARGIN_L, y - sezioneBlockH*0.4, PAGE_W - MARGIN_L - MARGIN_R, sezioneBlockH, 'F');
+      pdf.setFontSize(sezioneFont);
       pdf.setFont('helvetica', 'bold');
-      pdf.setTextColor(122, 101, 72);
-      pdf.text(sez, OX + MARGIN + 2, y + 0.5);
-      y += 7;
-      y = drawIntestazioneColonne(y);
+      pdf.setTextColor(30, 45, 71);
+      pdf.text(sez, OX + PAGE_W/2, y + sezioneBlockH*0.13, { align: 'center' });
+      y += sezioneBlockH;
 
       for (const v of voci) {
-        pdf.setFontSize(8.5);
+        pdf.setFontSize(voceFont);
         pdf.setFont('helvetica', 'normal');
         pdf.setTextColor(26, 26, 26);
-        let nomePiatto = (v.intolleranze ? '* ' : '') + v.piatto;
-        const larghezzaMaxNome = COL_PREZZO_X - MARGIN - 4;
-        while (pdf.getTextWidth(nomePiatto) > larghezzaMaxNome && nomePiatto.length > 3) {
-          nomePiatto = nomePiatto.substring(0, nomePiatto.length - 4) + '...';
-        }
-        pdf.text(nomePiatto, OX + MARGIN, y);
-
+        const nomePiatto = (v.intolleranze ? '* ' : '') + v.piatto;
+        pdf.text(nomePiatto, OX + MARGIN_L, y);
         if (v.surgelato) {
           const w = pdf.getTextWidth(nomePiatto);
           pdf.setDrawColor(26, 26, 26);
-          pdf.line(OX + MARGIN, y + 0.7, OX + MARGIN + w, y + 0.7);
+          pdf.line(OX + MARGIN_L, y + 1*scala, OX + MARGIN_L + w, y + 1*scala);
         }
-
         if (v.prezzo) {
           pdf.setFont('helvetica', 'bold');
-          pdf.text('€ ' + parseFloat(v.prezzo).toFixed(2), OX + COL_PREZZO_X, y, { align: 'right' });
-          pdf.setFont('helvetica', 'normal');
-        }
-
-        pdf.setDrawColor(150, 150, 150);
-        pdf.rect(OX + COL_QTA_X, y - 4, COL_QTA_W, 5.5);
-
-        let yDettagli = y;
-        const dettagli = [];
-        if (v.intolleranze && v.allergeni) dettagli.push(`(${v.allergeni})`);
-        if (v.note) dettagli.push(v.note);
-        if (dettagli.length) {
-          yDettagli += 4;
-          pdf.setFont('helvetica', 'italic');
-          pdf.setFontSize(7);
-          pdf.setTextColor(140, 130, 120);
-          let testoDettagli = dettagli.join(' · ');
-          while (pdf.getTextWidth(testoDettagli) > (PAGE_W - MARGIN*2) && testoDettagli.length > 3) {
-            testoDettagli = testoDettagli.substring(0, testoDettagli.length - 4) + '...';
-          }
-          pdf.text(testoDettagli, OX + MARGIN, yDettagli);
-          pdf.setFont('helvetica', 'normal');
-          pdf.setFontSize(8.5);
+          pdf.setFontSize(voceFont);
           pdf.setTextColor(26, 26, 26);
+          pdf.text('€ ' + parseFloat(v.prezzo).toFixed(2), OX + PREZZO_X, y, { align: 'right' });
         }
 
-        pdf.setDrawColor(225, 220, 212);
-        pdf.line(OX + MARGIN, yDettagli + 2, OX + PAGE_W - MARGIN, yDettagli + 2);
-        y = yDettagli + 7.5;
+        // Riquadro vuoto per scrivere la quantità a mano
+        pdf.setDrawColor(150, 150, 150);
+        pdf.rect(OX + PAGE_W - MARGIN_R - QTA_W, y - rowH*0.65, QTA_W, rowH*0.8);
+
+        pdf.setDrawColor(212, 201, 190);
+        pdf.line(OX + MARGIN_L, y + rowH*0.3, OX + RIGA_FINE, y + rowH*0.3);
+        y += rowH;
       }
-      y += 3;
+      y += gapDopoSezione;
     }
+
+    // Footer
+    pdf.setFontSize(5.5);
+    pdf.setTextColor(150, 150, 150);
+    const righePiede = piedePdf.split('\n').filter(r => r.trim());
+    const yPiedeStart = PAGE_H - 5 - (righePiede.length - 1) * 3.5;
+    righePiede.forEach((riga, i) => {
+      pdf.text(riga, OX + PAGE_W/2, yPiedeStart + i * 3.5, { align: 'center' });
+    });
+
     return y;
   }
 
-  const yFinale = disegnaCopia(0);
+  disegnaCopia(0);
   disegnaCopia(PAGE_W);
 
   // Linea di taglio tratteggiata al centro
   pdf.setDrawColor(160, 160, 160);
   pdf.setLineDashPattern([2, 1.5], 0);
-  pdf.line(PAGE_W, 0, PAGE_W, 210);
+  pdf.line(PAGE_W, 0, PAGE_W, PAGE_H);
   pdf.setLineDashPattern([], 0);
 
-  pdf.save(`comanda_${menuAttivo}_a5_x2.pdf`);
-  if (yFinale > 205) {
-    showToast('Attenzione: il menu è lungo, alcune righe potrebbero uscire dal bordo del foglio', 'error');
-  } else {
-    showToast('Comanda A5 generata (2 copie per foglio)!', 'success');
-  }
+  pdf.save(`menu_piccoli_${menuAttivo}.pdf`);
+  showToast('Menù piccoli generati!', 'success');
 }
+
 
 // ===== STORICO PREZZI =====
 let tuttoStorico = [];
