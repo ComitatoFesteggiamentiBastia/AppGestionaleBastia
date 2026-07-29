@@ -6154,8 +6154,8 @@ async function scaricaPDFMenuAttivo() {
   pdf.setTextColor(200, 216, 240);
   pdf.text(titoloPdf, 105, 22, { align: 'center' });
 
-  // Calcolo automatico della scala per far stare tutto in una sola pagina,
-  // indipendentemente da quante voci/categorie ci sono
+  // Calcolo automatico della scala: se il menu è corto, il testo si INGRANDISCE per riempire
+  // la pagina invece di lasciare vuoto in basso; se è lungo, si rimpicciolisce per stare in una pagina
   const nSezioni = ordinate.length;
   const nVoci = vociMenu.length;
   const righePiedeConteggio = piedePdf.split('\n').filter(r => r.trim()).length;
@@ -6163,11 +6163,11 @@ async function scaricaPDFMenuAttivo() {
   const yFineDisponibile = 297 - 10 - (righePiedeConteggio > 0 ? righePiedeConteggio * 5 + 4 : 0);
   const spazioDisponibile = yFineDisponibile - yStartBase;
 
-  // Altezze "base" (quelle grandi che piacciono, usate quando c'è spazio)
+  // Altezze "base" (quelle grandi che piacciono, usate a scala 1)
   const BASE = { sezioneBlock: 13, sezioneFont: 14, rowH: 10, voceFont: 13 };
   const spazioNecessarioBase = nSezioni * BASE.sezioneBlock + nVoci * BASE.rowH + nSezioni * 5;
-  let scala = spazioNecessarioBase > 0 ? Math.min(1, spazioDisponibile / spazioNecessarioBase) : 1;
-  scala = Math.max(scala, 0.22); // limite estremo solo per evitare testo a dimensione zero
+  let scala = spazioNecessarioBase > 0 ? spazioDisponibile / spazioNecessarioBase : 1;
+  scala = Math.max(0.22, Math.min(scala, 1.7)); // può ingrandire fino a 1.7x se c'è tanto spazio, o rimpicciolire se serve
 
   const sezioneBlockH = BASE.sezioneBlock * scala;
   const sezioneFont = BASE.sezioneFont * scala;
@@ -6175,7 +6175,11 @@ async function scaricaPDFMenuAttivo() {
   const voceFont = BASE.voceFont * scala;
   const gapDopoSezione = 5 * scala;
 
-  let y = yStartBase;
+  // Centra verticalmente il contenuto nello spazio disponibile, cosi un menu corto
+  // non resta tutto appiccicato in alto
+  const altezzaContenutoReale = nSezioni * sezioneBlockH + nVoci * rowH + nSezioni * gapDopoSezione;
+  const margineExtra = Math.max(0, spazioDisponibile - altezzaContenutoReale);
+  let y = yStartBase + margineExtra / 2;
   for (const sez of ordinate) {
     const voci = gruppi[sez].slice().sort((a,b) => (a.ordine||0) - (b.ordine||0));
 
