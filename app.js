@@ -1509,7 +1509,7 @@ function aggiornaBilancioSagra() {
   document.getElementById('ms-utile').textContent = '€ ' + utile.toFixed(2);
   document.getElementById('ms-utile').style.color = utile >= 0 ? 'var(--verde)' : '#991B1B';
 
-  // DORA: conteggiato anche a parte, ma resta incluso nei totali sopra (non va escluso dal bilancio)
+  // DORA: solo informativo su questa sagra — i saldi veri (conto corrente/contanti/cassetta) vivono in Cassa Generale
   const doraEntrate = tuttiMovimenti.filter(m => m.tipo === 'entrata' && m.fondo === 'DORA').reduce((s, m) => s + parseFloat(m.importo), 0);
   const doraUscite = tuttiMovimenti.filter(m => m.tipo === 'uscita' && m.fondo === 'DORA').reduce((s, m) => s + parseFloat(m.importo), 0);
   const doraSaldo = doraEntrate - doraUscite;
@@ -1519,19 +1519,6 @@ function aggiornaBilancioSagra() {
   if (document.getElementById('ms-dora-dettaglio')) {
     document.getElementById('ms-dora-dettaglio').textContent = `Dora — entrate: € ${doraEntrate.toFixed(2)} · uscite: € ${doraUscite.toFixed(2)}`;
   }
-
-  // Contanti Banca vs Cassetta/Contanti Dora (per questa edizione sagra)
-  const isContanti = m => !m.metodo_pagamento || m.metodo_pagamento === 'contanti';
-  const isCassetta = m => m.metodo_pagamento === 'cassetta';
-  const isBanca = m => (m.fondo || 'Banca') !== 'DORA';
-  const contantiBancaEntrate = tuttiMovimenti.filter(m => m.tipo === 'entrata' && isBanca(m) && isContanti(m)).reduce((s,m) => s + parseFloat(m.importo||0), 0);
-  const contantiBancaUscite = tuttiMovimenti.filter(m => m.tipo === 'uscita' && isBanca(m) && isContanti(m)).reduce((s,m) => s + parseFloat(m.importo||0), 0);
-  const contantiBanca = contantiBancaEntrate - contantiBancaUscite;
-  const doraContantiEntrate = tuttiMovimenti.filter(m => m.tipo === 'entrata' && m.fondo === 'DORA' && !isCassetta(m)).reduce((s,m) => s + parseFloat(m.importo||0), 0);
-  const doraContantiUscite = tuttiMovimenti.filter(m => m.tipo === 'uscita' && m.fondo === 'DORA' && !isCassetta(m)).reduce((s,m) => s + parseFloat(m.importo||0), 0);
-  const doraContantiSaldo = doraContantiEntrate - doraContantiUscite;
-  if (document.getElementById('ms-contanti-banca')) document.getElementById('ms-contanti-banca').textContent = '€ ' + contantiBanca.toFixed(2);
-  if (document.getElementById('ms-contanti-dora')) document.getElementById('ms-contanti-dora').textContent = '€ ' + doraContantiSaldo.toFixed(2);
 }
 
 function aggiornaMetodoMovSelect(metodoAttuale) {

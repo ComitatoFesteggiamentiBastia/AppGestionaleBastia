@@ -921,19 +921,10 @@
           <div class="stat-lbl">Di cui Dora (incluso nel totale)</div>
         </div>
       </div>
-      <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:20px;">
-        <div class="stat-card" style="cursor:default;">
-          <i class="ti ti-cash"></i>
-          <div class="stat-val" id="ms-contanti-banca" style="font-size:16px;">—</div>
-          <div class="stat-lbl">Contanti Banca</div>
-        </div>
-        <div class="stat-card" style="border-top-color:#7C3AED;cursor:default;">
-          <i class="ti ti-piggy-bank" style="color:#7C3AED;"></i>
-          <div class="stat-val" id="ms-contanti-dora" style="font-size:16px;color:#7C3AED;">—</div>
-          <div class="stat-lbl">Contanti Dora</div>
-        </div>
+      <div id="ms-dora-dettaglio" style="font-size:11px;color:var(--testo-muted);margin-bottom:16px;"></div>
+      <div style="font-size:11.5px;color:var(--testo-muted);margin-top:-10px;margin-bottom:16px;">
+        <i class="ti ti-info-circle"></i> I saldi di conto corrente, contanti e cassetta si vedono in <a href="#" onclick="showPage('cassa');return false;" style="color:var(--blu);">Cassa Generale</a>, che li gestisce per tutto l'anno.
       </div>
-      <div id="ms-dora-dettaglio" style="font-size:11px;color:var(--testo-muted);margin-top:-14px;margin-bottom:16px;"></div>
       <!-- Entrate -->
       <div style="font-size:13px;font-weight:600;color:var(--verde);margin-bottom:8px;">Entrate</div>
       <div class="table-card" style="margin-bottom:20px;"><div id="ms-entrate-list"></div></div>
