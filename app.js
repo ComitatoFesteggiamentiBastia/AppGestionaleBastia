@@ -4205,7 +4205,7 @@ function closeModalSaldoIniziale() {
 // ===== IMPORTA ESTRATTO CONTO (con controllo doppioni per data+importo) =====
 let _righeImportEstratto = [];
 
-function openModalImportEstrattoConto() {
+async function openModalImportEstrattoConto() {
   document.getElementById('modal-import-estratto').style.display = 'flex';
   document.getElementById('modal-import-estratto').style.pointerEvents = 'auto';
   document.getElementById('ie-step-upload').style.display = 'block';
@@ -4213,6 +4213,7 @@ function openModalImportEstrattoConto() {
   document.getElementById('ie-file').value = '';
   document.getElementById('ie-loading').style.display = 'none';
   _righeImportEstratto = [];
+  await loadRegoleImportazione(); // assicura di avere sempre le regole più aggiornate, indipendentemente da dove si viene
 }
 
 function closeModalImportEstrattoConto() {
