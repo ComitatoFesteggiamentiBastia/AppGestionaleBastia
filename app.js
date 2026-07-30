@@ -1916,6 +1916,108 @@ async function aggiungiFornitoireSeNuovo(nome) {
   renderFornitoriTabella();
 }
 
+async function apriControlloMovimenti() {
+  document.getElementById('modal-controllo-movimenti').style.display = 'flex';
+  document.getElementById('modal-controllo-movimenti').style.pointerEvents = 'auto';
+  document.getElementById('cm-risultati').innerHTML = '<div style="padding:20px;text-align:center;color:var(--testo-muted);">Controllo in corso...</div>';
+
+  // Usa i movimenti già in memoria (Cassa Generale); se non ancora caricati, li carica ora
+  if (!tuttiMovimentiCassa || !tuttiMovimentiCassa.length) await loadCassa();
+  const movimenti = tuttiMovimentiCassa;
+
+  const problemi = { grave: [], media: [], info: [] };
+
+  // 1. Duplicati potenziali: stesso fornitore + stesso importo + stessa data
+  const visti = new Set();
+  movimenti.forEach(m => {
+    if (!m.fornitore) return;
+    const chiave = `${m.fornitore.toLowerCase().trim()}|${parseFloat(m.importo).toFixed(2)}|${m.data}|${m.tipo}`;
+    if (visti.has(chiave)) {
+      problemi.grave.push(`Possibile doppione: "${m.fornitore}" — € ${parseFloat(m.importo).toFixed(2)} il ${formatDataIT(m.data)} (${m.tipo}) compare più volte`);
+    }
+    visti.add(chiave);
+  });
+
+  // 2. Dati incompleti
+  movimenti.forEach(m => {
+    const rif = `"${m.descrizione}" (€ ${parseFloat(m.importo||0).toFixed(2)}, ${m.data ? formatDataIT(m.data) : 'senza data'})`;
+    if (!m.fondo) problemi.grave.push(`Senza Fondo: ${rif}`);
+    if (!m.sottoconto) problemi.grave.push(`Senza Sottoconto: ${rif}`);
+    if (!m.data) problemi.grave.push(`Senza data: ${rif}`);
+    if (!m.importo || parseFloat(m.importo) <= 0) problemi.grave.push(`Importo mancante o non valido: ${rif}`);
+  });
+
+  // 3. Incoerenze fondo/sottoconto/metodo
+  movimenti.forEach(m => {
+    const rif = `"${m.descrizione}" (€ ${parseFloat(m.importo||0).toFixed(2)}, ${m.data ? formatDataIT(m.data) : ''})`;
+    if (m.fondo === 'Dora' && m.metodo_pagamento && m.metodo_pagamento !== 'contanti') {
+      problemi.media.push(`Fondo Dora ma metodo "${m.metodo_pagamento}" (dovrebbe essere sempre contanti): ${rif}`);
+    }
+    if (m.fondo === 'Sella' && m.sottoconto === 'contanti' && m.metodo_pagamento && m.metodo_pagamento !== 'contanti') {
+      problemi.media.push(`Contanti Sella ma metodo "${m.metodo_pagamento}": ${rif}`);
+    }
+    if (m.fondo === 'Sella' && m.sottoconto === 'conto' && m.metodo_pagamento === 'contanti') {
+      problemi.media.push(`Conto Corrente ma metodo "contanti" (probabilmente dovrebbe essere Contanti Sella): ${rif}`);
+    }
+  });
+
+  // 4. Movimenti prima del 1 gennaio 2026 (non dovrebbero esistere)
+  movimenti.forEach(m => {
+    if (m.data && parseInt(m.data.substring(0,4)) < ANNO_INIZIO_CONTABILITA) {
+      problemi.grave.push(`Movimento datato prima del ${ANNO_INIZIO_CONTABILITA}: "${m.descrizione}" (${formatDataIT(m.data)})`);
+    }
+  });
+
+  // 5. Sponsor ricevuti ma senza movimento collegato
+  const { data: sponsorNonCollegati } = await db.from('sponsor')
+    .select('ditta, importo')
+    .eq('ricevuto', true)
+    .not('importo', 'is', null)
+    .is('movimento_sagra_id', null);
+  (sponsorNonCollegati || []).forEach(s => {
+    problemi.media.push(`Sponsor "${s.ditta}" segnato ricevuto (€ ${parseFloat(s.importo||0).toFixed(2)}) ma senza movimento in Cassa Generale — riapri e risalva lo sponsor`);
+  });
+
+  // 6. Quote pagate ma non ancora registrate (promemoria, non un errore)
+  const { data: quoteNonRegistrate, count } = await db.from('quote')
+    .select('id', { count: 'exact' })
+    .eq('pagato', true)
+    .is('movimento_id', null);
+  if (count) problemi.info.push(`${count} quote pagate non ancora registrate in Cassa Generale (pulsante "Registra incasso" in Quote Annuali)`);
+
+  renderRisultatiControllo(problemi);
+}
+
+function renderRisultatiControllo(problemi) {
+  const totale = problemi.grave.length + problemi.media.length + problemi.info.length;
+  const cont = document.getElementById('cm-risultati');
+
+  if (!totale) {
+    cont.innerHTML = '<div style="padding:20px;text-align:center;color:var(--verde);"><i class="ti ti-circle-check" style="font-size:32px;"></i><div style="margin-top:8px;font-weight:600;">Tutto in ordine, nessun problema trovato!</div></div>';
+    return;
+  }
+
+  function sezione(titolo, colore, sfondo, lista) {
+    if (!lista.length) return '';
+    return `
+      <div style="margin-bottom:14px;">
+        <div style="font-weight:700;color:${colore};font-size:13px;margin-bottom:6px;">${titolo} (${lista.length})</div>
+        ${lista.map(msg => `<div style="background:${sfondo};border-radius:6px;padding:8px 10px;margin-bottom:4px;font-size:12.5px;color:#333;">${msg}</div>`).join('')}
+      </div>`;
+  }
+
+  cont.innerHTML =
+    sezione('🔴 Da controllare subito', '#991B1B', '#FBEAEA', problemi.grave) +
+    sezione('🟡 Da verificare', '#B45309', '#FDF3DC', problemi.media) +
+    sezione('🔵 Promemoria', '#1E40AF', '#E8F0FE', problemi.info);
+}
+
+function closeModalControlloMovimenti() {
+  const m = document.getElementById('modal-controllo-movimenti');
+  m.style.display = 'none';
+  m.style.pointerEvents = 'none';
+}
+
 function openModalTrasferimento() {
   document.getElementById('modal-trasferimento').style.display = 'flex';
   document.getElementById('modal-trasferimento').style.pointerEvents = 'auto';
@@ -2307,6 +2409,24 @@ async function confermaChiusuraOrdineFornitore() {
 
   const numArticoli = ids.length;
   const descrizione = `Ordine (${numArticoli} articol${numArticoli===1?'o':'i'})`;
+  const data = document.getElementById('co-data').value;
+
+  // Controllo doppioni: stesso fornitore + stesso importo + stessa data già presente
+  // (es. un'uscita già importata dall'estratto conto per lo stesso pagamento)
+  const { data: possibiliDoppioni } = await db.from('movimenti')
+    .select('id, descrizione, data, fondo, note')
+    .eq('tipo', 'uscita')
+    .ilike('fornitore', fornitore)
+    .eq('data', data)
+    .gte('importo', netto - 0.01)
+    .lte('importo', netto + 0.01);
+
+  if (possibiliDoppioni && possibiliDoppioni.length) {
+    const dettaglio = possibiliDoppioni.map(m => `"${m.descrizione}" (${m.fondo}${m.note ? ', ' + m.note : ''})`).join('; ');
+    if (!confirm(`Attenzione: esiste già un'uscita per ${fornitore}, € ${netto.toFixed(2)}, in data ${formatDataIT(data)}: ${dettaglio}.\n\nPotrebbe essere lo stesso pagamento (es. già importato dall'estratto conto). Vuoi registrarlo comunque come nuovo movimento?`)) {
+      return;
+    }
+  }
 
   const payload = {
     sagra_id: sagraId,
@@ -2317,7 +2437,7 @@ async function confermaChiusuraOrdineFornitore() {
     importo_lordo: lordo,
     sconto,
     importo: netto,
-    data: document.getElementById('co-data').value,
+    data,
     metodo_pagamento: metodoPagamento,
     fondo,
     sottoconto,
@@ -2387,10 +2507,25 @@ function rowSpesa(a) {
     </div>
     ${badgeRimanenza}
     <span class="badge ${statoColor[a.stato] || 'badge-no'}">${statoLabel[a.stato] || a.stato}</span>
-    ${a.stato === 'comprato' ? (a.movimento_sagra_id ? '<span class="badge badge-ok" title="Uscita registrata">✓ Registrato</span>' : '<span class="badge badge-no" title="Comprato ma non ancora in un ordine chiuso">Da registrare</span>') : ''}
+    ${a.stato === 'comprato' ? (a.movimento_sagra_id ? `<span class="badge badge-ok" style="cursor:pointer;" onclick="verificaMovimentoInCassa('${a.movimento_sagra_id}')" title="Clicca per vederlo in Cassa Generale">✓ Registrato — verifica</span>` : '<span class="badge badge-no" title="Comprato ma non ancora in un ordine chiuso">Da registrare</span>') : ''}
     <button class="btn btn-sm" onclick='openModalSpesa(${JSON.stringify(a).replace(/"/g,"&quot;")})'><i class="ti ti-edit"></i></button>
     <button class="btn btn-sm" style="color:#991B1B" onclick="eliminaSpesa('${a.id}')"><i class="ti ti-trash"></i></button>
   </div>`;
+}
+
+async function verificaMovimentoInCassa(movimentoId) {
+  showPage('cassa');
+  await loadCassa(); // assicura che i dati siano caricati prima di filtrare, niente timeout indovinati
+  const anno = document.getElementById('cassa-filtro-anno');
+  if (anno) anno.value = 'tutti'; // cosi il movimento è visibile a prescindere dall'anno filtrato in precedenza
+  const fondo = document.getElementById('cassa-filtro-fondo');
+  if (fondo) fondo.value = 'tutti';
+  const search = document.getElementById('cassa-search');
+  if (search) {
+    search.value = movimentoId;
+    renderCassa();
+    search.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
 }
 
 function aggiornaStatsSpesa() {
@@ -4355,19 +4490,38 @@ function processaRigheEstrattoConto(rows) {
   righeParse.forEach(r => {
     r.descrizioneOriginale = r.descrizione;
     r.categoria = null;
+    r.ePrelievo = false;
     const regola = tutteRegoleImportazione.find(reg => r.descrizione.toLowerCase().includes(reg.contiene.toLowerCase()));
     if (regola) {
       if (regola.nuova_descrizione) r.descrizione = regola.nuova_descrizione;
       if (regola.categoria) r.categoria = regola.categoria;
+      r.ePrelievo = !!regola.e_prelievo;
     }
   });
 
-  // Controllo doppioni: confronta con i movimenti già presenti (fondo Sella, sottoconto Conto) per data + importo + tipo
-  const esistentiSella = tuttiMovimentiCassa.filter(m => m.fondo === 'Sella' && m.sottoconto === 'conto');
+  // Controllo doppioni, in 2 passaggi:
+  // 1) data + importo + tipo esatti (fondo Sella, qualunque sottoconto)
+  // 2) se non trovato: importo uguale, data entro 3 giorni (valuta bancaria), e il fornitore
+  //    di un'uscita già registrata (es. da "Chiudi ordine") compare nel testo della banca
+  const esistentiSella = tuttiMovimentiCassa.filter(m => m.fondo === 'Sella');
+  const MS_GIORNO = 24 * 60 * 60 * 1000;
   righeParse.forEach(r => {
-    const match = esistentiSella.find(m => m.data === r.data && Math.abs(parseFloat(m.importo) - r.importo) < 0.01 && m.tipo === r.tipo);
+    let match = esistentiSella.find(m => m.data === r.data && Math.abs(parseFloat(m.importo) - r.importo) < 0.01 && m.tipo === r.tipo);
+    let motivoDoppione = match ? 'stessa data e importo' : null;
+
+    if (!match) {
+      const dataRiga = new Date(r.data);
+      match = esistentiSella.find(m => {
+        if (m.tipo !== r.tipo || Math.abs(parseFloat(m.importo) - r.importo) >= 0.01 || !m.fornitore) return false;
+        const diffGiorni = Math.abs((new Date(m.data) - dataRiga) / MS_GIORNO);
+        return diffGiorni <= 3 && r.descrizioneOriginale.toLowerCase().includes(m.fornitore.toLowerCase());
+      });
+      if (match) motivoDoppione = `stesso fornitore "${match.fornitore}" e importo, data vicina (possibile valuta bancaria)`;
+    }
+
     r.duplicato = !!match;
     r.descrizioneEsistente = match ? match.descrizione : null;
+    r.motivoDoppione = motivoDoppione;
     r.selezionato = !match; // pre-seleziona solo le righe nuove
   });
 
@@ -4388,9 +4542,9 @@ function renderPreviewImportEstratto() {
     <div style="display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid var(--border);${r.duplicato?'background:#FBF3DC;':''}">
       <input type="checkbox" ${r.selezionato?'checked':''} onchange="_righeImportEstratto[${i}].selezionato=this.checked" style="width:16px;height:16px;">
       <div style="flex:1;font-size:12.5px;">
-        <div>${formatDataIT(r.data)} · <strong>${r.tipo === 'entrata' ? '+' : '−'}€ ${r.importo.toFixed(2)}</strong> · ${r.descrizione}${r.categoria ? ' · <span style="color:var(--testo-muted);">'+r.categoria+'</span>' : ''}</div>
+        <div>${formatDataIT(r.data)} · <strong>${r.tipo === 'entrata' ? '+' : '−'}€ ${r.importo.toFixed(2)}</strong> · ${r.descrizione}${r.categoria ? ' · <span style="color:var(--testo-muted);">'+r.categoria+'</span>' : ''}${r.ePrelievo ? ' · <span style="color:#7C3AED;">🔄 Prelievo → genera anche entrata Contanti</span>' : ''}</div>
         ${r.descrizione !== r.descrizioneOriginale ? `<div style="color:var(--testo-muted);font-size:11px;">Originale: "${r.descrizioneOriginale}" (rinominata automaticamente)</div>` : ''}
-        ${r.duplicato ? `<div style="color:#8A6D1D;font-size:11px;">⚠️ Possibile doppione — già presente: "${r.descrizioneEsistente}"</div>` : ''}
+        ${r.duplicato ? `<div style="color:#8A6D1D;font-size:11px;">⚠️ Possibile doppione (${r.motivoDoppione}) — già presente: "${r.descrizioneEsistente}"</div>` : ''}
       </div>
     </div>
   `).join('');
@@ -4408,18 +4562,30 @@ async function confermaImportEstrattoConto() {
   for (const r of daImportare) {
     if (r.categoria) await aggiungiCategoriaEconomiaSeNuova(r.tipo, r.categoria);
   }
+  if (daImportare.some(r => r.ePrelievo)) {
+    await aggiungiCategoriaEconomiaSeNuova('entrata', 'Trasferimento interno');
+    await aggiungiCategoriaEconomiaSeNuova('uscita', 'Trasferimento interno');
+  }
 
-  const payloadRighe = daImportare.map(r => ({
-    tipo: r.tipo,
-    categoria: r.categoria || null,
-    descrizione: r.descrizione,
-    importo: r.importo,
-    data: r.data,
-    metodo_pagamento: 'bonifico',
-    fondo: 'Sella',
-    sottoconto: 'conto',
-    note: 'Importato da estratto conto'
-  }));
+  const payloadRighe = [];
+  daImportare.forEach(r => {
+    if (r.ePrelievo) {
+      // Prelievo contanti: uscita dal Conto Sella + entrata nei Contanti Sella (stesso importo, stessa data)
+      payloadRighe.push({
+        tipo: 'uscita', categoria: 'Trasferimento interno', descrizione: r.descrizione, importo: r.importo,
+        data: r.data, metodo_pagamento: 'bonifico', fondo: 'Sella', sottoconto: 'conto', note: 'Importato da estratto conto'
+      });
+      payloadRighe.push({
+        tipo: 'entrata', categoria: 'Trasferimento interno', descrizione: r.descrizione, importo: r.importo,
+        data: r.data, metodo_pagamento: 'contanti', fondo: 'Sella', sottoconto: 'contanti', note: 'Importato da estratto conto (prelievo)'
+      });
+    } else {
+      payloadRighe.push({
+        tipo: r.tipo, categoria: r.categoria || null, descrizione: r.descrizione, importo: r.importo,
+        data: r.data, metodo_pagamento: 'bonifico', fondo: 'Sella', sottoconto: 'conto', note: 'Importato da estratto conto'
+      });
+    }
+  });
 
   const { error } = await db.from('movimenti').insert(payloadRighe);
   if (error) { showToast('Errore: ' + error.message, 'error'); return; }
@@ -4985,25 +5151,28 @@ function renderRegoleImportazioneTabella() {
       <td style="padding:8px 14px;font-size:12.5px;">"${r.contiene}"</td>
       <td style="padding:8px 14px;font-size:12.5px;">→ ${r.nuova_descrizione || '—'}</td>
       <td style="padding:8px 14px;font-size:12.5px;color:var(--testo-muted);">${r.categoria || ''}</td>
+      <td style="padding:8px 14px;text-align:center;">${r.e_prelievo ? '<span class="badge" style="background:#EDE4FB;color:#7C3AED;">🔄 Prelievo</span>' : ''}</td>
       <td style="padding:8px 14px;text-align:center;">
         <button class="btn btn-sm" style="color:#991B1B" onclick="eliminaRegolaImportazione('${r.id}')"><i class="ti ti-trash"></i></button>
       </td>
     </tr>
-  `).join('') || '<tr><td colspan="4" style="padding:16px;text-align:center;color:var(--testo-muted);">Nessuna regola</td></tr>';
+  `).join('') || '<tr><td colspan="5" style="padding:16px;text-align:center;color:var(--testo-muted);">Nessuna regola</td></tr>';
 }
 
 async function aggiungiRegolaImportazione() {
   const contiene = document.getElementById('reg-contiene').value.trim();
   const nuovaDescrizione = document.getElementById('reg-nome').value.trim();
   const categoria = document.getElementById('reg-categoria').value.trim();
+  const ePrelievo = document.getElementById('reg-prelievo').checked;
   if (!contiene) { showToast('Inserisci il testo da cercare', 'error'); return; }
   const { error } = await db.from('regole_importazione').insert({
-    contiene, nuova_descrizione: nuovaDescrizione || null, categoria: categoria || null
+    contiene, nuova_descrizione: nuovaDescrizione || null, categoria: categoria || null, e_prelievo: ePrelievo
   });
   if (error) { showToast('Errore: ' + error.message, 'error'); return; }
   document.getElementById('reg-contiene').value = '';
   document.getElementById('reg-nome').value = '';
   document.getElementById('reg-categoria').value = '';
+  document.getElementById('reg-prelievo').checked = false;
   showToast('Regola aggiunta!', 'success');
   await loadRegoleImportazione();
   renderRegoleImportazioneTabella();
