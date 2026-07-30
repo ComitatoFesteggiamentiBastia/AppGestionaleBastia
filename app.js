@@ -1496,7 +1496,6 @@ function rowMovimento(m) {
       <div class="row-sub">${m.categoria || ''} · ${m.data ? formatDataIT(m.data) : ''} · <span style="font-weight:600;">${etichettaSottoconto(m)}</span>${m.metodo_pagamento ? ' · ' + m.metodo_pagamento : ''} ${m.pagato === false ? '· <span style="color:#991B1B">Da pagare</span>' : ''} ${m.note ? '· ' + m.note : ''}</div>
     </div>
     ${rimborsoBadge}
-    ${m.fondo === 'Dora' ? '<span class="badge" style="background:#EDE4FB;color:#7C3AED;">Dora</span>' : ''}
     <span style="font-weight:600;color:${color};white-space:nowrap;">€ ${parseFloat(m.importo).toFixed(2)}</span>
     <button class="btn btn-sm" onclick='openModalMovimentoCassa(${JSON.stringify(m).replace(/'/g,"\\'")})'><i class="ti ti-edit"></i></button>
     <button class="btn btn-sm" style="color:#991B1B" onclick="eliminaMovimentoCassa('${m.id}')"><i class="ti ti-trash"></i></button>
@@ -1511,17 +1510,6 @@ function aggiornaBilancioSagra() {
   document.getElementById('ms-tot-uscite').textContent = '€ ' + uscite.toFixed(2);
   document.getElementById('ms-utile').textContent = '€ ' + utile.toFixed(2);
   document.getElementById('ms-utile').style.color = utile >= 0 ? 'var(--verde)' : '#991B1B';
-
-  // Dora: solo informativo su questa sagra — i saldi veri (conto/contanti) vivono in Cassa Generale
-  const doraEntrate = tuttiMovimenti.filter(m => m.tipo === 'entrata' && m.fondo === 'Dora').reduce((s, m) => s + parseFloat(m.importo), 0);
-  const doraUscite = tuttiMovimenti.filter(m => m.tipo === 'uscita' && m.fondo === 'Dora').reduce((s, m) => s + parseFloat(m.importo), 0);
-  const doraSaldo = doraEntrate - doraUscite;
-  if (document.getElementById('ms-dora')) {
-    document.getElementById('ms-dora').textContent = (doraSaldo >= 0 ? '+' : '') + '€ ' + doraSaldo.toFixed(2);
-  }
-  if (document.getElementById('ms-dora-dettaglio')) {
-    document.getElementById('ms-dora-dettaglio').textContent = `Dora — entrate: € ${doraEntrate.toFixed(2)} · uscite: € ${doraUscite.toFixed(2)}`;
-  }
 }
 
 // ===== SPONSOR =====
@@ -5056,8 +5044,173 @@ async function scaricaPDFCassa() {
   pdf.setTextColor(140, 140, 140);
   pdf.text('Per il dettaglio riga per riga di ogni movimento, esporta "Movimenti Excel".', 14, 292);
 
-  pdf.save(`bilancio_${filtroAnno}.pdf`);
+  pdf.save(`bilancio_cassa_${filtroAnno}.pdf`);
   showToast('Bilancio PDF generato!', 'success');
+}
+
+async function scaricaPDFBilancioSagra() {
+  await caricaJsPDF();
+  const { jsPDF } = window.jspdf;
+  const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const oggi = new Date().toLocaleDateString('it-IT');
+
+  const lista = tuttiMovimenti;
+  if (!lista.length) { showToast('Nessun movimento da esportare per questa sagra', 'error'); return; }
+
+  const nomeSagra = sagraSelezionata?.nome || 'Sagra';
+
+  function drawHeader(sottotitolo) {
+    pdf.setFillColor(30, 45, 71);
+    pdf.rect(0, 0, 210, 28, 'F');
+    pdf.setTextColor(201, 160, 48);
+    pdf.setFontSize(16);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text('BILANCIO SAGRA', 14, 12);
+    pdf.setFontSize(10);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(200, 216, 240);
+    pdf.text(sottotitolo || nomeSagra, 14, 20);
+    pdf.text(oggi, 196, 20, { align: 'right' });
+  }
+
+  // ===== Calcoli =====
+  const totEntrate = lista.filter(m => m.tipo === 'entrata').reduce((s,m) => s + parseFloat(m.importo||0), 0);
+  const totUscite = lista.filter(m => m.tipo === 'uscita').reduce((s,m) => s + parseFloat(m.importo||0), 0);
+  const utile = totEntrate - totUscite;
+
+  const gruppi = {};
+  lista.forEach(m => {
+    const cat = m.categoria || 'Senza categoria';
+    if (!gruppi[cat]) gruppi[cat] = { entrate: 0, uscite: 0, voci: [] };
+    if (m.tipo === 'entrata') gruppi[cat].entrate += parseFloat(m.importo || 0);
+    else gruppi[cat].uscite += parseFloat(m.importo || 0);
+    gruppi[cat].voci.push(m);
+  });
+  const categorieOrdinate = Object.entries(gruppi).sort((a,b) => (b[1].entrate + b[1].uscite) - (a[1].entrate + a[1].uscite));
+  const topEntrata = categorieOrdinate.filter(([,v]) => v.entrate > 0).sort((a,b) => b[1].entrate - a[1].entrate)[0];
+  const topUscita = categorieOrdinate.filter(([,v]) => v.uscite > 0).sort((a,b) => b[1].uscite - a[1].uscite)[0];
+
+  // ===== Pagina 1: riepilogo + grafici + testo =====
+  drawHeader();
+  let y = 38;
+
+  pdf.setFillColor(242, 237, 232);
+  pdf.rect(14, y, 182, 30, 'F');
+  const cellW = 182 / 3;
+  const voci = [
+    { label: 'Entrate', val: totEntrate, color: [47,107,79] },
+    { label: 'Uscite', val: totUscite, color: [155,44,44] },
+    { label: 'Utile', val: utile, color: utile>=0 ? [47,107,79] : [155,44,44] }
+  ];
+  voci.forEach((v, i) => {
+    const cx = 14 + i*cellW + cellW/2;
+    pdf.setFontSize(9);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(122, 101, 72);
+    pdf.text(v.label.toUpperCase(), cx, y + 11, { align: 'center' });
+    pdf.setFontSize(15);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(v.color[0], v.color[1], v.color[2]);
+    pdf.text(`€ ${v.val.toFixed(2)}`, cx, y + 22, { align: 'center' });
+  });
+  y += 40;
+
+  pdf.setFontSize(10);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(30, 45, 71);
+  pdf.text('ENTRATE VS USCITE', 14, y);
+  y += 8;
+  y = disegnaGraficoBarreOrizzontali(pdf, [
+    { label: 'Entrate', value: totEntrate, color: [47,107,79] },
+    { label: 'Uscite', value: totUscite, color: [155,44,44] }
+  ], 14, y, 120, 8, 6);
+  y += 8;
+
+  pdf.setFontSize(10);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(30, 45, 71);
+  pdf.text('LETTURA DEL BILANCIO', 14, y);
+  y += 7;
+
+  const percUscite = totEntrate > 0 ? (totUscite / totEntrate * 100) : 0;
+  let narrativa = `${nomeSagra} chiude con un utile di € ${utile.toFixed(2)} (entrate meno uscite).`;
+  narrativa += ` Le uscite corrispondono al ${percUscite.toFixed(0)}% delle entrate registrate.`;
+  if (topEntrata) narrativa += ` La voce di entrata più consistente è "${topEntrata[0]}" con € ${topEntrata[1].entrate.toFixed(2)}.`;
+  if (topUscita) narrativa += ` La voce di uscita più consistente è "${topUscita[0]}" con € ${topUscita[1].uscite.toFixed(2)}.`;
+
+  pdf.setFontSize(9);
+  pdf.setFont('helvetica', 'normal');
+  pdf.setTextColor(60, 60, 60);
+  const righeTesto = pdf.splitTextToSize(narrativa, 182);
+  pdf.text(righeTesto, 14, y);
+  y += righeTesto.length * 4.5 + 8;
+
+  const topSpese = categorieOrdinate.filter(([,v]) => v.uscite > 0).sort((a,b) => b[1].uscite - a[1].uscite).slice(0, 6);
+  if (topSpese.length) {
+    if (y > 240) { pdf.addPage(); drawHeader('Continua'); y = 38; }
+    pdf.setFontSize(10);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(30, 45, 71);
+    pdf.text('PRINCIPALI VOCI DI USCITA', 14, y);
+    y += 8;
+    y = disegnaGraficoBarreOrizzontali(pdf, topSpese.map(([cat,v]) => ({ label: cat, value: v.uscite, color: [155,44,44] })), 14, y, 100, 6.5, 5);
+  }
+
+  // ===== Pagine successive: dettaglio riga per riga, raggruppato per categoria =====
+  pdf.addPage();
+  drawHeader('Dettaglio entrate e uscite per categoria');
+  y = 38;
+
+  function drawIntestazioneColonne(yy) {
+    pdf.setFontSize(8);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(30, 45, 71);
+    pdf.text('Data', 16, yy);
+    pdf.text('Descrizione', 40, yy);
+    pdf.text('Importo', 196, yy, { align: 'right' });
+    pdf.setDrawColor(212, 201, 190);
+    pdf.line(14, yy + 2, 196, yy + 2);
+    return yy + 6;
+  }
+
+  categorieOrdinate.forEach(([cat, v]) => {
+    const voci = v.voci.slice().sort((a,b) => (a.data||'').localeCompare(b.data||''));
+    if (y > 260) { pdf.addPage(); drawHeader('Dettaglio (continua)'); y = 38; }
+
+    pdf.setFillColor(30, 45, 71);
+    pdf.rect(14, y - 4, 182, 8, 'F');
+    pdf.setFontSize(9.5);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(201, 160, 48);
+    pdf.text(cat.toUpperCase(), 16, y + 1.5);
+    const saldoCat = v.entrate - v.uscite;
+    pdf.setFontSize(8.5);
+    pdf.setTextColor(saldoCat >= 0 ? 150 : 240, saldoCat >= 0 ? 220 : 150, saldoCat >= 0 ? 170 : 150);
+    pdf.text(`${saldoCat >= 0 ? '+' : ''}€ ${saldoCat.toFixed(2)}`, 194, y + 1.5, { align: 'right' });
+    y += 10;
+    y = drawIntestazioneColonne(y);
+
+    voci.forEach((m, idx) => {
+      if (y > 275) { pdf.addPage(); drawHeader('Dettaglio (continua)'); y = 38; y = drawIntestazioneColonne(y); }
+      if (idx % 2 === 0) { pdf.setFillColor(247, 245, 242); pdf.rect(14, y - 4, 182, 7, 'F'); }
+      pdf.setFontSize(8);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(26, 26, 26);
+      pdf.text(m.data ? formatDataIT(m.data) : '—', 16, y);
+      let desc = m.descrizione + (m.fornitore ? ' — ' + m.fornitore : '');
+      while (pdf.getTextWidth(desc) > 130 && desc.length > 3) desc = desc.substring(0, desc.length - 4) + '...';
+      pdf.text(desc, 40, y);
+      const isEntrata = m.tipo === 'entrata';
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(isEntrata ? 47 : 155, isEntrata ? 107 : 44, isEntrata ? 79 : 44);
+      pdf.text(`${isEntrata ? '+' : '-'}€ ${parseFloat(m.importo).toFixed(2)}`, 196, y, { align: 'right' });
+      y += 7;
+    });
+    y += 4;
+  });
+
+  pdf.save(`bilancio_sagra_${nomeSagra.replace(/\s+/g,'_')}.pdf`);
+  showToast('Bilancio Sagra PDF generato!', 'success');
 }
 
 function esportaExcelMovimenti() {
