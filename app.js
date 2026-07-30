@@ -1643,8 +1643,9 @@ function aggiornaMetodoSponsorSelect(metodoAttuale) {
       <option value="bonifico">Bonifico</option>
       <option value="bancomat">Bancomat</option>
       <option value="pagopa">PagoPA</option>
+      <option value="addebito_diretto">Addebito Diretto</option>
     `;
-    if (metodoAttuale && !['contanti','assegno','bonifico','bancomat','pagopa'].includes((metodoAttuale||'').toLowerCase())) {
+    if (metodoAttuale && !['contanti','assegno','bonifico','bancomat','pagopa','addebito_diretto'].includes((metodoAttuale||'').toLowerCase())) {
       sel.innerHTML += `<option value="${metodoAttuale}">${metodoAttuale} (precedente)</option>`;
     }
     sel.value = metodoAttuale || 'contanti';
@@ -4252,7 +4253,29 @@ function trovaColonna(headers, candidati) {
 
 function parseImportoIT(str) {
   if (str === null || str === undefined || str === '' || str === '.' || str === '-') return null;
-  const s = String(str).trim().replace(/\./g, '').replace(',', '.').replace(/[^\d.\-]/g, '');
+  let s = String(str).trim().replace(/[^\d.,\-]/g, '');
+  if (!s) return null;
+
+  const haComma = s.includes(',');
+  const haPunto = s.includes('.');
+
+  if (haComma && haPunto) {
+    // Entrambi presenti: l'ultimo dei due è il separatore decimale (es. 1.234,56 oppure 1,234.56)
+    if (s.lastIndexOf(',') > s.lastIndexOf('.')) {
+      s = s.replace(/\./g, '').replace(',', '.'); // formato italiano: punto migliaia, virgola decimale
+    } else {
+      s = s.replace(/,/g, ''); // formato anglosassone: virgola migliaia, punto decimale (già ok)
+    }
+  } else if (haComma) {
+    // Solo virgola: è il separatore decimale (es. 2,50)
+    s = s.replace(',', '.');
+  } else if (haPunto) {
+    // Solo punto: decimale se seguito da 1-2 cifre (es. 2.50), migliaia se da 3 (es. 1.234)
+    const dopoPunto = s.split('.').pop();
+    if (dopoPunto.length === 3) s = s.replace(/\./g, '');
+    // altrimenti lascialo com'è: è già un separatore decimale valido
+  }
+
   const n = parseFloat(s);
   return isNaN(n) ? null : n;
 }
@@ -4484,8 +4507,9 @@ function aggiornaMetodoCassaSelect(metodoAttuale) {
       <option value="bonifico">Bonifico</option>
       <option value="assegno">Assegno</option>
       <option value="pagopa">PagoPA</option>
+      <option value="addebito_diretto">Addebito Diretto</option>
     `;
-    if (metodoAttuale && !['bancomat','bonifico','assegno','pagopa'].includes(metodoAttuale)) {
+    if (metodoAttuale && !['bancomat','bonifico','assegno','pagopa','addebito_diretto'].includes(metodoAttuale)) {
       sel.innerHTML += `<option value="${metodoAttuale}">${metodoAttuale} (precedente)</option>`;
     }
     sel.value = metodoAttuale && metodoAttuale !== 'contanti' ? metodoAttuale : 'bonifico';
