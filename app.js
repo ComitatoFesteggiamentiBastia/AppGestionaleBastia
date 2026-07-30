@@ -4170,6 +4170,42 @@ async function registraIncassoQuota(id) {
   renderQuote();
 }
 
+async function registraIncassoQuoteMassivo() {
+  const filtroAnno = document.getElementById('quote-filtro-anno')?.value || 'tutti';
+  let daRegistrare = tutteQuote.filter(q => q.pagato && !q.movimento_id);
+  if (filtroAnno !== 'tutti') daRegistrare = daRegistrare.filter(q => String(q.anno) === filtroAnno);
+
+  if (!daRegistrare.length) { showToast('Nessuna quota pagata da registrare' + (filtroAnno !== 'tutti' ? ` per il ${filtroAnno}` : ''), 'error'); return; }
+
+  const totale = daRegistrare.reduce((s, q) => s + parseFloat(q.importo || 0), 0);
+  const annoLabel = filtroAnno !== 'tutti' ? filtroAnno : 'vari anni';
+  const nSoci = daRegistrare.length;
+
+  if (!confirm(`Registrare ${nSoci} quote (${annoLabel}) in un UNICO movimento di entrata da € ${totale.toFixed(2)} nei Contanti Sella?`)) return;
+
+  await aggiungiCategoriaEconomiaSeNuova('entrata', 'Quote associative');
+
+  const { data: nuovoMov, error } = await db.from('movimenti').insert({
+    tipo: 'entrata',
+    categoria: 'Quote associative',
+    descrizione: `Quote associative ${annoLabel} (${nSoci} soci)`,
+    importo: totale,
+    data: new Date().toISOString().split('T')[0],
+    fondo: 'Sella',
+    sottoconto: 'contanti',
+    metodo_pagamento: 'contanti'
+    // sagra_id volutamente null: le quote non sono mai legate alla sagra
+  }).select().single();
+  if (error) { showToast('Errore: ' + error.message, 'error'); return; }
+
+  const ids = daRegistrare.map(q => q.id);
+  await db.from('quote').update({ movimento_id: nuovoMov.id }).in('id', ids);
+  daRegistrare.forEach(q => { q.movimento_id = nuovoMov.id; });
+
+  showToast(`${nSoci} quote registrate in un unico movimento da € ${totale.toFixed(2)}!`, 'success');
+  renderQuote();
+}
+
 async function eliminaQuota(id) {
   if (!confirm('Eliminare questo record quota?')) return;
   await db.from('quote').delete().eq('id', id);
@@ -4283,12 +4319,35 @@ function renderCassa() {
             </div>
             ${m.sagra_id ? '<span class="badge" style="background:#FDF0DC;color:#8A6D1D;">🎪 Sagra</span>' : ''}
             <span style="font-weight:600;color:${color};white-space:nowrap;">${segno} € ${parseFloat(m.importo).toFixed(2)}</span>
+            ${(m.tipo === 'uscita' && m.fondo === 'Sella' && m.sottoconto === 'conto') ? `<button class="btn btn-sm" style="color:#7C3AED;" onclick="convertiInPrelievo('${m.id}')" title="Genera l'entrata mancante nei Contanti Sella"><i class="ti ti-transfer"></i></button>` : ''}
             <button class="btn btn-sm" onclick='openModalMovimentoCassa(${JSON.stringify(m).replace(/"/g,"&quot;")})'><i class="ti ti-edit"></i></button>
             <button class="btn btn-sm" style="color:#991B1B" onclick="eliminaMovimentoCassa('${m.id}')"><i class="ti ti-trash"></i></button>
           </div>`;
         }).join('')}
       </div>`;
   }).join('');
+}
+
+async function convertiInPrelievo(movimentoId) {
+  const m = tuttiMovimentiCassa.find(x => x.id === movimentoId);
+  if (!m) return;
+  if (!confirm(`Genera un'entrata di € ${parseFloat(m.importo).toFixed(2)} nei Contanti Sella (stessa data, ${formatDataIT(m.data)}), collegata a questa uscita dal Conto Corrente?`)) return;
+
+  await aggiungiCategoriaEconomiaSeNuova('entrata', 'Trasferimento interno');
+  const { error } = await db.from('movimenti').insert({
+    tipo: 'entrata',
+    categoria: 'Trasferimento interno',
+    descrizione: m.descrizione,
+    importo: m.importo,
+    data: m.data,
+    fondo: 'Sella',
+    sottoconto: 'contanti',
+    metodo_pagamento: 'contanti',
+    note: 'Generato da "Converti in prelievo"'
+  });
+  if (error) { showToast('Errore: ' + error.message, 'error'); return; }
+  showToast('Entrata nei Contanti Sella creata!', 'success');
+  loadCassa();
 }
 
 function aggiornaBilancioCassa(lista) {
