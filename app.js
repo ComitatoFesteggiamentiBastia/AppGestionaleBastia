@@ -1927,16 +1927,27 @@ async function apriControlloMovimenti() {
 
   const problemi = { grave: [], media: [], info: [] };
 
-  // 1. Duplicati potenziali: stesso fornitore + stesso importo + stessa data
-  const visti = new Set();
-  movimenti.forEach(m => {
-    if (!m.fornitore) return;
-    const chiave = `${m.fornitore.toLowerCase().trim()}|${parseFloat(m.importo).toFixed(2)}|${m.data}|${m.tipo}`;
-    if (visti.has(chiave)) {
-      problemi.grave.push(`Possibile doppione: "${m.fornitore}" — € ${parseFloat(m.importo).toFixed(2)} il ${formatDataIT(m.data)} (${m.tipo}) compare più volte`);
+  // 1. Duplicati potenziali: confronta ogni coppia di movimenti (stesso tipo, stesso importo)
+  // e segnala se la data è vicina (entro 5 giorni) — copre data operazione/valuta sfalsate —
+  // oppure se hanno lo stesso fornitore anche con date più distanti
+  const MS_GIORNO_CHK = 24 * 60 * 60 * 1000;
+  const segnalati = new Set();
+  for (let i = 0; i < movimenti.length; i++) {
+    for (let j = i + 1; j < movimenti.length; j++) {
+      const a = movimenti[i], b = movimenti[j];
+      if (a.tipo !== b.tipo || !a.data || !b.data) continue;
+      if (Math.abs(parseFloat(a.importo) - parseFloat(b.importo)) >= 0.01) continue;
+      const diffGiorni = Math.abs((new Date(a.data) - new Date(b.data)) / MS_GIORNO_CHK);
+      const stessoFornitore = a.fornitore && b.fornitore && a.fornitore.toLowerCase().trim() === b.fornitore.toLowerCase().trim();
+      const vicino = diffGiorni <= 5;
+      if (vicino || stessoFornitore) {
+        const chiaveCoppia = [a.id, b.id].sort().join('|');
+        if (segnalati.has(chiaveCoppia)) continue;
+        segnalati.add(chiaveCoppia);
+        problemi.grave.push(`Possibile doppione: "${a.descrizione}"${a.fornitore ? ' — ' + a.fornitore : ''} (${formatDataIT(a.data)}) e "${b.descrizione}"${b.fornitore ? ' — ' + b.fornitore : ''} (${formatDataIT(b.data)}) — stesso importo € ${parseFloat(a.importo).toFixed(2)}, stesso tipo`);
+      }
     }
-    visti.add(chiave);
-  });
+  }
 
   // 2. Dati incompleti
   movimenti.forEach(m => {
