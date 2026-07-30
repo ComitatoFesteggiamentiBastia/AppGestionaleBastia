@@ -333,8 +333,11 @@ async function loadDashboard() {
     .gte('data', `${annoCorrenteCassa}-01-01`).lte('data', `${annoCorrenteCassa}-12-31`);
   let saldo = 0;
   movimenti?.forEach(m => { saldo += m.tipo === 'entrata' ? +m.importo : -m.importo; });
-  const { data: saldoInizialeData } = await db.from('saldi_iniziali_cassa').select('*').eq('anno', annoCorrenteCassa).maybeSingle();
-  if (saldoInizialeData) saldo += parseFloat(saldoInizialeData.saldo_conto_corrente || 0) + parseFloat(saldoInizialeData.saldo_contanti || 0);
+  const { data: saldoInizialeData } = await db.from('saldi_iniziali').select('*').eq('anno', annoCorrenteCassa).maybeSingle();
+  if (saldoInizialeData) {
+    saldo += parseFloat(saldoInizialeData.saldo_conto_sella || 0) + parseFloat(saldoInizialeData.saldo_contanti_sella || 0)
+           + parseFloat(saldoInizialeData.saldo_conto_dora || 0) + parseFloat(saldoInizialeData.saldo_contanti_dora || 0);
+  }
   document.getElementById('dash-saldo').textContent = '€ ' + saldo.toFixed(2);
 
   const { count: nVol } = await db.from('volontari').select('*', { count: 'exact', head: true }).eq('attivo', true);
@@ -1490,28 +1493,28 @@ function rowMovimento(m) {
   return `<div class="table-row">
     <div style="flex:1;">
       <div class="row-name">${m.descrizione}${m.fornitore ? ' — <span style="color:var(--testo-muted)">' + m.fornitore + '</span>' : ''}${m.fattura_url ? ` <a href="${m.fattura_url}" target="_blank" title="Vedi fattura/scontrino" onclick="event.stopPropagation()">📎</a>` : ''}</div>
-      <div class="row-sub">${m.categoria || ''} · ${m.data ? formatDataIT(m.data) : ''} · ${m.metodo_pagamento || ''} · <span style="font-weight:600;">${m.fondo === 'DORA' ? 'Dora' : (m.fondo || 'Banca')}</span> ${m.offerta ? '· <span style="color:var(--oro)">Offerta</span>' : ''} ${m.pagato === false ? '· <span style="color:#991B1B">Da pagare</span>' : ''} ${m.nota_pagamento ? '· ' + m.nota_pagamento : ''}</div>
+      <div class="row-sub">${m.categoria || ''} · ${m.data ? formatDataIT(m.data) : ''} · <span style="font-weight:600;">${etichettaSottoconto(m)}</span>${m.metodo_pagamento ? ' · ' + m.metodo_pagamento : ''} ${m.pagato === false ? '· <span style="color:#991B1B">Da pagare</span>' : ''} ${m.note ? '· ' + m.note : ''}</div>
     </div>
     ${rimborsoBadge}
-    ${m.fondo === 'DORA' ? '<span class="badge" style="background:#EDE4FB;color:#7C3AED;">Dora</span>' : ''}
+    ${m.fondo === 'Dora' ? '<span class="badge" style="background:#EDE4FB;color:#7C3AED;">Dora</span>' : ''}
     <span style="font-weight:600;color:${color};white-space:nowrap;">€ ${parseFloat(m.importo).toFixed(2)}</span>
-    <button class="btn btn-sm" onclick='openModalMovimento(${JSON.stringify(m).replace(/'/g,"\\'")})'><i class="ti ti-edit"></i></button>
-    <button class="btn btn-sm" style="color:#991B1B" onclick="eliminaMovimento('${m.id}')"><i class="ti ti-trash"></i></button>
+    <button class="btn btn-sm" onclick='openModalMovimentoCassa(${JSON.stringify(m).replace(/'/g,"\\'")})'><i class="ti ti-edit"></i></button>
+    <button class="btn btn-sm" style="color:#991B1B" onclick="eliminaMovimentoCassa('${m.id}')"><i class="ti ti-trash"></i></button>
   </div>`;
 }
 
 function aggiornaBilancioSagra() {
-  const entrate = tuttiMovimenti.filter(m => m.tipo === 'entrata' && m.a_bilancio !== false).reduce((s, m) => s + parseFloat(m.importo), 0);
-  const uscite = tuttiMovimenti.filter(m => m.tipo === 'uscita' && m.a_bilancio !== false && !m.offerta).reduce((s, m) => s + parseFloat(m.importo), 0);
+  const entrate = tuttiMovimenti.filter(m => m.tipo === 'entrata').reduce((s, m) => s + parseFloat(m.importo), 0);
+  const uscite = tuttiMovimenti.filter(m => m.tipo === 'uscita').reduce((s, m) => s + parseFloat(m.importo), 0);
   const utile = entrate - uscite;
   document.getElementById('ms-tot-entrate').textContent = '€ ' + entrate.toFixed(2);
   document.getElementById('ms-tot-uscite').textContent = '€ ' + uscite.toFixed(2);
   document.getElementById('ms-utile').textContent = '€ ' + utile.toFixed(2);
   document.getElementById('ms-utile').style.color = utile >= 0 ? 'var(--verde)' : '#991B1B';
 
-  // DORA: solo informativo su questa sagra — i saldi veri (conto corrente/contanti/cassetta) vivono in Cassa Generale
-  const doraEntrate = tuttiMovimenti.filter(m => m.tipo === 'entrata' && m.fondo === 'DORA').reduce((s, m) => s + parseFloat(m.importo), 0);
-  const doraUscite = tuttiMovimenti.filter(m => m.tipo === 'uscita' && m.fondo === 'DORA').reduce((s, m) => s + parseFloat(m.importo), 0);
+  // Dora: solo informativo su questa sagra — i saldi veri (conto/contanti) vivono in Cassa Generale
+  const doraEntrate = tuttiMovimenti.filter(m => m.tipo === 'entrata' && m.fondo === 'Dora').reduce((s, m) => s + parseFloat(m.importo), 0);
+  const doraUscite = tuttiMovimenti.filter(m => m.tipo === 'uscita' && m.fondo === 'Dora').reduce((s, m) => s + parseFloat(m.importo), 0);
   const doraSaldo = doraEntrate - doraUscite;
   if (document.getElementById('ms-dora')) {
     document.getElementById('ms-dora').textContent = (doraSaldo >= 0 ? '+' : '') + '€ ' + doraSaldo.toFixed(2);
@@ -1519,129 +1522,6 @@ function aggiornaBilancioSagra() {
   if (document.getElementById('ms-dora-dettaglio')) {
     document.getElementById('ms-dora-dettaglio').textContent = `Dora — entrate: € ${doraEntrate.toFixed(2)} · uscite: € ${doraUscite.toFixed(2)}`;
   }
-}
-
-function aggiornaMetodoMovSelect(metodoAttuale) {
-  const fondo = document.getElementById('m-mov-fondo').value;
-  const sel = document.getElementById('m-mov-metodo');
-  if (fondo === 'DORA') {
-    sel.disabled = false;
-    sel.innerHTML = `
-      <option value="cassetta">Cassetta</option>
-      <option value="contanti">Contanti</option>
-    `;
-    sel.value = (metodoAttuale === 'cassetta') ? 'cassetta' : 'contanti';
-  } else {
-    sel.disabled = false;
-    sel.innerHTML = `
-      <option value="contanti">Contanti</option>
-      <option value="assegno">Assegno</option>
-      <option value="bonifico">Bonifico</option>
-      <option value="bancomat">Bancomat</option>
-      <option value="pagopa">PagoPA</option>
-    `;
-    if (metodoAttuale && !['contanti','assegno','bonifico','bancomat','pagopa'].includes(metodoAttuale)) {
-      sel.innerHTML += `<option value="${metodoAttuale}">${metodoAttuale} (precedente)</option>`;
-    }
-    sel.value = metodoAttuale || 'contanti';
-  }
-}
-
-function openModalMovimento(m = null) {
-  document.getElementById('modal-movimento').style.display = 'flex';
-  document.getElementById('modal-movimento').style.pointerEvents = 'auto';
-  buildCategorieSelect('m-mov-categoria', 'cassa');
-  document.getElementById('m-mov-id').value = m?.id || '';
-  document.getElementById('m-mov-tipo').value = m?.tipo || 'entrata';
-  document.getElementById('m-mov-categoria').value = m?.categoria || '';
-  document.getElementById('m-mov-descrizione').value = m?.descrizione || '';
-  document.getElementById('m-mov-fornitore').value = m?.fornitore || '';
-  document.getElementById('m-mov-importo').value = m?.importo || '';
-  document.getElementById('m-mov-data').value = m?.data || new Date().toISOString().split('T')[0];
-  document.getElementById('m-mov-fondo').value = m?.fondo || 'Banca';
-  aggiornaMetodoMovSelect(m?.metodo_pagamento);
-  document.getElementById('m-mov-pagato').checked = m ? (m.pagato !== false) : true;
-  document.getElementById('m-mov-offerta').checked = m?.offerta || false;
-  document.getElementById('m-mov-bilancio').checked = m ? (m.a_bilancio !== false) : true;
-  document.getElementById('m-mov-nota-pagamento').value = m?.nota_pagamento || '';
-  document.getElementById('m-mov-rimborso').value = m?.rimborso_stato || 'nessuno';
-  document.getElementById('m-mov-fattura-url').value = m?.fattura_url || '';
-  document.getElementById('m-mov-fattura-file').value = '';
-  document.getElementById('m-mov-fattura-preview').innerHTML = m?.fattura_url
-    ? `<a href="${m.fattura_url}" target="_blank" style="color:var(--blu);">📎 Vedi allegato attuale</a>`
-    : '';
-}
-
-function anteprimaFatturaMovimento() {
-  const file = document.getElementById('m-mov-fattura-file').files[0];
-  if (!file) return;
-  document.getElementById('m-mov-fattura-preview').innerHTML = `<span style="color:var(--testo-muted);">📎 ${file.name} (verrà caricato al salvataggio)</span>`;
-}
-
-function closeModalMovimento() {
-  const m = document.getElementById('modal-movimento');
-  m.style.display = 'none';
-  m.style.pointerEvents = 'none';
-}
-
-async function saveMovimento() {
-  const sagraId = getSagraId();
-  if (!sagraId) { showToast('Seleziona prima un\'edizione sagra', 'error'); return; }
-  const descrizione = document.getElementById('m-mov-descrizione').value.trim();
-  const importo = parseFloat(document.getElementById('m-mov-importo').value);
-  if (!descrizione || isNaN(importo)) { showToast('Descrizione e importo obbligatori', 'error'); return; }
-
-  // Upload fattura se è stato selezionato un nuovo file
-  let fatturaUrl = document.getElementById('m-mov-fattura-url').value || null;
-  const fatturaFile = document.getElementById('m-mov-fattura-file').files[0];
-  if (fatturaFile) {
-    const ext = fatturaFile.name.split('.').pop();
-    const path = `${descrizione.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}-${Date.now()}.${ext}`;
-    const { error: eUpload } = await db.storage.from('fatture-spesa').upload(path, fatturaFile, { upsert: true });
-    if (eUpload) {
-      showToast('Errore upload fattura: ' + eUpload.message, 'error');
-    } else {
-      const { data: pub } = db.storage.from('fatture-spesa').getPublicUrl(path);
-      fatturaUrl = pub.publicUrl;
-    }
-  }
-
-  const payload = {
-    sagra_id: sagraId,
-    tipo: document.getElementById('m-mov-tipo').value,
-    categoria: document.getElementById('m-mov-categoria').value.trim() || null,
-    descrizione,
-    fornitore: document.getElementById('m-mov-fornitore').value.trim() || null,
-    importo,
-    data: document.getElementById('m-mov-data').value,
-    metodo_pagamento: document.getElementById('m-mov-metodo').value || null,
-    fondo: document.getElementById('m-mov-fondo').value || 'Banca',
-    pagato: document.getElementById('m-mov-pagato').checked,
-    offerta: document.getElementById('m-mov-offerta').checked,
-    a_bilancio: document.getElementById('m-mov-bilancio').checked,
-    nota_pagamento: document.getElementById('m-mov-nota-pagamento').value.trim() || null,
-    rimborso_stato: document.getElementById('m-mov-rimborso').value,
-    fattura_url: fatturaUrl
-  };
-
-  const id = document.getElementById('m-mov-id').value;
-  let error;
-  if (id) {
-    ({ error } = await db.from('movimenti').update(payload).eq('id', id));
-  } else {
-    ({ error } = await db.from('movimenti').insert(payload));
-  }
-  if (error) { showToast('Errore: ' + error.message, 'error'); return; }
-  showToast('Salvato!', 'success');
-  closeModalMovimento();
-  loadMovimentiSagra();
-}
-
-async function eliminaMovimento(id) {
-  if (!confirm('Eliminare questo movimento?')) return;
-  await db.from('movimenti').delete().eq('id', id);
-  showToast('Eliminato', 'success');
-  loadMovimentiSagra();
 }
 
 // ===== SPONSOR =====
@@ -1744,16 +1624,18 @@ function renderSponsor() {
 }
 
 function aggiornaMetodoSponsorSelect(metodoAttuale) {
-  const fondo = document.getElementById('m-sp-fondo').value;
+  const ricevuta = document.getElementById('m-sp-ricevuta').value;
   const sel = document.getElementById('m-sp-modo');
-  if (fondo === 'DORA') {
-    sel.disabled = false;
-    sel.innerHTML = `
-      <option value="cassetta">Cassetta</option>
-      <option value="contanti">Contanti</option>
-    `;
-    sel.value = (metodoAttuale === 'cassetta') ? 'cassetta' : 'contanti';
+  const info = document.getElementById('m-sp-fondo-info');
+
+  if (ricevuta === 'no') {
+    // Nessuna ricevuta emessa: contributo "in nero", va sempre nel fondo Dora, sempre contanti
+    sel.innerHTML = `<option value="contanti">Contanti</option>`;
+    sel.value = 'contanti';
+    sel.disabled = true;
+    if (info) info.textContent = 'Fondo: Dora — Contanti Dora (nessuna ricevuta emessa)';
   } else {
+    // Ricevuta da fare o fatta: contributo tracciato, va nel fondo Sella
     sel.disabled = false;
     sel.innerHTML = `
       <option value="contanti">Contanti</option>
@@ -1766,6 +1648,11 @@ function aggiornaMetodoSponsorSelect(metodoAttuale) {
       sel.innerHTML += `<option value="${metodoAttuale}">${metodoAttuale} (precedente)</option>`;
     }
     sel.value = metodoAttuale || 'contanti';
+    if (info) {
+      const sottoconto = sel.value === 'contanti' ? 'Contanti Sella' : 'Conto Sella';
+      info.textContent = `Fondo: Sella — ${sottoconto}`;
+    }
+    sel.onchange = () => aggiornaMetodoSponsorSelect(sel.value);
   }
 }
 
@@ -1777,10 +1664,9 @@ function openModalSponsor(s = null) {
   document.getElementById('m-sp-tipo').value = s?.tipo || 'offerta';
   document.getElementById('m-sp-importo').value = s?.importo || '';
   document.getElementById('m-sp-dettaglio').value = s?.dettaglio || '';
-  document.getElementById('m-sp-fondo').value = s?.fondo || 'Banca';
+  document.getElementById('m-sp-ricevuta').value = s?.ricevuta_stato || 'da_fare';
   aggiornaMetodoSponsorSelect(s?.modo_pagamento);
   document.getElementById('m-sp-ricevuto').checked = s?.ricevuto || false;
-  document.getElementById('m-sp-ricevuta').value = s?.ricevuta_stato || 'da_fare';
   document.getElementById('m-sp-pubblica').checked = s?.pubblica_sito || false;
   document.getElementById('m-sp-note').value = s?.note || '';
   document.getElementById('m-sp-logo-url').value = s?.logo_url || '';
@@ -1840,7 +1726,10 @@ async function saveSponsor() {
   const tipo = document.getElementById('m-sp-tipo').value;
   const dettaglio = document.getElementById('m-sp-dettaglio').value.trim() || null;
   const modo = document.getElementById('m-sp-modo').value.trim() || null;
-  const fondo = document.getElementById('m-sp-fondo').value || 'Banca';
+  // Fondo determinato automaticamente dallo stato della ricevuta (non è una scelta manuale)
+  const fondo = ricevutaStato === 'no' ? 'Dora' : 'Sella';
+  const sottoconto = fondo === 'Dora' ? 'contanti' : ((modo === 'contanti' || !modo) ? 'contanti' : 'conto');
+  const metodoEffettivo = fondo === 'Dora' ? 'contanti' : (modo || 'contanti');
 
   // Upload logo se è stato selezionato un nuovo file
   let logoUrl = document.getElementById('m-sp-logo-url').value || null;
@@ -1860,7 +1749,7 @@ async function saveSponsor() {
   const payload = {
     sagra_id: sagraId,
     ditta, tipo, importo, dettaglio,
-    modo_pagamento: modo,
+    modo_pagamento: metodoEffettivo,
     fondo,
     ricevuto: ricevutoNuovo,
     ricevuta_stato: ricevutaStato,
@@ -1891,7 +1780,7 @@ async function saveSponsor() {
   // Sincronizza SEMPRE il movimento collegato in Entrate/Uscite Sagra (non solo la prima volta)
   if (ricevutoNuovo && importo && importo > 0) {
     const oggi = new Date().toISOString().split('T')[0];
-    await aggiungiCategoriaCassaSeNuova('SPONSOR');
+    await aggiungiCategoriaEconomiaSeNuova('entrata', 'SPONSOR');
     const datiMovimento = {
       sagra_id: sagraId,
       tipo: 'entrata',
@@ -1900,11 +1789,9 @@ async function saveSponsor() {
       fornitore: ditta,
       importo,
       data: oggi,
-      metodo_pagamento: (modo || 'contanti').toLowerCase(),
+      metodo_pagamento: metodoEffettivo,
       fondo,
-      pagato: true,
-      offerta: false,
-      a_bilancio: true
+      sottoconto
     };
 
     if (movimentoSagraId) {
@@ -1946,9 +1833,25 @@ async function toggleRicevutaSponsor(id) {
   const ordine = ['da_fare', 'fatta', 'no'];
   const attuale = s.ricevuta_stato || 'da_fare';
   const nuovoStato = ordine[(ordine.indexOf(attuale) + 1) % ordine.length];
-  const { error } = await db.from('sponsor').update({ ricevuta_stato: nuovoStato }).eq('id', id);
+
+  // Il fondo dipende dallo stato ricevuta: 'no' → Dora (sempre contanti), altrimenti Sella
+  const nuovoFondo = nuovoStato === 'no' ? 'Dora' : 'Sella';
+  const nuovoMetodo = nuovoFondo === 'Dora' ? 'contanti' : (s.modo_pagamento && s.modo_pagamento !== 'contanti' ? s.modo_pagamento : 'contanti');
+  const nuovoSottoconto = nuovoFondo === 'Dora' ? 'contanti' : (nuovoMetodo === 'contanti' ? 'contanti' : 'conto');
+
+  const { error } = await db.from('sponsor').update({
+    ricevuta_stato: nuovoStato, fondo: nuovoFondo, modo_pagamento: nuovoMetodo
+  }).eq('id', id);
   if (error) { showToast('Errore: ' + error.message, 'error'); return; }
   s.ricevuta_stato = nuovoStato;
+  s.fondo = nuovoFondo;
+  s.modo_pagamento = nuovoMetodo;
+
+  // Aggiorna anche il movimento collegato, se esiste ed è ricevuto
+  if (s.ricevuto && s.movimento_sagra_id) {
+    await db.from('movimenti').update({ fondo: nuovoFondo, sottoconto: nuovoSottoconto, metodo_pagamento: nuovoMetodo }).eq('id', s.movimento_sagra_id);
+  }
+
   renderSponsor();
 }
 
@@ -2012,120 +1915,53 @@ async function aggiungiFornitoireSeNuovo(nome) {
   renderFornitoriTabella();
 }
 
-async function aggiungiCategoriaCassaSeNuova(nome) {
-  if (!nome || categorieCassa.find(c => c.nome === nome)) return nome;
-  await db.from('categorie').insert({ tipo: 'cassa', nome });
-  await loadCategorie();
-  return nome;
+function openModalTrasferimento() {
+  document.getElementById('modal-trasferimento').style.display = 'flex';
+  document.getElementById('modal-trasferimento').style.pointerEvents = 'auto';
+  document.getElementById('tr-fondo').value = 'Sella';
+  document.getElementById('tr-direzione').value = 'prelievo';
+  document.getElementById('tr-importo').value = '';
+  document.getElementById('tr-data').value = new Date().toISOString().split('T')[0];
+  document.getElementById('tr-nota').value = '';
 }
 
-function openModalPrelievoCassetta() {
-  document.getElementById('modal-prelievo-cassetta').style.display = 'flex';
-  document.getElementById('modal-prelievo-cassetta').style.pointerEvents = 'auto';
-  document.getElementById('pc-importo').value = '';
-  document.getElementById('pc-data').value = new Date().toISOString().split('T')[0];
-  document.getElementById('pc-nota').value = '';
-}
-
-function closeModalPrelievoCassetta() {
-  const m = document.getElementById('modal-prelievo-cassetta');
+function closeModalTrasferimento() {
+  const m = document.getElementById('modal-trasferimento');
   m.style.display = 'none';
   m.style.pointerEvents = 'none';
 }
 
-async function confermaPrelievoCassetta() {
-  const importo = parseFloat(document.getElementById('pc-importo').value);
+async function confermaTrasferimento() {
+  const importo = parseFloat(document.getElementById('tr-importo').value);
   if (!importo || importo <= 0) { showToast('Inserisci un importo valido', 'error'); return; }
-  const data = document.getElementById('pc-data').value;
-  const nota = document.getElementById('pc-nota').value.trim() || null;
-  await aggiungiCategoriaCassaSeNuova('Trasferimento a contanti');
+  const fondo = document.getElementById('tr-fondo').value;
+  const direzione = document.getElementById('tr-direzione').value; // 'prelievo' | 'versamento'
+  const data = document.getElementById('tr-data').value;
+  const nota = document.getElementById('tr-nota').value.trim() || null;
+
+  const categoria = 'Trasferimento interno';
+  await aggiungiCategoriaEconomiaSeNuova('uscita', categoria);
+  await aggiungiCategoriaEconomiaSeNuova('entrata', categoria);
+
+  const descrizione = direzione === 'prelievo'
+    ? `Prelievo ${fondo} (Conto → Contanti)`
+    : `Versamento ${fondo} (Contanti → Conto)`;
+
+  // Prelievo: uscita dal Conto + entrata nei Contanti. Versamento: il contrario.
+  const sottocontoOrigine = direzione === 'prelievo' ? 'conto' : 'contanti';
+  const sottocontoDestinazione = direzione === 'prelievo' ? 'contanti' : 'conto';
+  const metodoOrigine = (fondo === 'Sella' && sottocontoOrigine === 'conto') ? 'bonifico' : 'contanti';
+  const metodoDestinazione = (fondo === 'Sella' && sottocontoDestinazione === 'conto') ? 'bonifico' : 'contanti';
 
   const { error } = await db.from('movimenti').insert([
-    { tipo: 'uscita', categoria: 'Trasferimento a contanti', descrizione: 'Prelievo da Cassetta Dora', importo, data, metodo_pagamento: 'cassetta', fondo: 'DORA', note: nota },
-    { tipo: 'entrata', categoria: 'Trasferimento a contanti', descrizione: 'Prelievo da Cassetta Dora', importo, data, metodo_pagamento: 'contanti', fondo: 'DORA', note: nota }
+    { tipo: 'uscita', categoria, descrizione, importo, data, fondo, sottoconto: sottocontoOrigine, metodo_pagamento: metodoOrigine, note: nota },
+    { tipo: 'entrata', categoria, descrizione, importo, data, fondo, sottoconto: sottocontoDestinazione, metodo_pagamento: metodoDestinazione, note: nota }
   ]);
   if (error) { showToast('Errore: ' + error.message, 'error'); return; }
 
-  closeModalPrelievoCassetta();
-  showToast('Prelievo registrato!', 'success');
+  closeModalTrasferimento();
+  showToast('Trasferimento registrato!', 'success');
   loadCassa();
-}
-
-function openModalGestioneCategorieCassa() {
-  document.getElementById('modal-gestione-categorie-cassa').style.display = 'flex';
-  document.getElementById('modal-gestione-categorie-cassa').style.pointerEvents = 'auto';
-  document.getElementById('gcc-nuova').value = '';
-  renderListaCategorieCassa();
-}
-
-function closeModalGestioneCategorieCassa() {
-  const m = document.getElementById('modal-gestione-categorie-cassa');
-  m.style.display = 'none';
-  m.style.pointerEvents = 'none';
-  renderCassa();
-}
-
-function renderListaCategorieCassa() {
-  const cont = document.getElementById('gcc-lista');
-  const ordinate = categorieCassa.slice().sort((a,b) => a.nome.localeCompare(b.nome));
-  if (!ordinate.length) {
-    cont.innerHTML = '<div style="padding:16px;text-align:center;color:var(--testo-muted);font-size:13px;">Nessuna categoria, creane una sopra</div>';
-    return;
-  }
-  cont.innerHTML = ordinate.map(c => {
-    const nUso = tuttiMovimentiCassa.filter(m => m.categoria === c.nome).length;
-    return `
-    <div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border);">
-      <input value="${c.nome}" id="gcc-nome-${c.id}" style="flex:1;padding:6px 10px;border:1px solid #D4C9BE;border-radius:6px;font-size:13px;">
-      <span style="font-size:11px;color:var(--testo-muted);white-space:nowrap;">${nUso} mov.</span>
-      <button class="btn btn-sm" onclick="rinominaCategoriaCassa('${c.id}')" title="Salva nome"><i class="ti ti-check"></i></button>
-      <button class="btn btn-sm" style="color:#991B1B" onclick="eliminaCategoriaCassa('${c.id}','${c.nome.replace(/'/g,"\\'")}')"><i class="ti ti-trash"></i></button>
-    </div>`;
-  }).join('');
-}
-
-async function aggiungiCategoriaCassaManuale() {
-  const nome = document.getElementById('gcc-nuova').value.trim();
-  if (!nome) { showToast('Inserisci un nome', 'error'); return; }
-  if (categorieCassa.some(c => c.nome.toLowerCase() === nome.toLowerCase())) {
-    showToast('Categoria già esistente', 'error'); return;
-  }
-  const { error } = await db.from('categorie').insert({ tipo: 'cassa', nome });
-  if (error) { showToast('Errore: ' + error.message, 'error'); return; }
-  await loadCategorie();
-  document.getElementById('gcc-nuova').value = '';
-  renderListaCategorieCassa();
-  showToast('Categoria aggiunta!', 'success');
-}
-
-async function rinominaCategoriaCassa(id) {
-  const nuovoNome = document.getElementById('gcc-nome-' + id).value.trim();
-  if (!nuovoNome) { showToast('Il nome non può essere vuoto', 'error'); return; }
-  const cat = categorieCassa.find(c => c.id === id);
-  if (!cat || nuovoNome === cat.nome) return;
-  const vecchioNome = cat.nome;
-
-  const { error } = await db.from('categorie').update({ nome: nuovoNome }).eq('id', id);
-  if (error) { showToast('Errore: ' + error.message, 'error'); return; }
-  // Aggiorna anche i movimenti che usano il vecchio nome
-  await db.from('movimenti').update({ categoria: nuovoNome }).eq('categoria', vecchioNome);
-
-  await loadCategorie();
-  await loadCassa();
-  renderListaCategorieCassa();
-  showToast('Categoria rinominata!', 'success');
-}
-
-async function eliminaCategoriaCassa(id, nome) {
-  const nUso = tuttiMovimentiCassa.filter(m => m.categoria === nome).length;
-  const msg = nUso
-    ? `Questa categoria è usata da ${nUso} movimenti, che resteranno con quel nome ma non più selezionabile dal menu. Eliminarla comunque?`
-    : 'Eliminare questa categoria?';
-  if (!confirm(msg)) return;
-  await db.from('categorie').delete().eq('id', id);
-  await loadCategorie();
-  renderListaCategorieCassa();
-  showToast('Categoria eliminata', 'success');
 }
 
 // ===== PDF LISTA SPESA PER FORNITORE =====
@@ -2399,7 +2235,8 @@ function apriChiusuraOrdineFornitore(fornitore) {
   document.getElementById('titolo-modal-chiudi-ordine').textContent = `Chiudi ordine — ${fornitore}`;
   document.getElementById('co-fornitore').value = fornitore;
   document.getElementById('co-data').value = new Date().toISOString().split('T')[0];
-  document.getElementById('co-metodo').value = 'contanti';
+  document.getElementById('co-fondo').value = 'Sella';
+  aggiornaSottocontoOrdineFornitore();
   document.getElementById('co-nota').value = '';
   document.getElementById('co-sconto').value = 0;
 
@@ -2417,6 +2254,24 @@ function apriChiusuraOrdineFornitore(fornitore) {
   // Salva temporaneamente gli id coinvolti per l'invio
   window._ordineFornitoreArticoliIds = articoli.map(a => a.id);
   window._ordineFornitoreCategoria = articoli[0]?.categoria || 'Spesa varie';
+}
+
+function aggiornaSottocontoOrdineFornitore() {
+  const fondo = document.getElementById('co-fondo').value;
+  const sel = document.getElementById('co-sottoconto');
+  if (fondo === 'Dora') {
+    sel.innerHTML = `<option value="conto">Conto Dora (cassetta)</option><option value="contanti">Contanti Dora</option>`;
+  } else {
+    sel.innerHTML = `<option value="conto">Conto Corrente</option><option value="contanti">Contanti Sella</option>`;
+  }
+  aggiornaMetodoOrdineFornitore();
+}
+
+function aggiornaMetodoOrdineFornitore() {
+  const fondo = document.getElementById('co-fondo').value;
+  const sottoconto = document.getElementById('co-sottoconto').value;
+  const wrap = document.getElementById('co-metodo-wrap');
+  wrap.style.display = (fondo === 'Sella' && sottoconto === 'conto') ? 'block' : 'none';
 }
 
 function aggiornaTotaleOrdineFornitore() {
@@ -2442,7 +2297,12 @@ async function confermaChiusuraOrdineFornitore() {
   const sconto = parseFloat(document.getElementById('co-sconto').value) || 0;
   const netto = Math.max(0, lordo - sconto);
   const categoria = window._ordineFornitoreCategoria || 'Spesa varie';
-  await aggiungiCategoriaCassaSeNuova(categoria);
+  await aggiungiCategoriaEconomiaSeNuova('uscita', categoria);
+
+  const fondo = document.getElementById('co-fondo').value;
+  const sottoconto = document.getElementById('co-sottoconto').value;
+  const metodoPagamento = (fondo === 'Sella' && sottoconto === 'conto')
+    ? document.getElementById('co-metodo').value : 'contanti';
 
   const numArticoli = ids.length;
   const descrizione = `Ordine (${numArticoli} articol${numArticoli===1?'o':'i'})`;
@@ -2457,12 +2317,9 @@ async function confermaChiusuraOrdineFornitore() {
     sconto,
     importo: netto,
     data: document.getElementById('co-data').value,
-    metodo_pagamento: document.getElementById('co-metodo').value,
-    fondo: 'Banca',
-    pagato: true,
-    offerta: false,
-    a_bilancio: true,
-    rimborso_stato: 'nessuno',
+    metodo_pagamento: metodoPagamento,
+    fondo,
+    sottoconto,
     note: document.getElementById('co-nota').value.trim() || null
   };
 
@@ -4117,6 +3974,11 @@ function renderQuote() {
       </td>
       <td style="padding:9px 14px;text-align:center;white-space:nowrap;">
         <span style="font-size:12px;color:var(--testo-muted);">${q.data_pagamento ? formatDataIT(q.data_pagamento) : '—'}</span>
+        ${q.pagato
+          ? (q.movimento_id
+              ? '<span class="badge badge-ok" title="Registrato in Cassa Generale" style="margin-left:6px;">✓ Registrato</span>'
+              : `<button class="btn btn-sm" style="margin-left:6px;color:var(--verde);" onclick="registraIncassoQuota('${q.id}')" title="Registra l'incasso in Cassa Generale"><i class="ti ti-cash-register"></i> Registra incasso</button>`)
+          : ''}
         <button class="btn btn-sm" onclick="eliminaQuota('${q.id}')" style="color:#991B1B;margin-left:4px;"><i class="ti ti-trash"></i></button>
       </td>
     </tr>
@@ -4131,6 +3993,34 @@ function aggiornaStatsQuote() {
   if (document.getElementById('q-stat-pagate')) document.getElementById('q-stat-pagate').textContent = pagate;
   if (document.getElementById('q-stat-totale')) document.getElementById('q-stat-totale').textContent = '€ ' + totIncassato.toFixed(2);
   if (document.getElementById('q-stat-anno')) document.getElementById('q-stat-anno').textContent = anno;
+}
+
+async function registraIncassoQuota(id) {
+  const q = tutteQuote.find(x => x.id === id);
+  if (!q) return;
+  if (q.movimento_id) { showToast('Già registrato', 'error'); return; }
+
+  await aggiungiCategoriaEconomiaSeNuova('entrata', 'Quote associative');
+  const nomeSocio = q.soci ? `${q.soci.cognome} ${q.soci.nome}` : 'Socio';
+
+  const { data: nuovoMov, error } = await db.from('movimenti').insert({
+    tipo: 'entrata',
+    categoria: 'Quote associative',
+    descrizione: `Quota ${q.anno}`,
+    fornitore: nomeSocio,
+    importo: parseFloat(q.importo || 0),
+    data: q.data_pagamento || new Date().toISOString().split('T')[0],
+    fondo: 'Sella',
+    sottoconto: 'contanti',
+    metodo_pagamento: 'contanti'
+    // sagra_id volutamente null: le quote non sono mai legate alla sagra
+  }).select().single();
+  if (error) { showToast('Errore: ' + error.message, 'error'); return; }
+
+  await db.from('quote').update({ movimento_id: nuovoMov.id }).eq('id', id);
+  q.movimento_id = nuovoMov.id;
+  showToast('Incasso registrato in Cassa Generale!', 'success');
+  renderQuote();
 }
 
 async function eliminaQuota(id) {
@@ -4150,9 +4040,9 @@ let tuttiSaldiIniziali = [];
 async function loadCassa() {
   const [movRes, saldiRes] = await Promise.all([
     db.from('movimenti').select('*').order('data', { ascending: false }),
-    db.from('saldi_iniziali_cassa').select('*')
+    db.from('saldi_iniziali').select('*')
   ]);
-  // Esclude qualunque movimento antecedente all'inizio della contabilità (es. 2025 e prima)
+  // Esclude qualunque movimento antecedente all'inizio della contabilità (1 gennaio 2026)
   tuttiMovimentiCassa = (movRes.data || []).filter(m => !m.data || parseInt(m.data.substring(0, 4)) >= ANNO_INIZIO_CONTABILITA);
   tuttiSaldiIniziali = saldiRes.data || [];
   aggiornaSelectAnnoCassa();
@@ -4180,15 +4070,20 @@ function toggleGruppoCassa(cat) {
   renderCassa();
 }
 
+function etichettaSottoconto(m) {
+  if (m.fondo === 'Dora') return m.sottoconto === 'contanti' ? 'Contanti Dora' : 'Conto Dora';
+  return m.sottoconto === 'contanti' ? 'Contanti Sella' : 'Conto Sella';
+}
+
 function renderCassa() {
   const search = (document.getElementById('cassa-search')?.value || '').toLowerCase();
-  const filtroTipo = document.getElementById('cassa-filtro-tipo')?.value || 'tutti';
+  const filtroFondo = document.getElementById('cassa-filtro-fondo')?.value || 'tutti';
   const filtroAnno = document.getElementById('cassa-filtro-anno')?.value || 'tutti';
 
   let lista = tuttiMovimentiCassa;
   if (filtroAnno !== 'tutti') lista = lista.filter(m => m.data && m.data.substring(0, 4) === filtroAnno);
   if (search) lista = lista.filter(m => JSON.stringify(m).toLowerCase().includes(search));
-  if (filtroTipo !== 'tutti') lista = lista.filter(m => m.tipo === filtroTipo);
+  if (filtroFondo !== 'tutti') lista = lista.filter(m => m.fondo === filtroFondo);
 
   aggiornaBilancioCassa(lista);
 
@@ -4237,11 +4132,11 @@ function renderCassa() {
           return `<div class="table-row" style="padding-left:42px;">
             <div style="flex:1;">
               <div class="row-name">${m.descrizione}${m.fornitore ? ' — <span style="color:var(--testo-muted);font-weight:400;">' + m.fornitore + '</span>' : ''}${m.fattura_url ? ` <a href="${m.fattura_url}" target="_blank" title="Vedi fattura/scontrino" onclick="event.stopPropagation()">📎</a>` : ''}</div>
-              <div class="row-sub">${m.data ? formatDataIT(m.data) : ''} · ${m.metodo_pagamento || ''} · ${m.fondo === 'DORA' ? 'Dora' : (m.fondo || 'Banca')}</div>
+              <div class="row-sub">${m.data ? formatDataIT(m.data) : ''} · ${etichettaSottoconto(m)}${m.metodo_pagamento ? ' · ' + m.metodo_pagamento : ''}</div>
             </div>
             ${m.sagra_id ? '<span class="badge" style="background:#FDF0DC;color:#8A6D1D;">🎪 Sagra</span>' : ''}
             <span style="font-weight:600;color:${color};white-space:nowrap;">${segno} € ${parseFloat(m.importo).toFixed(2)}</span>
-            <button class="btn btn-sm" onclick='openModalCassa(${JSON.stringify(m).replace(/"/g,"&quot;")})'><i class="ti ti-edit"></i></button>
+            <button class="btn btn-sm" onclick='openModalMovimentoCassa(${JSON.stringify(m).replace(/"/g,"&quot;")})'><i class="ti ti-edit"></i></button>
             <button class="btn btn-sm" style="color:#991B1B" onclick="eliminaMovimentoCassa('${m.id}')"><i class="ti ti-trash"></i></button>
           </div>`;
         }).join('')}
@@ -4256,57 +4151,34 @@ function aggiornaBilancioCassa(lista) {
   const entrate = tutti.filter(m => m.tipo === 'entrata').reduce((s,m) => s + parseFloat(m.importo||0), 0);
   const uscite = tutti.filter(m => m.tipo === 'uscita').reduce((s,m) => s + parseFloat(m.importo||0), 0);
 
-  const isDora = m => m.fondo === 'DORA';
-  const isBanca = m => !isDora(m);
-
-  // Fondo Banca: contanti vs conto corrente in base al metodo_pagamento
-  const isContanti = m => !m.metodo_pagamento || m.metodo_pagamento === 'contanti';
-  const entrateContanti = tutti.filter(m => m.tipo === 'entrata' && isBanca(m) && isContanti(m)).reduce((s,m) => s + parseFloat(m.importo||0), 0);
-  const usciteContanti = tutti.filter(m => m.tipo === 'uscita' && isBanca(m) && isContanti(m)).reduce((s,m) => s + parseFloat(m.importo||0), 0);
-  const entrateCC = tutti.filter(m => m.tipo === 'entrata' && isBanca(m) && !isContanti(m)).reduce((s,m) => s + parseFloat(m.importo||0), 0);
-  const usciteCC = tutti.filter(m => m.tipo === 'uscita' && isBanca(m) && !isContanti(m)).reduce((s,m) => s + parseFloat(m.importo||0), 0);
-
-  // Fondo DORA: stessa logica a due livelli di Banca — Cassetta (giroconti) + Contanti (spesa reale)
-  const isCassetta = m => m.metodo_pagamento === 'cassetta';
-  const entrateDoraCassetta = tutti.filter(m => m.tipo === 'entrata' && isDora(m) && isCassetta(m)).reduce((s,m) => s + parseFloat(m.importo||0), 0);
-  const usciteDoraCassetta = tutti.filter(m => m.tipo === 'uscita' && isDora(m) && isCassetta(m)).reduce((s,m) => s + parseFloat(m.importo||0), 0);
-  const entrateDoraContanti = tutti.filter(m => m.tipo === 'entrata' && isDora(m) && !isCassetta(m)).reduce((s,m) => s + parseFloat(m.importo||0), 0);
-  const usciteDoraContanti = tutti.filter(m => m.tipo === 'uscita' && isDora(m) && !isCassetta(m)).reduce((s,m) => s + parseFloat(m.importo||0), 0);
-
-  // Saldo iniziale: se è selezionato un anno preciso usa quello; su "tutti" somma i saldi iniziali dell'anno più vecchio tracciato
-  let saldoInizialeCC = 0, saldoInizialeContanti = 0, saldoInizialeDoraCassetta = 0, saldoInizialeDoraContanti = 0;
-  if (filtroAnno !== 'tutti') {
-    const s = tuttiSaldiIniziali.find(x => x.anno === parseInt(filtroAnno));
-    saldoInizialeCC = s ? parseFloat(s.saldo_conto_corrente || 0) : 0;
-    saldoInizialeContanti = s ? parseFloat(s.saldo_contanti || 0) : 0;
-    saldoInizialeDoraCassetta = s ? parseFloat(s.saldo_dora || 0) : 0;
-    saldoInizialeDoraContanti = s ? parseFloat(s.saldo_dora_contanti || 0) : 0;
-  } else {
-    const annoMinimo = Math.min(...tuttiSaldiIniziali.map(s => s.anno), ANNO_INIZIO_CONTABILITA);
-    const s = tuttiSaldiIniziali.find(x => x.anno === annoMinimo);
-    saldoInizialeCC = s ? parseFloat(s.saldo_conto_corrente || 0) : 0;
-    saldoInizialeContanti = s ? parseFloat(s.saldo_contanti || 0) : 0;
-    saldoInizialeDoraCassetta = s ? parseFloat(s.saldo_dora || 0) : 0;
-    saldoInizialeDoraContanti = s ? parseFloat(s.saldo_dora_contanti || 0) : 0;
+  function calcolaSaldo(fondo, sottoconto) {
+    const e = tutti.filter(m => m.tipo === 'entrata' && m.fondo === fondo && m.sottoconto === sottoconto).reduce((s,m) => s + parseFloat(m.importo||0), 0);
+    const u = tutti.filter(m => m.tipo === 'uscita' && m.fondo === fondo && m.sottoconto === sottoconto).reduce((s,m) => s + parseFloat(m.importo||0), 0);
+    return e - u;
   }
 
-  const saldoCC = saldoInizialeCC + entrateCC - usciteCC;
-  const saldoContanti = saldoInizialeContanti + entrateContanti - usciteContanti;
-  const saldoDoraCassetta = saldoInizialeDoraCassetta + entrateDoraCassetta - usciteDoraCassetta;
-  const saldoDoraContanti = saldoInizialeDoraContanti + entrateDoraContanti - usciteDoraContanti;
-  const saldoDora = saldoDoraCassetta + saldoDoraContanti;
-  const saldoTotale = saldoCC + saldoContanti + saldoDora;
+  // Saldo iniziale: se è selezionato un anno preciso usa quello; su "tutti" usa l'anno più vecchio tracciato
+  let saldiIniz = { saldo_conto_sella: 0, saldo_contanti_sella: 0, saldo_conto_dora: 0, saldo_contanti_dora: 0 };
+  if (filtroAnno !== 'tutti') {
+    const s = tuttiSaldiIniziali.find(x => x.anno === parseInt(filtroAnno));
+    if (s) saldiIniz = s;
+  } else if (tuttiSaldiIniziali.length) {
+    const annoMinimo = Math.min(...tuttiSaldiIniziali.map(s => s.anno));
+    const s = tuttiSaldiIniziali.find(x => x.anno === annoMinimo);
+    if (s) saldiIniz = s;
+  }
+
+  const saldoContoSella = parseFloat(saldiIniz.saldo_conto_sella||0) + calcolaSaldo('Sella', 'conto');
+  const saldoContantiSella = parseFloat(saldiIniz.saldo_contanti_sella||0) + calcolaSaldo('Sella', 'contanti');
+  const saldoContoDora = parseFloat(saldiIniz.saldo_conto_dora||0) + calcolaSaldo('Dora', 'conto');
+  const saldoContantiDora = parseFloat(saldiIniz.saldo_contanti_dora||0) + calcolaSaldo('Dora', 'contanti');
 
   if (document.getElementById('c-tot-entrate')) document.getElementById('c-tot-entrate').textContent = '€ ' + entrate.toFixed(2);
   if (document.getElementById('c-tot-uscite')) document.getElementById('c-tot-uscite').textContent = '€ ' + uscite.toFixed(2);
-  if (document.getElementById('c-saldo-cc')) document.getElementById('c-saldo-cc').textContent = '€ ' + saldoCC.toFixed(2);
-  if (document.getElementById('c-saldo-contanti')) document.getElementById('c-saldo-contanti').textContent = '€ ' + saldoContanti.toFixed(2);
-  if (document.getElementById('c-saldo-dora-cassetta')) document.getElementById('c-saldo-dora-cassetta').textContent = '€ ' + saldoDoraCassetta.toFixed(2);
-  if (document.getElementById('c-saldo-dora')) document.getElementById('c-saldo-dora').textContent = '€ ' + saldoDoraContanti.toFixed(2);
-  if (document.getElementById('c-saldo')) {
-    document.getElementById('c-saldo').textContent = '€ ' + saldoTotale.toFixed(2);
-    document.getElementById('c-saldo').style.color = saldoTotale >= 0 ? 'var(--verde)' : '#991B1B';
-  }
+  if (document.getElementById('c-saldo-conto-sella')) document.getElementById('c-saldo-conto-sella').textContent = '€ ' + saldoContoSella.toFixed(2);
+  if (document.getElementById('c-saldo-contanti-sella')) document.getElementById('c-saldo-contanti-sella').textContent = '€ ' + saldoContantiSella.toFixed(2);
+  if (document.getElementById('c-saldo-conto-dora')) document.getElementById('c-saldo-conto-dora').textContent = '€ ' + saldoContoDora.toFixed(2);
+  if (document.getElementById('c-saldo-contanti-dora')) document.getElementById('c-saldo-contanti-dora').textContent = '€ ' + saldoContantiDora.toFixed(2);
 }
 
 function openModalSaldoIniziale() {
@@ -4317,10 +4189,10 @@ function openModalSaldoIniziale() {
   document.getElementById('titolo-modal-saldo-iniziale').textContent = `Saldo iniziale — ${anno}`;
   document.getElementById('si-anno').value = anno;
   const s = tuttiSaldiIniziali.find(x => x.anno === anno);
-  document.getElementById('si-conto-corrente').value = s?.saldo_conto_corrente || '';
-  document.getElementById('si-contanti').value = s?.saldo_contanti || '';
-  document.getElementById('si-dora').value = s?.saldo_dora || '';
-  document.getElementById('si-dora-contanti').value = s?.saldo_dora_contanti || '';
+  document.getElementById('si-conto-sella').value = s?.saldo_conto_sella || '';
+  document.getElementById('si-contanti-sella').value = s?.saldo_contanti_sella || '';
+  document.getElementById('si-conto-dora').value = s?.saldo_conto_dora || '';
+  document.getElementById('si-contanti-dora').value = s?.saldo_contanti_dora || '';
 }
 
 function closeModalSaldoIniziale() {
@@ -4455,10 +4327,21 @@ function processaRigheEstrattoConto(rows) {
     return;
   }
 
-  // Controllo doppioni: confronta con i movimenti già presenti (fondo Banca) per data + importo (+ tipo)
-  const esistentiBanca = tuttiMovimentiCassa.filter(m => (m.fondo || 'Banca') === 'Banca');
+  // Applica le regole di rinomina automatica (Impostazioni)
   righeParse.forEach(r => {
-    const match = esistentiBanca.find(m => m.data === r.data && Math.abs(parseFloat(m.importo) - r.importo) < 0.01 && m.tipo === r.tipo);
+    r.descrizioneOriginale = r.descrizione;
+    r.categoria = null;
+    const regola = tutteRegoleImportazione.find(reg => r.descrizione.toLowerCase().includes(reg.contiene.toLowerCase()));
+    if (regola) {
+      if (regola.nuova_descrizione) r.descrizione = regola.nuova_descrizione;
+      if (regola.categoria) r.categoria = regola.categoria;
+    }
+  });
+
+  // Controllo doppioni: confronta con i movimenti già presenti (fondo Sella, sottoconto Conto) per data + importo + tipo
+  const esistentiSella = tuttiMovimentiCassa.filter(m => m.fondo === 'Sella' && m.sottoconto === 'conto');
+  righeParse.forEach(r => {
+    const match = esistentiSella.find(m => m.data === r.data && Math.abs(parseFloat(m.importo) - r.importo) < 0.01 && m.tipo === r.tipo);
     r.duplicato = !!match;
     r.descrizioneEsistente = match ? match.descrizione : null;
     r.selezionato = !match; // pre-seleziona solo le righe nuove
@@ -4481,7 +4364,8 @@ function renderPreviewImportEstratto() {
     <div style="display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid var(--border);${r.duplicato?'background:#FBF3DC;':''}">
       <input type="checkbox" ${r.selezionato?'checked':''} onchange="_righeImportEstratto[${i}].selezionato=this.checked" style="width:16px;height:16px;">
       <div style="flex:1;font-size:12.5px;">
-        <div>${formatDataIT(r.data)} · <strong>${r.tipo === 'entrata' ? '+' : '−'}€ ${r.importo.toFixed(2)}</strong> · ${r.descrizione}</div>
+        <div>${formatDataIT(r.data)} · <strong>${r.tipo === 'entrata' ? '+' : '−'}€ ${r.importo.toFixed(2)}</strong> · ${r.descrizione}${r.categoria ? ' · <span style="color:var(--testo-muted);">'+r.categoria+'</span>' : ''}</div>
+        ${r.descrizione !== r.descrizioneOriginale ? `<div style="color:var(--testo-muted);font-size:11px;">Originale: "${r.descrizioneOriginale}" (rinominata automaticamente)</div>` : ''}
         ${r.duplicato ? `<div style="color:#8A6D1D;font-size:11px;">⚠️ Possibile doppione — già presente: "${r.descrizioneEsistente}"</div>` : ''}
       </div>
     </div>
@@ -4497,14 +4381,19 @@ async function confermaImportEstrattoConto() {
   const daImportare = _righeImportEstratto.filter(r => r.selezionato);
   if (!daImportare.length) { showToast('Nessuna riga selezionata', 'error'); return; }
 
+  for (const r of daImportare) {
+    if (r.categoria) await aggiungiCategoriaEconomiaSeNuova(r.tipo, r.categoria);
+  }
+
   const payloadRighe = daImportare.map(r => ({
     tipo: r.tipo,
-    categoria: null,
+    categoria: r.categoria || null,
     descrizione: r.descrizione,
     importo: r.importo,
     data: r.data,
     metodo_pagamento: 'bonifico',
-    fondo: 'Banca',
+    fondo: 'Sella',
+    sottoconto: 'conto',
     note: 'Importato da estratto conto'
   }));
 
@@ -4520,18 +4409,18 @@ async function saveSaldoIniziale() {
   const anno = parseInt(document.getElementById('si-anno').value);
   const payload = {
     anno,
-    saldo_conto_corrente: parseFloat(document.getElementById('si-conto-corrente').value) || 0,
-    saldo_contanti: parseFloat(document.getElementById('si-contanti').value) || 0,
-    saldo_dora: parseFloat(document.getElementById('si-dora').value) || 0,
-    saldo_dora_contanti: parseFloat(document.getElementById('si-dora-contanti').value) || 0,
+    saldo_conto_sella: parseFloat(document.getElementById('si-conto-sella').value) || 0,
+    saldo_contanti_sella: parseFloat(document.getElementById('si-contanti-sella').value) || 0,
+    saldo_conto_dora: parseFloat(document.getElementById('si-conto-dora').value) || 0,
+    saldo_contanti_dora: parseFloat(document.getElementById('si-contanti-dora').value) || 0,
     updated_at: new Date().toISOString()
   };
   const esistente = tuttiSaldiIniziali.find(s => s.anno === anno);
   let error;
   if (esistente) {
-    ({ error } = await db.from('saldi_iniziali_cassa').update(payload).eq('id', esistente.id));
+    ({ error } = await db.from('saldi_iniziali').update(payload).eq('id', esistente.id));
   } else {
-    ({ error } = await db.from('saldi_iniziali_cassa').insert(payload));
+    ({ error } = await db.from('saldi_iniziali').insert(payload));
   }
   if (error) { showToast('Errore: ' + error.message, 'error'); return; }
   closeModalSaldoIniziale();
@@ -4539,53 +4428,81 @@ async function saveSaldoIniziale() {
   loadCassa();
 }
 
-function openModalCassa(m = null) {
-  document.getElementById('modal-cassa').style.display = 'flex';
-  document.getElementById('modal-cassa').style.pointerEvents = 'auto';
-  buildCategorieSelect('m-cassa-categoria', 'cassa');
+function openModalMovimentoCassa(m = null, forzaSagra = false) {
+  document.getElementById('modal-movimento-cassa').style.display = 'flex';
+  document.getElementById('modal-movimento-cassa').style.pointerEvents = 'auto';
+  document.getElementById('titolo-modal-movimento-cassa').textContent = m ? 'Modifica movimento' : 'Nuovo movimento';
   document.getElementById('m-cassa-id').value = m?.id || '';
   document.getElementById('m-cassa-tipo').value = m?.tipo || 'entrata';
-  document.getElementById('m-cassa-categoria').value = m?.categoria || '';
+  aggiornaCategoriaCassaSelect(m?.categoria);
   document.getElementById('m-cassa-descrizione').value = m?.descrizione || '';
-  document.getElementById('m-cassa-fornitore') && (document.getElementById('m-cassa-fornitore').value = m?.fornitore || '');
+  document.getElementById('m-cassa-fornitore').value = m?.fornitore || '';
   const dlFornCassa = document.getElementById('cassa-fornitori-list');
   if (dlFornCassa) dlFornCassa.innerHTML = (tuttiFornitori || []).map(f => `<option value="${f.nome}">`).join('');
   document.getElementById('m-cassa-importo').value = m?.importo || '';
   document.getElementById('m-cassa-data').value = m?.data || new Date().toISOString().split('T')[0];
-  document.getElementById('m-cassa-fondo').value = m?.fondo || 'Banca';
+  document.getElementById('m-cassa-fondo').value = m?.fondo || 'Sella';
+  aggiornaSottocontoCassaSelect(m?.sottoconto);
   aggiornaMetodoCassaSelect(m?.metodo_pagamento);
-  document.getElementById('m-cassa-sagra').checked = !!m?.sagra_id;
+  document.getElementById('m-cassa-sagra').checked = forzaSagra || !!m?.sagra_id;
   document.getElementById('m-cassa-note').value = m?.note || '';
+  document.getElementById('m-cassa-fattura-url').value = m?.fattura_url || '';
+  document.getElementById('m-cassa-fattura-file').value = '';
+  document.getElementById('m-cassa-fattura-preview').innerHTML = m?.fattura_url
+    ? `<a href="${m.fattura_url}" target="_blank" style="color:var(--blu);">📎 Vedi allegato attuale</a>` : '';
+}
+
+function aggiornaCategoriaCassaSelect(categoriaAttuale) {
+  const tipo = document.getElementById('m-cassa-tipo').value;
+  const sel = document.getElementById('m-cassa-categoria');
+  const cats = (categorieEconomia || []).filter(c => c.tipo === tipo);
+  sel.innerHTML = '<option value="">—</option>' + cats.map(c => `<option value="${c.nome}">${c.nome}</option>`).join('');
+  sel.value = categoriaAttuale || '';
+}
+
+function aggiornaSottocontoCassaSelect(sottocontoAttuale) {
+  const fondo = document.getElementById('m-cassa-fondo').value;
+  const sel = document.getElementById('m-cassa-sottoconto');
+  if (fondo === 'Dora') {
+    sel.innerHTML = `<option value="conto">Conto Dora (cassetta)</option><option value="contanti">Contanti Dora (liquidi)</option>`;
+  } else {
+    sel.innerHTML = `<option value="conto">Conto Corrente</option><option value="contanti">Contanti Sella</option>`;
+  }
+  sel.value = sottocontoAttuale || 'conto';
+  aggiornaMetodoCassaSelect();
 }
 
 function aggiornaMetodoCassaSelect(metodoAttuale) {
   const fondo = document.getElementById('m-cassa-fondo').value;
+  const sottoconto = document.getElementById('m-cassa-sottoconto').value;
+  const wrap = document.getElementById('m-cassa-metodo-wrap');
   const sel = document.getElementById('m-cassa-metodo');
-  if (fondo === 'DORA') {
-    sel.disabled = false;
+  if (fondo === 'Sella' && sottoconto === 'conto') {
+    wrap.style.display = 'block';
     sel.innerHTML = `
-      <option value="cassetta">Cassetta</option>
-      <option value="contanti">Contanti</option>
-    `;
-    sel.value = (metodoAttuale === 'cassetta') ? 'cassetta' : 'contanti';
-  } else {
-    sel.disabled = false;
-    sel.innerHTML = `
-      <option value="contanti">Contanti</option>
-      <option value="assegno">Assegno</option>
-      <option value="bonifico">Bonifico</option>
       <option value="bancomat">Bancomat</option>
+      <option value="bonifico">Bonifico</option>
+      <option value="assegno">Assegno</option>
       <option value="pagopa">PagoPA</option>
     `;
-    if (metodoAttuale && !['contanti','assegno','bonifico','bancomat','pagopa'].includes(metodoAttuale)) {
+    if (metodoAttuale && !['bancomat','bonifico','assegno','pagopa'].includes(metodoAttuale)) {
       sel.innerHTML += `<option value="${metodoAttuale}">${metodoAttuale} (precedente)</option>`;
     }
-    sel.value = metodoAttuale || 'contanti';
+    sel.value = metodoAttuale && metodoAttuale !== 'contanti' ? metodoAttuale : 'bonifico';
+  } else {
+    // Contanti Sella, Conto Dora (cassetta) o Contanti Dora: sempre "contanti", niente scelta
+    wrap.style.display = 'none';
   }
 }
 
-function closeModalCassa() {
-  const m = document.getElementById('modal-cassa');
+function anteprimaFatturaMovimentoCassa() {
+  const file = document.getElementById('m-cassa-fattura-file').files[0];
+  if (!file) return;
+  document.getElementById('m-cassa-fattura-preview').innerHTML = `<span style="color:var(--testo-muted);">📎 ${file.name} (verrà caricato al salvataggio)</span>`;
+}
+
+function closeModalMovimentoCassa() {
+  const m = document.getElementById('modal-movimento-cassa');
   m.style.display = 'none';
   m.style.pointerEvents = 'none';
 }
@@ -4603,17 +4520,43 @@ async function saveMovimentoCassa() {
     if (!sagraId) { showToast('Nessuna edizione sagra selezionata: impossibile collegare', 'error'); return; }
   }
 
+  const fondo = document.getElementById('m-cassa-fondo').value;
+  const sottoconto = document.getElementById('m-cassa-sottoconto').value;
+  const metodoPagamento = (fondo === 'Sella' && sottoconto === 'conto')
+    ? document.getElementById('m-cassa-metodo').value
+    : 'contanti';
+
+  // Upload fattura se è stato selezionato un nuovo file
+  let fatturaUrl = document.getElementById('m-cassa-fattura-url').value || null;
+  const fatturaFile = document.getElementById('m-cassa-fattura-file').files[0];
+  if (fatturaFile) {
+    const ext = fatturaFile.name.split('.').pop();
+    const path = `${descrizione.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}-${Date.now()}.${ext}`;
+    const { error: eUpload } = await db.storage.from('fatture-spesa').upload(path, fatturaFile, { upsert: true });
+    if (eUpload) {
+      showToast('Errore upload fattura: ' + eUpload.message, 'error');
+    } else {
+      const { data: pub } = db.storage.from('fatture-spesa').getPublicUrl(path);
+      fatturaUrl = pub.publicUrl;
+    }
+  }
+
+  const categoria = document.getElementById('m-cassa-categoria').value.trim() || null;
+  if (categoria) await aggiungiCategoriaEconomiaSeNuova(document.getElementById('m-cassa-tipo').value, categoria);
+
   const payload = {
     tipo: document.getElementById('m-cassa-tipo').value,
-    categoria: document.getElementById('m-cassa-categoria').value.trim() || null,
+    categoria,
     descrizione,
-    fornitore: document.getElementById('m-cassa-fornitore') ? (document.getElementById('m-cassa-fornitore').value.trim() || null) : null,
+    fornitore: document.getElementById('m-cassa-fornitore').value.trim() || null,
     importo,
     data: document.getElementById('m-cassa-data').value,
-    metodo_pagamento: document.getElementById('m-cassa-metodo').value || null,
-    fondo: document.getElementById('m-cassa-fondo').value || 'Banca',
+    metodo_pagamento: metodoPagamento,
+    fondo,
+    sottoconto,
     sagra_id: sagraId,
-    note: document.getElementById('m-cassa-note').value.trim() || null
+    note: document.getElementById('m-cassa-note').value.trim() || null,
+    fattura_url: fatturaUrl
   };
 
   const id = document.getElementById('m-cassa-id').value;
@@ -4625,8 +4568,9 @@ async function saveMovimentoCassa() {
   }
   if (error) { showToast('Errore: ' + error.message, 'error'); return; }
   showToast('Salvato!', 'success');
-  closeModalCassa();
+  closeModalMovimentoCassa();
   loadCassa();
+  if (document.getElementById('page-movimenti-sagra')?.classList.contains('active')) loadMovimentiSagra();
 }
 
 async function eliminaMovimentoCassa(id) {
@@ -4634,6 +4578,7 @@ async function eliminaMovimentoCassa(id) {
   await db.from('movimenti').delete().eq('id', id);
   showToast('Eliminato', 'success');
   loadCassa();
+  if (document.getElementById('page-movimenti-sagra')?.classList.contains('active')) loadMovimentiSagra();
 }
 
 function disegnaGraficoBarreOrizzontali(pdf, items, x, y, larghezzaMax, altezzaBarra, gap) {
@@ -4693,7 +4638,9 @@ async function scaricaPDFCassa() {
   const saldoPeriodo = totEntrate - totUscite;
 
   const s0 = filtroAnno !== 'tutti' ? tuttiSaldiIniziali.find(x => x.anno === parseInt(filtroAnno)) : null;
-  const saldoIniziale = s0 ? parseFloat(s0.saldo_conto_corrente || 0) + parseFloat(s0.saldo_contanti || 0) : 0;
+  const saldoIniziale = s0
+    ? parseFloat(s0.saldo_conto_sella||0) + parseFloat(s0.saldo_contanti_sella||0) + parseFloat(s0.saldo_conto_dora||0) + parseFloat(s0.saldo_contanti_dora||0)
+    : 0;
   const saldoFinale = saldoIniziale + saldoPeriodo;
 
   const gruppi = {};
@@ -4823,7 +4770,7 @@ async function scaricaPDFCassa() {
   showToast('Bilancio PDF generato!', 'success');
 }
 
-function esportaExcelMovimentiCassa() {
+function esportaExcelMovimenti() {
   const filtroAnno = document.getElementById('cassa-filtro-anno')?.value || 'tutti';
   const lista = filtroAnno === 'tutti'
     ? tuttiMovimentiCassa
@@ -4833,10 +4780,12 @@ function esportaExcelMovimentiCassa() {
 
   const ordinati = lista.slice().sort((a,b) => (a.data||'').localeCompare(b.data||''));
   const rows = [
-    ['Data', 'Tipo', 'Categoria', 'Descrizione', 'Fornitore', 'Importo (€)', 'Metodo pagamento', 'Collegato a Sagra', 'Note'],
+    ['Data', 'Tipo', 'Fondo', 'Sottoconto', 'Categoria', 'Descrizione', 'Fornitore', 'Importo (€)', 'Metodo pagamento', 'Collegato a Sagra', 'Note'],
     ...ordinati.map(m => [
       m.data ? formatDataIT(m.data) : '',
       m.tipo === 'entrata' ? 'Entrata' : 'Uscita',
+      m.fondo || '',
+      etichettaSottoconto(m),
       m.categoria || '',
       m.descrizione || '',
       m.fornitore || '',
@@ -4848,7 +4797,7 @@ function esportaExcelMovimentiCassa() {
   ];
 
   const ws = XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols'] = [{wch:11},{wch:9},{wch:20},{wch:34},{wch:20},{wch:12},{wch:16},{wch:14},{wch:24}];
+  ws['!cols'] = [{wch:11},{wch:9},{wch:9},{wch:16},{wch:20},{wch:34},{wch:20},{wch:12},{wch:16},{wch:14},{wch:24}];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Movimenti');
   XLSX.writeFile(wb, `movimenti_${filtroAnno}.xlsx`);
@@ -4857,27 +4806,24 @@ function esportaExcelMovimentiCassa() {
 
 
 // ===== CATEGORIE + IMPOSTAZIONI =====
-let categorieCassa = [];
-let categorieSagra = [];
+let categorieEconomia = [];
 
 async function loadCategorie() {
-  const { data } = await db.from('categorie').select('*').order('nome');
-  categorieCassa = (data || []).filter(c => c.tipo === 'cassa');
-  categorieSagra = (data || []).filter(c => c.tipo === 'sagra');
+  const { data } = await db.from('categorie_economia').select('*').order('nome');
+  categorieEconomia = data || [];
   await loadFornitori();
 }
 
-function buildCategorieSelect(selectId, tipo) {
-  const sel = document.getElementById(selectId);
-  if (!sel) return;
-  const curr = sel.value;
-  const cats = tipo === 'cassa' ? categorieCassa : categorieSagra;
-  sel.innerHTML = '<option value="">—</option>' +
-    cats.map(c => `<option value="${c.nome}" ${c.nome===curr?'selected':''}>${c.nome}</option>`).join('');
+async function aggiungiCategoriaEconomiaSeNuova(tipo, nome) {
+  if (!nome || categorieEconomia.find(c => c.tipo === tipo && c.nome === nome)) return nome;
+  const { data } = await db.from('categorie_economia').insert({ tipo, nome }).select().single();
+  if (data) categorieEconomia.push(data);
+  return nome;
 }
 
 async function loadImpostazioni() {
   await loadCategorie();
+  await loadRegoleImportazione();
   renderImpostazioni();
   await loadFornitori();
   await loadCatalogoCompleto();
@@ -4959,30 +4905,38 @@ function toggleSezioneImp(id) {
   if (ico) ico.style.transform = aperta ? 'rotate(-90deg)' : 'rotate(0deg)';
 }
 
-function renderImpostazioni() {
-  renderCategorieTabella('cassa');
-  renderCategorieTabella('sagra');
+let tutteRegoleImportazione = [];
+
+async function loadRegoleImportazione() {
+  const { data } = await db.from('regole_importazione').select('*').order('contiene');
+  tutteRegoleImportazione = data || [];
 }
 
-function renderCategorieTabella(tipo) {
-  const cats = tipo === 'cassa' ? categorieCassa : categorieSagra;
+function renderImpostazioni() {
+  renderCategorieEconomiaTabella('entrata');
+  renderCategorieEconomiaTabella('uscita');
+  renderRegoleImportazioneTabella();
+}
+
+function renderCategorieEconomiaTabella(tipo) {
+  const cats = categorieEconomia.filter(c => c.tipo === tipo);
   const tbody = document.getElementById(`cat-tbody-${tipo}`);
   if (!tbody) return;
   tbody.innerHTML = cats.map(c => `
     <tr style="border-bottom:1px solid var(--border);">
       <td style="padding:8px 14px;font-weight:500;">${c.nome}</td>
       <td style="padding:8px 14px;text-align:center;">
-        <button class="btn btn-sm" style="color:#991B1B" onclick="eliminaCategoria('${c.id}','${tipo}')"><i class="ti ti-trash"></i></button>
+        <button class="btn btn-sm" style="color:#991B1B" onclick="eliminaCategoriaEconomia('${c.id}')"><i class="ti ti-trash"></i></button>
       </td>
     </tr>
   `).join('') || '<tr><td colspan="2" style="padding:16px;text-align:center;color:var(--testo-muted);">Nessuna categoria</td></tr>';
 }
 
-async function aggiungiCategoria(tipo) {
+async function aggiungiCategoriaEconomia(tipo) {
   const input = document.getElementById(`cat-input-${tipo}`);
   const nome = input?.value.trim();
   if (!nome) { showToast('Inserisci un nome', 'error'); return; }
-  const { error } = await db.from('categorie').insert({ tipo, nome });
+  const { error } = await db.from('categorie_economia').insert({ tipo, nome });
   if (error) { showToast('Errore: ' + (error.message.includes('unique') ? 'Categoria già esistente' : error.message), 'error'); return; }
   input.value = '';
   showToast('Categoria aggiunta!', 'success');
@@ -4990,17 +4944,53 @@ async function aggiungiCategoria(tipo) {
   renderImpostazioni();
 }
 
-async function eliminaCategoria(id, tipo) {
+async function eliminaCategoriaEconomia(id) {
   if (!confirm('Eliminare questa categoria?')) return;
-  await db.from('categorie').delete().eq('id', id);
+  await db.from('categorie_economia').delete().eq('id', id);
   showToast('Eliminata', 'success');
   await loadCategorie();
   renderImpostazioni();
 }
 
-// categorie cassa integrate direttamente
+function renderRegoleImportazioneTabella() {
+  const tbody = document.getElementById('regole-tbody');
+  if (!tbody) return;
+  tbody.innerHTML = tutteRegoleImportazione.map(r => `
+    <tr style="border-bottom:1px solid var(--border);">
+      <td style="padding:8px 14px;font-size:12.5px;">"${r.contiene}"</td>
+      <td style="padding:8px 14px;font-size:12.5px;">→ ${r.nuova_descrizione || '—'}</td>
+      <td style="padding:8px 14px;font-size:12.5px;color:var(--testo-muted);">${r.categoria || ''}</td>
+      <td style="padding:8px 14px;text-align:center;">
+        <button class="btn btn-sm" style="color:#991B1B" onclick="eliminaRegolaImportazione('${r.id}')"><i class="ti ti-trash"></i></button>
+      </td>
+    </tr>
+  `).join('') || '<tr><td colspan="4" style="padding:16px;text-align:center;color:var(--testo-muted);">Nessuna regola</td></tr>';
+}
 
-// categorie sagra integrate direttamente
+async function aggiungiRegolaImportazione() {
+  const contiene = document.getElementById('reg-contiene').value.trim();
+  const nuovaDescrizione = document.getElementById('reg-nome').value.trim();
+  const categoria = document.getElementById('reg-categoria').value.trim();
+  if (!contiene) { showToast('Inserisci il testo da cercare', 'error'); return; }
+  const { error } = await db.from('regole_importazione').insert({
+    contiene, nuova_descrizione: nuovaDescrizione || null, categoria: categoria || null
+  });
+  if (error) { showToast('Errore: ' + error.message, 'error'); return; }
+  document.getElementById('reg-contiene').value = '';
+  document.getElementById('reg-nome').value = '';
+  document.getElementById('reg-categoria').value = '';
+  showToast('Regola aggiunta!', 'success');
+  await loadRegoleImportazione();
+  renderRegoleImportazioneTabella();
+}
+
+async function eliminaRegolaImportazione(id) {
+  if (!confirm('Eliminare questa regola?')) return;
+  await db.from('regole_importazione').delete().eq('id', id);
+  showToast('Eliminata', 'success');
+  await loadRegoleImportazione();
+  renderRegoleImportazioneTabella();
+}
 
 // Carica categorie all'avvio app
 // categorie caricate in initApp
