@@ -4499,24 +4499,34 @@ function processaRigheEstrattoConto(rows) {
     }
   });
 
-  // Controllo doppioni, in 2 passaggi:
-  // 1) data + importo + tipo esatti (fondo Sella, qualunque sottoconto)
-  // 2) se non trovato: importo uguale, data entro 3 giorni (valuta bancaria), e il fornitore
-  //    di un'uscita già registrata (es. da "Chiudi ordine") compare nel testo della banca
+  // Controllo doppioni, in 3 passaggi:
+  // 1) data + importo + tipo esatti
+  // 2) importo + tipo uguali, data entro 5 giorni (data operazione vs data valuta possono differire)
+  // 3) come sopra ma con tolleranza più ampia se il fornitore di un'uscita già registrata
+  //    (es. da "Chiudi ordine") compare nel testo della banca
   const esistentiSella = tuttiMovimentiCassa.filter(m => m.fondo === 'Sella');
   const MS_GIORNO = 24 * 60 * 60 * 1000;
   righeParse.forEach(r => {
+    const dataRiga = new Date(r.data);
     let match = esistentiSella.find(m => m.data === r.data && Math.abs(parseFloat(m.importo) - r.importo) < 0.01 && m.tipo === r.tipo);
     let motivoDoppione = match ? 'stessa data e importo' : null;
 
     if (!match) {
-      const dataRiga = new Date(r.data);
+      match = esistentiSella.find(m => {
+        if (m.tipo !== r.tipo || Math.abs(parseFloat(m.importo) - r.importo) >= 0.01) return false;
+        const diffGiorni = Math.abs((new Date(m.data) - dataRiga) / MS_GIORNO);
+        return diffGiorni <= 5;
+      });
+      if (match) motivoDoppione = 'stesso importo, data vicina (probabile data operazione/valuta della stessa transazione)';
+    }
+
+    if (!match) {
       match = esistentiSella.find(m => {
         if (m.tipo !== r.tipo || Math.abs(parseFloat(m.importo) - r.importo) >= 0.01 || !m.fornitore) return false;
         const diffGiorni = Math.abs((new Date(m.data) - dataRiga) / MS_GIORNO);
-        return diffGiorni <= 3 && r.descrizioneOriginale.toLowerCase().includes(m.fornitore.toLowerCase());
+        return diffGiorni <= 10 && r.descrizioneOriginale.toLowerCase().includes(m.fornitore.toLowerCase());
       });
-      if (match) motivoDoppione = `stesso fornitore "${match.fornitore}" e importo, data vicina (possibile valuta bancaria)`;
+      if (match) motivoDoppione = `stesso fornitore "${match.fornitore}" e importo, data più distante`;
     }
 
     r.duplicato = !!match;
@@ -4751,6 +4761,25 @@ async function saveMovimentoCassa() {
   };
 
   const id = document.getElementById('m-cassa-id').value;
+
+  // Controllo doppioni (solo per i nuovi movimenti con fornitore compilato)
+  if (!id && payload.fornitore) {
+    const { data: possibiliDoppioni } = await db.from('movimenti')
+      .select('id, descrizione, data, fondo, note')
+      .eq('tipo', payload.tipo)
+      .ilike('fornitore', payload.fornitore)
+      .eq('data', payload.data)
+      .gte('importo', importo - 0.01)
+      .lte('importo', importo + 0.01);
+
+    if (possibiliDoppioni && possibiliDoppioni.length) {
+      const dettaglio = possibiliDoppioni.map(m => `"${m.descrizione}" (${m.fondo}${m.note ? ', ' + m.note : ''})`).join('; ');
+      if (!confirm(`Attenzione: esiste già un movimento per ${payload.fornitore}, € ${importo.toFixed(2)}, in data ${formatDataIT(payload.data)}: ${dettaglio}.\n\nPotrebbe essere lo stesso pagamento. Vuoi registrarlo comunque come nuovo movimento?`)) {
+        return;
+      }
+    }
+  }
+
   let error;
   if (id) {
     ({ error } = await db.from('movimenti').update(payload).eq('id', id));
