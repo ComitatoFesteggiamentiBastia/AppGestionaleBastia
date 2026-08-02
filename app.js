@@ -506,7 +506,7 @@ function rowSocio(s, stato) {
     ${badgeTessera}
     <button class="btn btn-sm" onclick="generaTessera('${s.id}')" title="Tessera"><i class="ti ti-id"></i></button>
     <button class="btn btn-sm" onclick='openModalSocio(${JSON.stringify(s)})'><i class="ti ti-edit"></i></button>
-    ${stato === 'non_rinnovato' ? `<button class="btn btn-sm" style="color:var(--verde)" onclick="rinnovaQuota('${s.id}')"><i class="ti ti-refresh"></i> Rinnova</button>` : ''}
+    <button class="btn btn-sm" style="color:var(--verde)" onclick="rinnovaQuota('${s.id}')" title="Registra/rinnova la quota per l'anno corrente"><i class="ti ti-refresh"></i> Quota</button>
   </div>`;
 }
 
@@ -658,26 +658,35 @@ async function rinnovaQuota(id) {
   const quota = getQuotaAnnoCorrente();
   const oggi = new Date().toISOString().split('T')[0];
 
+  // Evita di duplicare se la quota di quest'anno esiste già
+  const { data: esistente } = await db.from('quote').select('id').eq('socio_id', id).eq('anno', ANNO_CORRENTE).maybeSingle();
+  if (esistente) {
+    if (!confirm('Questo socio ha già una quota registrata per quest\'anno. Vuoi registrarne comunque un\'altra?')) return;
+  }
+
   const { error } = await db.from('soci').update({ anno_rinnovo: ANNO_CORRENTE, updated_at: new Date().toISOString() }).eq('id', id);
   if (error) { showToast('Errore', 'error'); return; }
 
-  // Registra in quote
-  await db.from('quote').insert({ socio_id: id, anno: ANNO_CORRENTE, pagato: true, data_pagamento: oggi, importo: quota });
-
-  // Registra entrata in cassa generale
+  await aggiungiCategoriaEconomiaSeNuova('entrata', 'Quote associative');
   const nomeSocio = socio ? `${socio.cognome} ${socio.nome}` : 'Socio';
-  await db.from('movimenti').insert({
+
+  const { data: nuovoMov, error: eMov } = await db.from('movimenti').insert({
     tipo: 'entrata',
     categoria: 'Quote associative',
     descrizione: `Quota ${ANNO_CORRENTE}`,
     fornitore: nomeSocio,
     importo: quota,
     data: oggi,
-    metodo_pagamento: 'contanti',
-    fondo: 'Banca'
-  });
+    fondo: 'Sella',
+    sottoconto: 'contanti',
+    metodo_pagamento: 'contanti'
+  }).select().single();
+  if (eMov) { showToast('Errore registrazione in cassa: ' + eMov.message, 'error'); return; }
 
-  showToast('Quota rinnovata!', 'success');
+  // Registra in quote, già collegata al movimento appena creato
+  await db.from('quote').insert({ socio_id: id, anno: ANNO_CORRENTE, pagato: true, data_pagamento: oggi, importo: quota, movimento_id: nuovoMov.id });
+
+  showToast('Quota rinnovata e registrata in Cassa Generale!', 'success');
   loadSoci();
 }
 
@@ -776,13 +785,14 @@ async function convalidaRichiesta(id) {
   }
   if (error) { showToast('Errore creazione socio: ' + error.message, 'error'); return; }
 
-  await db.from('quote').insert({ socio_id: socioId, anno: ANNO_CORRENTE, pagato: true, data_pagamento: oggi, importo });
-  await db.from('movimenti').insert({
+  await aggiungiCategoriaEconomiaSeNuova('entrata', 'Quote associative');
+  const { data: nuovoMov } = await db.from('movimenti').insert({
     tipo: 'entrata', categoria: 'Quote associative',
     descrizione: `Quota ${ANNO_CORRENTE} (nuova iscrizione)`,
     fornitore: `${r.cognome} ${r.nome}`,
-    importo, data: oggi, metodo_pagamento: 'contanti', fondo: 'Banca'
-  });
+    importo, data: oggi, metodo_pagamento: 'contanti', fondo: 'Sella', sottoconto: 'contanti'
+  }).select().single();
+  await db.from('quote').insert({ socio_id: socioId, anno: ANNO_CORRENTE, pagato: true, data_pagamento: oggi, importo, movimento_id: nuovoMov?.id || null });
   await db.from('richieste_iscrizione').update({ stato: 'convalidata', socio_id: socioId, convalidata_at: new Date().toISOString() }).eq('id', id);
 
   showToast('Socio creato e quota registrata!', 'success');
@@ -1183,25 +1193,29 @@ async function rinnovaMassivo() {
   const quota = getQuotaAnnoCorrente();
   const oggi = new Date().toISOString().split('T')[0];
 
+  await aggiungiCategoriaEconomiaSeNuova('entrata', 'Quote associative');
+
   let ok = 0, err = 0;
   for (const id of ids) {
     const socio = tuttiSoci.find(s => s.id === id);
     const nomeSocio = socio ? `${socio.cognome} ${socio.nome}` : 'Socio';
 
     const { error: e1 } = await db.from('soci').update({ anno_rinnovo: ANNO_CORRENTE, updated_at: new Date().toISOString() }).eq('id', id);
-    const { error: e2 } = await db.from('quote').insert({ socio_id: id, anno: ANNO_CORRENTE, importo: quota, pagato: true, data_pagamento: oggi });
 
     // Entrata in cassa generale
-    const { error: e3 } = await db.from('movimenti').insert({
+    const { data: nuovoMov, error: e3 } = await db.from('movimenti').insert({
       tipo: 'entrata',
       categoria: 'Quote associative',
       descrizione: `Quota ${ANNO_CORRENTE}`,
       fornitore: nomeSocio,
       importo: quota,
       data: oggi,
-      metodo_pagamento: 'contanti',
-      fondo: 'Banca'
-    });
+      fondo: 'Sella',
+      sottoconto: 'contanti',
+      metodo_pagamento: 'contanti'
+    }).select().single();
+
+    const { error: e2 } = await db.from('quote').insert({ socio_id: id, anno: ANNO_CORRENTE, importo: quota, pagato: true, data_pagamento: oggi, movimento_id: nuovoMov?.id || null });
 
     if (e1 || e2 || e3) err++; else ok++;
   }
@@ -2880,7 +2894,7 @@ function renderVenditeMenu() {
   container.innerHTML = Object.entries(gruppi).map(([menuKey, voci]) => `
     <div style="margin-bottom:16px;">
       <div style="font-weight:700;font-size:12px;color:var(--blu-notte);text-transform:uppercase;margin-bottom:6px;">${menuLabelLocale[menuKey] || menuKey}</div>
-      ${voci.map(v => {
+      ${voci.slice().sort((a,b) => a.piatto.localeCompare(b.piatto)).map(v => {
         const vendita = tutteVenditeMenu.find(x => x.menu_sagra_id === v.id && x.giorno === giornoPNAttivo);
         const qta = vendita?.quantita || 0;
         const incasso = qta * parseFloat(v.prezzo || 0);
@@ -2985,7 +2999,7 @@ async function scaricaPDFPrimaNota() {
   giorni.forEach(({ key, label }) => {
     const menuCucina = key === 'sabato' ? 'cucina_sabato' : 'cucina_domenica';
     const vociGiorno = tuttoMenu.filter(v => v.menu === menuCucina || v.menu === 'bar');
-    const conVendite = vociGiorno.filter(v => tutteVenditeMenu.some(x => x.menu_sagra_id === v.id && x.giorno === key && x.quantita > 0));
+    const conVendite = vociGiorno.filter(v => tutteVenditeMenu.some(x => x.menu_sagra_id === v.id && x.giorno === key && x.quantita > 0)).sort((a,b) => a.piatto.localeCompare(b.piatto));
     if (!conVendite.length) return;
 
     if (y > 250) { pdf.addPage(); drawHeader(sagraNome); y = 34; }
