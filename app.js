@@ -2915,16 +2915,18 @@ async function salvaVenditaMenu(menuSagraId, valore) {
   const sagraId = getSagraId();
   const quantita = parseFloat(valore) || 0;
   const esistente = tutteVenditeMenu.find(v => v.menu_sagra_id === menuSagraId && v.giorno === giornoPNAttivo);
-  let error;
-  if (esistente) {
+  let error, nuovaRiga;
+  if (esistente && esistente.id) {
     ({ error } = await db.from('vendite_menu_sagra').update({ quantita }).eq('id', esistente.id));
   } else {
-    ({ error } = await db.from('vendite_menu_sagra').insert({ sagra_id: sagraId, menu_sagra_id: menuSagraId, giorno: giornoPNAttivo, quantita }));
+    ({ data: nuovaRiga, error } = await db.from('vendite_menu_sagra')
+      .insert({ sagra_id: sagraId, menu_sagra_id: menuSagraId, giorno: giornoPNAttivo, quantita })
+      .select().single());
   }
   if (error) { showToast('Errore: ' + error.message, 'error'); return; }
   const idx = tutteVenditeMenu.findIndex(v => v.menu_sagra_id === menuSagraId && v.giorno === giornoPNAttivo);
   if (idx >= 0) tutteVenditeMenu[idx].quantita = quantita;
-  else tutteVenditeMenu.push({ menu_sagra_id: menuSagraId, giorno: giornoPNAttivo, quantita, sagra_id: sagraId });
+  else tutteVenditeMenu.push(nuovaRiga || { menu_sagra_id: menuSagraId, giorno: giornoPNAttivo, quantita, sagra_id: sagraId });
   renderVenditeMenu();
 }
 
