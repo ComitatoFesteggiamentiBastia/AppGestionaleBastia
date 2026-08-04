@@ -2754,6 +2754,7 @@ async function eliminaSpesa(id) {
 
 // ===== PRIMA NOTA =====
 // ===== PRIMA NOTA CASSE (fondo, prelievi, chiusure, POS, vendite per articolo) =====
+let tutteCasseDefinizioni = [];
 let tutteCasseGiorno = [];
 let tutteRegistrazioniIncassi = [];
 let tutteVenditeMenu = [];
@@ -2764,6 +2765,19 @@ async function loadPrimaNota() {
   const sagraId = getSagraId();
   aggiornaHeaderSagra('pn-sagra-header');
   if (!sagraId) return;
+
+  const { data: definizioni } = await db.from('prima_nota_casse_definizioni').select('*').eq('sagra_id', sagraId).order('ordine');
+  tutteCasseDefinizioni = definizioni || [];
+
+  // Se non esiste ancora nessuna definizione, crea i 2 di partenza (Ristorante con POS, Bar senza)
+  if (!tutteCasseDefinizioni.length) {
+    const { data: nuove } = await db.from('prima_nota_casse_definizioni')
+      .insert([
+        { sagra_id: sagraId, nome: 'Ristorante', ha_pos: true, ordine: 0 },
+        { sagra_id: sagraId, nome: 'Bar', ha_pos: false, ordine: 1 }
+      ]).select();
+    tutteCasseDefinizioni = nuove || [];
+  }
 
   const { data: casse } = await db.from('prima_nota_casse').select('*').eq('sagra_id', sagraId);
   tutteCasseGiorno = casse || [];
@@ -2802,49 +2816,80 @@ function aggiornaTabsPN() {
   dom.setAttribute('style', giornoPNAttivo === 'domenica' ? attivo : inattivo);
 }
 
-function trovaCassaGiorno(cassa) {
-  return tutteCasseGiorno.find(c => c.giorno === giornoPNAttivo && c.cassa === cassa);
+function trovaCassaGiorno(nomeCassa) {
+  return tutteCasseGiorno.find(c => c.giorno === giornoPNAttivo && c.cassa === nomeCassa);
+}
+
+function idCampo(nomeCassa, campo) {
+  const slug = nomeCassa.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+  return `pn-${slug}-${campo}`;
 }
 
 function renderPrimaNota() {
-  const rist = trovaCassaGiorno('ristorante');
-  document.getElementById('pn-rist-battuto').value = rist?.battuto || '';
-  document.getElementById('pn-rist-contanti').value = rist?.incassato_contanti || '';
-  document.getElementById('pn-rist-pos').value = rist?.incassato_pos || '';
-  aggiornaDifferenzaCassa('ristorante');
+  const container = document.getElementById('pn-casse-container');
+  if (!container) return;
 
-  const bar = trovaCassaGiorno('bar');
-  document.getElementById('pn-bar-battuto').value = bar?.battuto || '';
-  document.getElementById('pn-bar-contanti').value = bar?.incassato_contanti || '';
-  aggiornaDifferenzaCassa('bar');
+  container.innerHTML = tutteCasseDefinizioni.map(def => {
+    const c = trovaCassaGiorno(def.nome);
+    const icona = def.ha_pos ? 'ti-tools-kitchen-2' : 'ti-glass-cocktail';
+    return `
+    <div class="table-card" style="padding:16px;margin-bottom:16px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <div style="font-weight:700;color:var(--blu-notte);font-size:14px;"><i class="ti ${icona}"></i> Cassa ${def.nome}</div>
+        <button class="btn btn-sm" style="color:#991B1B;" onclick="eliminaCassaDefinizionePN('${def.id}','${def.nome.replace(/'/g,"\\'")}')" title="Elimina questa cassa"><i class="ti ti-trash"></i></button>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(${def.ha_pos ? 4 : 3},1fr);gap:12px;align-items:end;">
+        <div>
+          <label style="font-size:11px;color:var(--testo-muted);display:block;margin-bottom:4px;">Battuto (€)</label>
+          <input type="number" step="0.01" id="${idCampo(def.nome,'battuto')}" value="${c?.battuto || ''}" placeholder="0.00" style="width:100%;padding:7px 10px;border:1px solid #D4C9BE;border-radius:7px;font-size:13px;outline:none;">
+        </div>
+        <div>
+          <label style="font-size:11px;color:var(--testo-muted);display:block;margin-bottom:4px;">Incassato Contanti (€)</label>
+          <input type="number" step="0.01" id="${idCampo(def.nome,'contanti')}" value="${c?.incassato_contanti || ''}" placeholder="0.00" style="width:100%;padding:7px 10px;border:1px solid #D4C9BE;border-radius:7px;font-size:13px;outline:none;">
+        </div>
+        ${def.ha_pos ? `
+        <div>
+          <label style="font-size:11px;color:var(--testo-muted);display:block;margin-bottom:4px;">Incassato POS (€)</label>
+          <input type="number" step="0.01" id="${idCampo(def.nome,'pos')}" value="${c?.incassato_pos || ''}" placeholder="0.00" style="width:100%;padding:7px 10px;border:1px solid #D4C9BE;border-radius:7px;font-size:13px;outline:none;">
+        </div>` : ''}
+        <button class="btn btn-sm" onclick="salvaCassaGiorno('${def.nome.replace(/'/g,"\\'")}')"><i class="ti ti-check"></i> Salva</button>
+      </div>
+      <div id="${idCampo(def.nome,'diff')}" style="margin-top:10px;font-size:13px;font-weight:600;"></div>
+    </div>`;
+  }).join('');
+
+  tutteCasseDefinizioni.forEach(def => aggiornaDifferenzaCassa(def.nome));
 }
 
-function aggiornaDifferenzaCassa(cassa) {
-  const battuto = parseFloat(document.getElementById(`pn-${cassa === 'ristorante' ? 'rist' : 'bar'}-battuto`).value) || 0;
-  const contanti = parseFloat(document.getElementById(`pn-${cassa === 'ristorante' ? 'rist' : 'bar'}-contanti`).value) || 0;
-  const pos = cassa === 'ristorante' ? (parseFloat(document.getElementById('pn-rist-pos').value) || 0) : 0;
+function aggiornaDifferenzaCassa(nomeCassa) {
+  const def = tutteCasseDefinizioni.find(d => d.nome === nomeCassa);
+  if (!def) return;
+  const battuto = parseFloat(document.getElementById(idCampo(nomeCassa,'battuto'))?.value) || 0;
+  const contanti = parseFloat(document.getElementById(idCampo(nomeCassa,'contanti'))?.value) || 0;
+  const pos = def.ha_pos ? (parseFloat(document.getElementById(idCampo(nomeCassa,'pos'))?.value) || 0) : 0;
   const incassatoTotale = contanti + pos;
   const differenza = incassatoTotale - battuto;
-  const el = document.getElementById(cassa === 'ristorante' ? 'pn-rist-diff' : 'pn-bar-diff');
+  const el = document.getElementById(idCampo(nomeCassa,'diff'));
   if (!el) return;
   const quadra = Math.abs(differenza) < 0.01;
   el.style.color = quadra ? 'var(--verde)' : '#991B1B';
   el.textContent = `Incassato totale: € ${incassatoTotale.toFixed(2)} — Differenza vs battuto: ${differenza>=0?'+':''}€ ${differenza.toFixed(2)}${quadra?' ✓ Quadra':''}`;
 }
 
-async function salvaCassaGiorno(cassa) {
+async function salvaCassaGiorno(nomeCassa) {
   const sagraId = getSagraId();
-  const prefix = cassa === 'ristorante' ? 'rist' : 'bar';
+  const def = tutteCasseDefinizioni.find(d => d.nome === nomeCassa);
+  if (!def) return;
   const payload = {
     sagra_id: sagraId,
     giorno: giornoPNAttivo,
-    cassa,
-    battuto: parseFloat(document.getElementById(`pn-${prefix}-battuto`).value) || 0,
-    incassato_contanti: parseFloat(document.getElementById(`pn-${prefix}-contanti`).value) || 0,
-    incassato_pos: cassa === 'ristorante' ? (parseFloat(document.getElementById('pn-rist-pos').value) || 0) : 0,
+    cassa: nomeCassa,
+    battuto: parseFloat(document.getElementById(idCampo(nomeCassa,'battuto')).value) || 0,
+    incassato_contanti: parseFloat(document.getElementById(idCampo(nomeCassa,'contanti')).value) || 0,
+    incassato_pos: def.ha_pos ? (parseFloat(document.getElementById(idCampo(nomeCassa,'pos')).value) || 0) : 0,
     updated_at: new Date().toISOString()
   };
-  const esistente = trovaCassaGiorno(cassa);
+  const esistente = trovaCassaGiorno(nomeCassa);
   let error;
   if (esistente) {
     ({ error } = await db.from('prima_nota_casse').update(payload).eq('id', esistente.id));
@@ -2852,36 +2897,60 @@ async function salvaCassaGiorno(cassa) {
     ({ error } = await db.from('prima_nota_casse').insert(payload));
   }
   if (error) { showToast('Errore: ' + error.message, 'error'); return; }
-  showToast(`Cassa ${cassa === 'ristorante' ? 'Ristorante' : 'Bar'} salvata!`, 'success');
+  showToast(`Cassa ${nomeCassa} salvata!`, 'success');
   loadPrimaNota();
 }
 
-function trovaRegistrazioneIncassi() {
-  return tutteRegistrazioniIncassi.find(r => r.giorno === giornoPNAttivo);
+function openModalNuovaCassaPN() {
+  document.getElementById('modal-nuova-cassa-pn').style.display = 'flex';
+  document.getElementById('modal-nuova-cassa-pn').style.pointerEvents = 'auto';
+  document.getElementById('ncp-nome').value = '';
+  document.getElementById('ncp-ha-pos').checked = false;
 }
 
-function aggiornaStatoIncassi() {
-  const reg = trovaRegistrazioneIncassi();
-  const stato = document.getElementById('pn-incassi-stato');
-  const btn = document.getElementById('pn-btn-registra-incassi');
-  if (!stato || !btn) return;
-  if (reg) {
-    stato.innerHTML = `✓ Già registrati in Cassa Generale per ${giornoPNAttivo}`;
-    stato.style.color = 'var(--verde)';
-    btn.innerHTML = '<i class="ti ti-refresh"></i> Registra di nuovo (aggiorna)';
-  } else {
-    stato.textContent = `Non ancora registrati per ${giornoPNAttivo}`;
-    stato.style.color = 'var(--testo-muted)';
-    btn.innerHTML = '<i class="ti ti-check"></i> Registra incassi del giorno';
+function closeModalNuovaCassaPN() {
+  const m = document.getElementById('modal-nuova-cassa-pn');
+  m.style.display = 'none';
+  m.style.pointerEvents = 'none';
+}
+
+async function salvaNuovaCassaPN() {
+  const sagraId = getSagraId();
+  const nome = document.getElementById('ncp-nome').value.trim();
+  if (!nome) { showToast('Inserisci un nome', 'error'); return; }
+  if (tutteCasseDefinizioni.some(d => d.nome.toLowerCase() === nome.toLowerCase())) {
+    showToast('Esiste già una cassa con questo nome', 'error'); return;
   }
+  const haPos = document.getElementById('ncp-ha-pos').checked;
+  const ordine = tutteCasseDefinizioni.length;
+  const { error } = await db.from('prima_nota_casse_definizioni').insert({ sagra_id: sagraId, nome, ha_pos: haPos, ordine });
+  if (error) { showToast('Errore: ' + error.message, 'error'); return; }
+  closeModalNuovaCassaPN();
+  showToast('Cassa aggiunta!', 'success');
+  loadPrimaNota();
+}
+
+async function eliminaCassaDefinizionePN(id, nome) {
+  if (!confirm(`Eliminare la cassa "${nome}"? Verranno eliminati anche tutti i valori registrati per ogni giorno.`)) return;
+  await db.from('prima_nota_casse_definizioni').delete().eq('id', id);
+  await db.from('prima_nota_casse').delete().eq('cassa', nome);
+  showToast('Cassa eliminata', 'success');
+  loadPrimaNota();
 }
 
 async function registraIncassiPrimaNota() {
   const sagraId = getSagraId();
-  const rist = trovaCassaGiorno('ristorante');
-  const bar = trovaCassaGiorno('bar');
-  const totContanti = parseFloat(rist?.incassato_contanti || 0) + parseFloat(bar?.incassato_contanti || 0);
-  const totPos = parseFloat(rist?.incassato_pos || 0);
+
+  let totContanti = 0, totPos = 0;
+  const nomiConIncasso = [];
+  tutteCasseDefinizioni.forEach(def => {
+    const c = trovaCassaGiorno(def.nome);
+    const contanti = parseFloat(c?.incassato_contanti || 0);
+    const pos = def.ha_pos ? parseFloat(c?.incassato_pos || 0) : 0;
+    if (contanti || pos) nomiConIncasso.push(def.nome);
+    totContanti += contanti;
+    totPos += pos;
+  });
 
   if (!totContanti && !totPos) { showToast('Nessun incasso da registrare per questo giorno', 'error'); return; }
 
@@ -2895,10 +2964,10 @@ async function registraIncassiPrimaNota() {
   let movimentoContantiId = regEsistente?.movimento_contanti_id || null;
   let movimentoPosId = regEsistente?.movimento_pos_id || null;
 
-  // Contanti (Ristorante + Bar)
+  // Contanti (tutte le casse)
   if (totContanti > 0) {
     const payloadContanti = {
-      tipo: 'entrata', categoria: 'Incassi Sagra', descrizione: `Incasso contanti ${giornoLabel} (Ristorante + Bar)`,
+      tipo: 'entrata', categoria: 'Incassi Sagra', descrizione: `Incasso contanti ${giornoLabel} (${nomiConIncasso.join(' + ')})`,
       importo: totContanti, data: oggi, fondo: 'Sella', sottoconto: 'contanti', metodo_pagamento: 'contanti', sagra_id: sagraId
     };
     if (movimentoContantiId) {
@@ -2909,10 +2978,11 @@ async function registraIncassiPrimaNota() {
     }
   }
 
-  // POS (Ristorante) — arriva sul conto, non è contante fisico
+  // POS (casse che lo prevedono) — arriva sul conto, non è contante fisico
   if (totPos > 0) {
+    const casseConPos = tutteCasseDefinizioni.filter(d => d.ha_pos).map(d => d.nome).join(' + ');
     const payloadPos = {
-      tipo: 'entrata', categoria: 'Incassi Sagra', descrizione: `Incasso POS ${giornoLabel} (Ristorante)`,
+      tipo: 'entrata', categoria: 'Incassi Sagra', descrizione: `Incasso POS ${giornoLabel} (${casseConPos})`,
       importo: totPos, data: oggi, fondo: 'Sella', sottoconto: 'conto', metodo_pagamento: 'bancomat', sagra_id: sagraId
     };
     if (movimentoPosId) {
@@ -3049,11 +3119,11 @@ async function scaricaPDFPrimaNota() {
     pdf.text(label, 16, y + 1);
     y += 12;
 
-    [{ key: 'ristorante', nome: 'CASSA RISTORANTE' }, { key: 'bar', nome: 'CASSA BAR' }].forEach(({ key: cassaKey, nome }) => {
-      const c = tutteCasseGiorno.find(x => x.giorno === key && x.cassa === cassaKey);
+    tutteCasseDefinizioni.forEach(def => {
+      const c = tutteCasseGiorno.find(x => x.giorno === key && x.cassa === def.nome);
       const battuto = parseFloat(c?.battuto || 0);
       const contanti = parseFloat(c?.incassato_contanti || 0);
-      const pos = parseFloat(c?.incassato_pos || 0);
+      const pos = def.ha_pos ? parseFloat(c?.incassato_pos || 0) : 0;
       const incassatoTotale = contanti + pos;
       const differenza = incassatoTotale - battuto;
 
@@ -3062,7 +3132,7 @@ async function scaricaPDFPrimaNota() {
       pdf.setFontSize(9);
       pdf.setFont('helvetica', 'bold');
       pdf.setTextColor(122, 101, 72);
-      pdf.text(nome, 16, y + 1);
+      pdf.text(`CASSA ${def.nome.toUpperCase()}`, 16, y + 1);
       y += 9;
 
       pdf.setFontSize(8.5);
@@ -3070,12 +3140,13 @@ async function scaricaPDFPrimaNota() {
       pdf.setTextColor(26, 26, 26);
       pdf.text(`Battuto: € ${battuto.toFixed(2)}`, 18, y);
       pdf.text(`Contanti: € ${contanti.toFixed(2)}`, 75, y);
-      if (cassaKey === 'ristorante') pdf.text(`POS: € ${pos.toFixed(2)}`, 130, y);
+      if (def.ha_pos) pdf.text(`POS: € ${pos.toFixed(2)}`, 130, y);
       y += 6;
       pdf.setFont('helvetica', 'bold');
       pdf.setTextColor(Math.abs(differenza) < 0.01 ? 47 : 155, Math.abs(differenza) < 0.01 ? 107 : 44, Math.abs(differenza) < 0.01 ? 79 : 44);
       pdf.text(`Incassato totale: € ${incassatoTotale.toFixed(2)} — Differenza: ${differenza>=0?'+':''}€ ${differenza.toFixed(2)}${Math.abs(differenza)<0.01?' (quadra)':''}`, 18, y);
       y += 10;
+      if (y > 265) { pdf.addPage(); drawHeader(sagraNome); y = 34; }
     });
   });
 
@@ -3133,11 +3204,22 @@ async function loadCatalogoSpesa() {
 
 async function aggiungiACatalogo(articolo, fornitore, categoria, stand, unita, prezzo_unitario, iva) {
   if (!articolo) return;
-  await db.from('catalogo_spesa').upsert({
+  const payload = {
     articolo, fornitore: fornitore || null, categoria: categoria || null,
     stand: stand || null, unita: unita || null,
     prezzo_unitario: prezzo_unitario || null, iva: iva || null
-  }, { onConflict: 'articolo' });
+  };
+  const { data: esistente } = await db.from('catalogo_spesa').select('id').eq('articolo', articolo).maybeSingle();
+  let error;
+  if (esistente) {
+    ({ error } = await db.from('catalogo_spesa').update(payload).eq('id', esistente.id));
+  } else {
+    ({ error } = await db.from('catalogo_spesa').insert(payload));
+  }
+  if (error) {
+    console.error('Errore salvataggio Database Articoli:', error.message);
+    showToast('Attenzione: "' + articolo + '" non salvato nel Database Articoli (' + error.message + ')', 'error');
+  }
 }
 
 function setupAutocompleteSpesa() {
