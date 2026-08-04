@@ -2755,6 +2755,7 @@ async function eliminaSpesa(id) {
 // ===== PRIMA NOTA =====
 // ===== PRIMA NOTA CASSE (fondo, prelievi, chiusure, POS, vendite per articolo) =====
 let tutteCasseGiorno = [];
+let tutteRegistrazioniIncassi = [];
 let tutteVenditeMenu = [];
 let giornoPNAttivo = 'sabato';
 
@@ -2767,17 +2768,19 @@ async function loadPrimaNota() {
   const { data: casse } = await db.from('prima_nota_casse').select('*').eq('sagra_id', sagraId);
   tutteCasseGiorno = casse || [];
 
-  if (!tuttoMenu || !tuttoMenu.length) {
-    const { data: menuData } = await db.from('menu_sagra').select('*').eq('sagra_id', sagraId);
-    tuttoMenu = menuData || [];
-  }
-  if (!tutteSezioniMenu || !tutteSezioniMenu.length) {
-    const { data: sezData } = await db.from('menu_sezioni').select('*').eq('sagra_id', sagraId).order('ordine');
-    tutteSezioniMenu = sezData || [];
-  }
+  const { data: registrazioni } = await db.from('prima_nota_incassi_registrati').select('*').eq('sagra_id', sagraId);
+  tutteRegistrazioniIncassi = registrazioni || [];
+
+  // Sempre ricaricato fresco (non solo se vuoto): se hai appena aggiunto un piatto/bevanda
+  // nel Menu Sagra, deve comparire subito qui, non restare quello vecchio già in memoria
+  const { data: menuData } = await db.from('menu_sagra').select('*').eq('sagra_id', sagraId);
+  tuttoMenu = menuData || [];
+  const { data: sezData } = await db.from('menu_sezioni').select('*').eq('sagra_id', sagraId).order('ordine');
+  tutteSezioniMenu = sezData || [];
 
   aggiornaTabsPN();
   renderPrimaNota();
+  aggiornaStatoIncassi();
   await loadVenditeMenu();
 }
 
@@ -2785,6 +2788,7 @@ function cambiaGiornoPrimaNota(giorno) {
   giornoPNAttivo = giorno;
   aggiornaTabsPN();
   renderPrimaNota();
+  aggiornaStatoIncassi();
   renderVenditeMenu();
 }
 
@@ -2849,6 +2853,84 @@ async function salvaCassaGiorno(cassa) {
   }
   if (error) { showToast('Errore: ' + error.message, 'error'); return; }
   showToast(`Cassa ${cassa === 'ristorante' ? 'Ristorante' : 'Bar'} salvata!`, 'success');
+  loadPrimaNota();
+}
+
+function trovaRegistrazioneIncassi() {
+  return tutteRegistrazioniIncassi.find(r => r.giorno === giornoPNAttivo);
+}
+
+function aggiornaStatoIncassi() {
+  const reg = trovaRegistrazioneIncassi();
+  const stato = document.getElementById('pn-incassi-stato');
+  const btn = document.getElementById('pn-btn-registra-incassi');
+  if (!stato || !btn) return;
+  if (reg) {
+    stato.innerHTML = `✓ Già registrati in Cassa Generale per ${giornoPNAttivo}`;
+    stato.style.color = 'var(--verde)';
+    btn.innerHTML = '<i class="ti ti-refresh"></i> Registra di nuovo (aggiorna)';
+  } else {
+    stato.textContent = `Non ancora registrati per ${giornoPNAttivo}`;
+    stato.style.color = 'var(--testo-muted)';
+    btn.innerHTML = '<i class="ti ti-check"></i> Registra incassi del giorno';
+  }
+}
+
+async function registraIncassiPrimaNota() {
+  const sagraId = getSagraId();
+  const rist = trovaCassaGiorno('ristorante');
+  const bar = trovaCassaGiorno('bar');
+  const totContanti = parseFloat(rist?.incassato_contanti || 0) + parseFloat(bar?.incassato_contanti || 0);
+  const totPos = parseFloat(rist?.incassato_pos || 0);
+
+  if (!totContanti && !totPos) { showToast('Nessun incasso da registrare per questo giorno', 'error'); return; }
+
+  const regEsistente = trovaRegistrazioneIncassi();
+  const giornoLabel = giornoPNAttivo === 'sabato' ? 'Sabato' : 'Domenica';
+  if (!confirm(`Registrare in Cassa Generale: € ${totContanti.toFixed(2)} in Contanti Sella${totPos ? ` + € ${totPos.toFixed(2)} in Conto Sella (POS)` : ''}, per ${giornoLabel}?${regEsistente ? '\n\n(Aggiornerà la registrazione già fatta in precedenza)' : ''}`)) return;
+
+  await aggiungiCategoriaEconomiaSeNuova('entrata', 'Incassi Sagra');
+  const oggi = new Date().toISOString().split('T')[0];
+
+  let movimentoContantiId = regEsistente?.movimento_contanti_id || null;
+  let movimentoPosId = regEsistente?.movimento_pos_id || null;
+
+  // Contanti (Ristorante + Bar)
+  if (totContanti > 0) {
+    const payloadContanti = {
+      tipo: 'entrata', categoria: 'Incassi Sagra', descrizione: `Incasso contanti ${giornoLabel} (Ristorante + Bar)`,
+      importo: totContanti, data: oggi, fondo: 'Sella', sottoconto: 'contanti', metodo_pagamento: 'contanti', sagra_id: sagraId
+    };
+    if (movimentoContantiId) {
+      await db.from('movimenti').update(payloadContanti).eq('id', movimentoContantiId);
+    } else {
+      const { data } = await db.from('movimenti').insert(payloadContanti).select().single();
+      movimentoContantiId = data?.id || null;
+    }
+  }
+
+  // POS (Ristorante) — arriva sul conto, non è contante fisico
+  if (totPos > 0) {
+    const payloadPos = {
+      tipo: 'entrata', categoria: 'Incassi Sagra', descrizione: `Incasso POS ${giornoLabel} (Ristorante)`,
+      importo: totPos, data: oggi, fondo: 'Sella', sottoconto: 'conto', metodo_pagamento: 'bancomat', sagra_id: sagraId
+    };
+    if (movimentoPosId) {
+      await db.from('movimenti').update(payloadPos).eq('id', movimentoPosId);
+    } else {
+      const { data } = await db.from('movimenti').insert(payloadPos).select().single();
+      movimentoPosId = data?.id || null;
+    }
+  }
+
+  const payloadReg = { sagra_id: sagraId, giorno: giornoPNAttivo, movimento_contanti_id: movimentoContantiId, movimento_pos_id: movimentoPosId };
+  if (regEsistente) {
+    await db.from('prima_nota_incassi_registrati').update(payloadReg).eq('id', regEsistente.id);
+  } else {
+    await db.from('prima_nota_incassi_registrati').insert(payloadReg);
+  }
+
+  showToast('Incassi registrati in Cassa Generale!', 'success');
   loadPrimaNota();
 }
 
