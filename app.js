@@ -2961,66 +2961,57 @@ function aggiornaStatoIncassi() {
 async function registraIncassiPrimaNota() {
   const sagraId = getSagraId();
 
-  let totContanti = 0, totPos = 0;
-  const nomiConIncasso = [];
+  // Una riga per ogni cassa (contanti) + una per ogni cassa con POS
+  const righeCasse = [];
   tutteCasseDefinizioni.forEach(def => {
     const c = trovaCassaGiorno(def.nome);
     const contanti = parseFloat(c?.incassato_contanti || 0);
     const pos = def.ha_pos ? parseFloat(c?.incassato_pos || 0) : 0;
-    if (contanti || pos) nomiConIncasso.push(def.nome);
-    totContanti += contanti;
-    totPos += pos;
+    if (contanti > 0) righeCasse.push({ cassa: def.nome, tipo: 'contanti', importo: contanti });
+    if (pos > 0) righeCasse.push({ cassa: def.nome, tipo: 'pos', importo: pos });
   });
 
-  if (!totContanti && !totPos) { showToast('Nessun incasso da registrare per questo giorno', 'error'); return; }
+  if (!righeCasse.length) { showToast('Nessun incasso da registrare per questo giorno', 'error'); return; }
+
+  const totContanti = righeCasse.filter(r => r.tipo === 'contanti').reduce((s, r) => s + r.importo, 0);
+  const totPos = righeCasse.filter(r => r.tipo === 'pos').reduce((s, r) => s + r.importo, 0);
 
   const regEsistente = trovaRegistrazioneIncassi();
   const giornoLabel = giornoPNAttivo === 'sabato' ? 'Sabato' : 'Domenica';
-  if (!confirm(`Registrare in Cassa Generale: € ${totContanti.toFixed(2)} in Contanti Sella${totPos ? ` + € ${totPos.toFixed(2)} in Conto Sella (POS)` : ''}, per ${giornoLabel}?${regEsistente ? '\n\n(Aggiornerà la registrazione già fatta in precedenza)' : ''}`)) return;
+  const elencoCasse = [...new Set(righeCasse.map(r => r.cassa))].join(', ');
+  if (!confirm(`Registrare in Cassa Generale per ${giornoLabel} un movimento separato per ogni cassa (${elencoCasse}).\n\nTotale: € ${totContanti.toFixed(2)} Contanti Sella${totPos ? ` + € ${totPos.toFixed(2)} Conto Sella (POS)` : ''}${regEsistente ? '\n\n(Sostituirà la registrazione già fatta in precedenza)' : ''}`)) return;
 
   await aggiungiCategoriaEconomiaSeNuova('entrata', 'Incassi Sagra');
   const oggi = new Date().toISOString().split('T')[0];
 
-  let movimentoContantiId = regEsistente?.movimento_contanti_id || null;
-  let movimentoPosId = regEsistente?.movimento_pos_id || null;
-
-  // Contanti (tutte le casse)
-  if (totContanti > 0) {
-    const payloadContanti = {
-      tipo: 'entrata', categoria: 'Incassi Sagra', descrizione: `Incasso contanti ${giornoLabel} (${nomiConIncasso.join(' + ')})`,
-      importo: totContanti, data: oggi, fondo: 'Sella', sottoconto: 'contanti', metodo_pagamento: 'contanti', sagra_id: sagraId
-    };
-    if (movimentoContantiId) {
-      await db.from('movimenti').update(payloadContanti).eq('id', movimentoContantiId);
-    } else {
-      const { data } = await db.from('movimenti').insert(payloadContanti).select().single();
-      movimentoContantiId = data?.id || null;
-    }
+  // Se già registrato in precedenza, elimina i vecchi movimenti prima di ricrearli
+  if (regEsistente?.movimento_ids?.length) {
+    await db.from('movimenti').delete().in('id', regEsistente.movimento_ids);
   }
 
-  // POS (casse che lo prevedono) — arriva sul conto, non è contante fisico
-  if (totPos > 0) {
-    const casseConPos = tutteCasseDefinizioni.filter(d => d.ha_pos).map(d => d.nome).join(' + ');
-    const payloadPos = {
-      tipo: 'entrata', categoria: 'Incassi Sagra', descrizione: `Incasso POS ${giornoLabel} (${casseConPos})`,
-      importo: totPos, data: oggi, fondo: 'Sella', sottoconto: 'conto', metodo_pagamento: 'bancomat', sagra_id: sagraId
+  const nuoviIds = [];
+  for (const riga of righeCasse) {
+    const payload = {
+      tipo: 'entrata', categoria: 'Incassi Sagra',
+      descrizione: `Incasso ${riga.tipo === 'pos' ? 'POS' : 'contanti'} ${giornoLabel} - ${riga.cassa}`,
+      importo: riga.importo, data: oggi, fondo: 'Sella',
+      sottoconto: riga.tipo === 'pos' ? 'conto' : 'contanti',
+      metodo_pagamento: riga.tipo === 'pos' ? 'bancomat' : 'contanti',
+      sagra_id: sagraId
     };
-    if (movimentoPosId) {
-      await db.from('movimenti').update(payloadPos).eq('id', movimentoPosId);
-    } else {
-      const { data } = await db.from('movimenti').insert(payloadPos).select().single();
-      movimentoPosId = data?.id || null;
-    }
+    const { data, error } = await db.from('movimenti').insert(payload).select().single();
+    if (error) { showToast('Errore registrazione ' + riga.cassa + ': ' + error.message, 'error'); continue; }
+    if (data?.id) nuoviIds.push(data.id);
   }
 
-  const payloadReg = { sagra_id: sagraId, giorno: giornoPNAttivo, movimento_contanti_id: movimentoContantiId, movimento_pos_id: movimentoPosId };
+  const payloadReg = { sagra_id: sagraId, giorno: giornoPNAttivo, movimento_ids: nuoviIds };
   if (regEsistente) {
     await db.from('prima_nota_incassi_registrati').update(payloadReg).eq('id', regEsistente.id);
   } else {
     await db.from('prima_nota_incassi_registrati').insert(payloadReg);
   }
 
-  showToast('Incassi registrati in Cassa Generale!', 'success');
+  showToast('Incassi registrati in Cassa Generale, divisi per cassa!', 'success');
   loadPrimaNota();
 }
 
