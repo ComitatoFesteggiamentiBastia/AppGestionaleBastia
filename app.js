@@ -4004,12 +4004,15 @@ function renderCassa() {
   const filtroFondo = document.getElementById('cassa-filtro-fondo')?.value || 'tutti';
   const filtroAnno = document.getElementById('cassa-filtro-anno')?.value || 'tutti';
 
-  let lista = tuttiMovimentiCassa;
-  if (filtroAnno !== 'tutti') lista = lista.filter(m => m.data && m.data.substring(0, 4) === filtroAnno);
+  // I 4 saldi in alto devono sempre riflettere TUTTO (rispettano solo l'anno) — non vanno
+  // "svuotati" se stai usando il filtro Fondo o la ricerca solo per guardare l'elenco sotto
+  let listaPerBilancio = tuttiMovimentiCassa;
+  if (filtroAnno !== 'tutti') listaPerBilancio = listaPerBilancio.filter(m => m.data && m.data.substring(0, 4) === filtroAnno);
+  aggiornaBilancioCassa(listaPerBilancio);
+
+  let lista = listaPerBilancio;
   if (search) lista = lista.filter(m => JSON.stringify(m).toLowerCase().includes(search));
   if (filtroFondo !== 'tutti') lista = lista.filter(m => m.fondo === filtroFondo);
-
-  aggiornaBilancioCassa(lista);
 
   const container = document.getElementById('cassa-list');
   if (!container) return;
