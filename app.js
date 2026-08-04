@@ -2938,6 +2938,26 @@ async function eliminaCassaDefinizionePN(id, nome) {
   loadPrimaNota();
 }
 
+function trovaRegistrazioneIncassi() {
+  return tutteRegistrazioniIncassi.find(r => r.giorno === giornoPNAttivo);
+}
+
+function aggiornaStatoIncassi() {
+  const reg = trovaRegistrazioneIncassi();
+  const stato = document.getElementById('pn-incassi-stato');
+  const btn = document.getElementById('pn-btn-registra-incassi');
+  if (!stato || !btn) return;
+  if (reg) {
+    stato.innerHTML = `✓ Già registrati in Cassa Generale per ${giornoPNAttivo}`;
+    stato.style.color = 'var(--verde)';
+    btn.innerHTML = '<i class="ti ti-refresh"></i> Registra di nuovo (aggiorna)';
+  } else {
+    stato.textContent = `Non ancora registrati per ${giornoPNAttivo}`;
+    stato.style.color = 'var(--testo-muted)';
+    btn.innerHTML = '<i class="ti ti-check"></i> Registra incassi del giorno';
+  }
+}
+
 async function registraIncassiPrimaNota() {
   const sagraId = getSagraId();
 
