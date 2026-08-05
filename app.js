@@ -137,6 +137,7 @@ function showPage(pageId) {
   if (pageId === 'sponsor') loadSponsor();
   if (pageId === 'spesa') loadSpesa();
   if (pageId === 'prima-nota') loadPrimaNota();
+  if (pageId === 'report-vendite') loadReportVendite();
   if (pageId === 'inventario') loadInventario();
   if (pageId === 'richieste') loadRichieste();
   if (pageId === 'servizio') loadServizio();
@@ -2785,17 +2786,9 @@ async function loadPrimaNota() {
   const { data: registrazioni } = await db.from('prima_nota_incassi_registrati').select('*').eq('sagra_id', sagraId);
   tutteRegistrazioniIncassi = registrazioni || [];
 
-  // Sempre ricaricato fresco (non solo se vuoto): se hai appena aggiunto un piatto/bevanda
-  // nel Menu Sagra, deve comparire subito qui, non restare quello vecchio già in memoria
-  const { data: menuData } = await db.from('menu_sagra').select('*').eq('sagra_id', sagraId);
-  tuttoMenu = menuData || [];
-  const { data: sezData } = await db.from('menu_sezioni').select('*').eq('sagra_id', sagraId).order('ordine');
-  tutteSezioniMenu = sezData || [];
-
   aggiornaTabsPN();
   renderPrimaNota();
   aggiornaStatoIncassi();
-  await loadVenditeMenu();
 }
 
 function cambiaGiornoPrimaNota(giorno) {
@@ -3015,82 +3008,252 @@ async function registraIncassiPrimaNota() {
   loadPrimaNota();
 }
 
-// ===== Vendite per articolo (divise per giorno) =====
-async function loadVenditeMenu() {
+// ===== REPORT VENDITE (pagina a sé) =====
+// Modello: Sabato = una cassa sola (totale giornata unico).
+// Domenica = si registra Pranzo + Totale finale (contato a mano); la Cena si ricava per differenza.
+// Il Bar sabato non ha cassa propria (venduto dentro Ristorante), quindi anche le voci Bar
+// seguono lo stesso schema: Sabato (unico) + Domenica Pranzo + Totale finale.
+let venditeAnnoPrecedente = {}; // { "nome piatto minuscolo": quantita totale anno prima }
+
+const RV_GRUPPI = [
+  { key: 'cucina_sabato',   label: 'Cucina Sabato',   modalita: 'sabato_unico' },
+  { key: 'cucina_domenica', label: 'Cucina Domenica', modalita: 'domenica_calcolata' },
+  { key: 'bar',             label: 'Bar',             modalita: 'bar_completo' }
+];
+
+async function loadReportVendite() {
+  await assicuraSagreCaricate();
   const sagraId = getSagraId();
+  aggiornaHeaderSagra('rv-sagra-header');
   if (!sagraId) return;
-  const { data } = await db.from('vendite_menu_sagra').select('*').eq('sagra_id', sagraId);
-  tutteVenditeMenu = data || [];
-  renderVenditeMenu();
+
+  const [menuRes, venditeRes] = await Promise.all([
+    db.from('menu_sagra').select('*').eq('sagra_id', sagraId),
+    db.from('vendite_menu_sagra').select('*').eq('sagra_id', sagraId)
+  ]);
+  tuttoMenu = menuRes.data || [];
+  tutteVenditeMenu = venditeRes.data || [];
+
+  await caricaVenditeAnnoPrecedente(sagraId);
+  renderReportVendite();
 }
 
-function toggleSezioneVenditeMenu() {
-  const box = document.getElementById('pn-vendite-menu-box');
-  const ico = document.getElementById('ico-vendite-menu');
-  const aperto = box.style.display !== 'none';
-  box.style.display = aperto ? 'none' : 'block';
-  ico.style.transform = aperto ? '' : 'rotate(180deg)';
+async function caricaVenditeAnnoPrecedente(sagraIdCorrente) {
+  venditeAnnoPrecedente = {};
+  const corrente = tutteSagre.find(s => s.id === sagraIdCorrente);
+  if (!corrente) return;
+  const precedente = tutteSagre.filter(s => s.anno < corrente.anno).sort((a, b) => b.anno - a.anno)[0];
+  if (!precedente) return;
+
+  const [menuPrecRes, venditePrecRes] = await Promise.all([
+    db.from('menu_sagra').select('id,piatto').eq('sagra_id', precedente.id),
+    db.from('vendite_menu_sagra').select('menu_sagra_id,tipo,quantita').eq('sagra_id', precedente.id)
+  ]);
+  const menuPrec = menuPrecRes.data || [];
+  (venditePrecRes.data || []).forEach(v => {
+    // Per il totale anno precedente usiamo: 'sabato' + 'totale' (se c'era il calcolo),
+    // altrimenti sommiamo quello che c'è (compatibilità con eventuali dati vecchi).
+    if (v.tipo === 'pranzo') return; // il pranzo è già incluso nel 'totale' finale, non va sommato di nuovo
+    const voce = menuPrec.find(m => m.id === v.menu_sagra_id);
+    if (!voce || !voce.piatto) return;
+    const key = voce.piatto.trim().toLowerCase();
+    venditeAnnoPrecedente[key] = (venditeAnnoPrecedente[key] || 0) + (parseFloat(v.quantita) || 0);
+  });
 }
 
-function renderVenditeMenu() {
-  const container = document.getElementById('pn-vendite-menu-list');
+function trovaVenditaReport(menuSagraId, tipo) {
+  return tutteVenditeMenu.find(v => v.menu_sagra_id === menuSagraId && v.tipo === tipo);
+}
+
+function calcolaRigaReport(voceId, modalita) {
+  const sabato = parseFloat(trovaVenditaReport(voceId, 'sabato')?.quantita || 0);
+  const pranzo = parseFloat(trovaVenditaReport(voceId, 'pranzo')?.quantita || 0);
+  const totaleRec = trovaVenditaReport(voceId, 'totale');
+  const totaleInserito = totaleRec && totaleRec.quantita !== null && totaleRec.quantita !== '' ? parseFloat(totaleRec.quantita) : null;
+
+  if (modalita === 'sabato_unico') {
+    return { totale: sabato, cena: null, haTotale: true };
+  }
+  if (modalita === 'domenica_calcolata') {
+    const cena = totaleInserito !== null ? totaleInserito - pranzo : null;
+    return { totale: totaleInserito, cena, haTotale: totaleInserito !== null };
+  }
+  // bar_completo
+  const cena = totaleInserito !== null ? totaleInserito - sabato - pranzo : null;
+  return { totale: totaleInserito, cena, haTotale: totaleInserito !== null };
+}
+
+function inputCampo(v, tipo, label, larghezza = 58) {
+  const rec = trovaVenditaReport(v.id, tipo);
+  return `<td style="padding:4px 6px;text-align:right;">
+    <input type="number" step="1" value="${rec?.quantita ?? ''}" placeholder="0" title="${label}" id="rv-${v.id}-${tipo}"
+      style="width:${larghezza}px;padding:4px 6px;border:1px solid #D4C9BE;border-radius:6px;font-size:12.5px;text-align:right;outline:none;"
+      onchange="salvaVenditaReport('${v.id}','${tipo}', this.value)">
+  </td>`;
+}
+
+function renderReportVendite() {
+  const container = document.getElementById('rv-list');
   if (!container) return;
   if (!tuttoMenu || !tuttoMenu.length) {
-    container.innerHTML = '<div style="padding:16px;text-align:center;color:var(--testo-muted);">Nessuna voce nel Menu Sagra. Aggiungile prima nella pagina Menu sagra.</div>';
+    container.innerHTML = '<div style="padding:24px;text-align:center;color:var(--testo-muted);">Nessuna voce nel Menu Sagra. Aggiungile prima nella pagina Menu sagra.</div>';
     return;
   }
 
-  // Nel giorno selezionato mostra: la cucina di quel giorno + il bar (aperto entrambi i giorni)
-  const menuCucina = giornoPNAttivo === 'sabato' ? 'cucina_sabato' : 'cucina_domenica';
-  const vociGiorno = tuttoMenu.filter(v => v.menu === menuCucina || v.menu === 'bar');
+  container.innerHTML = RV_GRUPPI.map(gruppo => {
+    const voci = tuttoMenu.filter(v => v.menu === gruppo.key).slice().sort((a, b) => a.piatto.localeCompare(b.piatto));
+    if (!voci.length) return '';
 
-  const menuLabelLocale = { cucina_sabato: 'Cucina Sabato', cucina_domenica: 'Cucina Domenica', bar: 'Bar' };
-  const gruppi = {};
-  vociGiorno.forEach(v => {
-    const key = v.menu || 'altro';
-    if (!gruppi[key]) gruppi[key] = [];
-    gruppi[key].push(v);
-  });
+    const intestazioni = gruppo.modalita === 'sabato_unico'
+      ? ['Sabato']
+      : gruppo.modalita === 'domenica_calcolata'
+        ? ['Dom. Pranzo', 'Totale finale (a mano)', 'Dom. Cena (calc.)']
+        : ['Sabato', 'Dom. Pranzo', 'Totale finale (a mano)', 'Dom. Cena (calc.)'];
 
-  let totaleIncassoAtteso = 0;
+    return `
+      <div style="margin-bottom:24px;">
+        <div style="font-weight:700;font-size:13px;color:var(--blu-notte);text-transform:uppercase;margin-bottom:8px;">${gruppo.label}</div>
+        <div style="overflow-x:auto;">
+        <table style="width:100%;border-collapse:collapse;font-size:12.5px;">
+          <thead>
+            <tr style="border-bottom:2px solid var(--border);">
+              <th style="text-align:left;padding:6px 8px;">Voce</th>
+              ${intestazioni.map(l => `<th style="text-align:right;padding:6px 8px;white-space:nowrap;">${l}</th>`).join('')}
+              <th style="text-align:right;padding:6px 8px;white-space:nowrap;">Totale</th>
+              <th style="text-align:right;padding:6px 8px;white-space:nowrap;color:var(--testo-muted);">Anno prec.</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${voci.map(v => {
+              const { totale, cena, haTotale } = calcolaRigaReport(v.id, gruppo.modalita);
 
-  container.innerHTML = Object.entries(gruppi).map(([menuKey, voci]) => `
-    <div style="margin-bottom:16px;">
-      <div style="font-weight:700;font-size:12px;color:var(--blu-notte);text-transform:uppercase;margin-bottom:6px;">${menuLabelLocale[menuKey] || menuKey}</div>
-      ${voci.slice().sort((a,b) => a.piatto.localeCompare(b.piatto)).map(v => {
-        const vendita = tutteVenditeMenu.find(x => x.menu_sagra_id === v.id && x.giorno === giornoPNAttivo);
-        const qta = vendita?.quantita || 0;
-        const incasso = qta * parseFloat(v.prezzo || 0);
-        totaleIncassoAtteso += incasso;
-        return `<div style="display:flex;align-items:center;gap:10px;padding:5px 0;border-bottom:1px solid var(--border);font-size:13px;">
-          <span style="flex:1;">${v.piatto} <span style="color:var(--testo-muted);font-size:11px;">(€ ${parseFloat(v.prezzo||0).toFixed(2)})</span></span>
-          <input type="number" step="1" value="${vendita?.quantita || ''}" placeholder="0" id="vendita-qta-${v.id}"
-            style="width:70px;padding:5px 8px;border:1px solid #D4C9BE;border-radius:6px;font-size:13px;text-align:right;outline:none;"
-            onchange="salvaVenditaMenu('${v.id}', this.value)">
-          <span style="width:80px;text-align:right;color:var(--testo-muted);font-size:12px;">€ ${incasso.toFixed(2)}</span>
-        </div>`;
-      }).join('')}
-    </div>
-  `).join('') + `<div style="text-align:right;font-weight:700;color:var(--blu-notte);padding-top:8px;">Incasso atteso ${giornoPNAttivo}: € ${totaleIncassoAtteso.toFixed(2)}</div>`;
+              let celle;
+              if (gruppo.modalita === 'sabato_unico') {
+                celle = inputCampo(v, 'sabato', 'Sabato');
+              } else if (gruppo.modalita === 'domenica_calcolata') {
+                celle = inputCampo(v, 'pranzo', 'Domenica Pranzo')
+                  + inputCampo(v, 'totale', 'Totale finale')
+                  + `<td style="padding:4px 8px;text-align:right;color:${cena === null ? 'var(--testo-muted)' : (cena < 0 ? '#9B2C2C' : 'var(--testo)')};">${cena === null ? '—' : cena}</td>`;
+              } else {
+                celle = inputCampo(v, 'sabato', 'Sabato')
+                  + inputCampo(v, 'pranzo', 'Domenica Pranzo')
+                  + inputCampo(v, 'totale', 'Totale finale')
+                  + `<td style="padding:4px 8px;text-align:right;color:${cena === null ? 'var(--testo-muted)' : (cena < 0 ? '#9B2C2C' : 'var(--testo)')};">${cena === null ? '—' : cena}</td>`;
+              }
+
+              const key = v.piatto.trim().toLowerCase();
+              const annoPrec = venditeAnnoPrecedente[key];
+              const diff = (annoPrec !== undefined && haTotale) ? totale - annoPrec : null;
+
+              return `<tr style="border-bottom:1px solid var(--border);">
+                <td style="padding:4px 8px;">${v.piatto}</td>
+                ${celle}
+                <td style="padding:4px 8px;text-align:right;font-weight:700;color:var(--blu-notte);">${haTotale ? totale : '—'}</td>
+                <td style="padding:4px 8px;text-align:right;color:var(--testo-muted);">
+                  ${annoPrec !== undefined ? annoPrec + (diff !== null ? ` <span style="color:${diff >= 0 ? '#2F6B4F' : '#9B2C2C'};font-size:11px;">(${diff >= 0 ? '+' : ''}${diff})</span>` : '') : '—'}
+                </td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+        </div>
+      </div>`;
+  }).join('');
 }
 
-async function salvaVenditaMenu(menuSagraId, valore) {
+async function salvaVenditaReport(menuSagraId, tipo, valore) {
   const sagraId = getSagraId();
-  const quantita = parseFloat(valore) || 0;
-  const esistente = tutteVenditeMenu.find(v => v.menu_sagra_id === menuSagraId && v.giorno === giornoPNAttivo);
+  const quantita = valore === '' ? null : (parseFloat(valore) || 0);
+  const esistente = tutteVenditeMenu.find(v => v.menu_sagra_id === menuSagraId && v.tipo === tipo);
   let error, nuovaRiga;
   if (esistente && esistente.id) {
     ({ error } = await db.from('vendite_menu_sagra').update({ quantita }).eq('id', esistente.id));
+    if (!error) esistente.quantita = quantita;
   } else {
     ({ data: nuovaRiga, error } = await db.from('vendite_menu_sagra')
-      .insert({ sagra_id: sagraId, menu_sagra_id: menuSagraId, giorno: giornoPNAttivo, quantita })
+      .insert({ sagra_id: sagraId, menu_sagra_id: menuSagraId, tipo, quantita })
       .select().single());
+    if (!error) tutteVenditeMenu.push(nuovaRiga || { menu_sagra_id: menuSagraId, tipo, quantita, sagra_id: sagraId });
   }
   if (error) { showToast('Errore: ' + error.message, 'error'); return; }
-  const idx = tutteVenditeMenu.findIndex(v => v.menu_sagra_id === menuSagraId && v.giorno === giornoPNAttivo);
-  if (idx >= 0) tutteVenditeMenu[idx].quantita = quantita;
-  else tutteVenditeMenu.push(nuovaRiga || { menu_sagra_id: menuSagraId, giorno: giornoPNAttivo, quantita, sagra_id: sagraId });
-  renderVenditeMenu();
+  renderReportVendite();
+}
+
+async function scaricaPDFReportVendite() {
+  await caricaJsPDF();
+  const { jsPDF } = window.jspdf;
+  const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const oggi = new Date().toLocaleDateString('it-IT');
+  const sagraNome = sagraSelezionata?.nome || 'Sagra';
+
+  function drawHeader() {
+    pdf.setFillColor(30, 45, 71);
+    pdf.rect(0, 0, 210, 26, 'F');
+    pdf.setTextColor(201, 160, 48);
+    pdf.setFontSize(15);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text('REPORT VENDITE', 14, 11);
+    pdf.setFontSize(9);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(200, 216, 240);
+    pdf.text(sagraNome, 14, 19);
+    pdf.text(oggi, 196, 19, { align: 'right' });
+  }
+
+  let y = 34;
+  drawHeader();
+
+  RV_GRUPPI.forEach(gruppo => {
+    const voci = tuttoMenu.filter(v => v.menu === gruppo.key).slice().sort((a, b) => a.piatto.localeCompare(b.piatto));
+    if (!voci.length) return;
+
+    if (y > 250) { pdf.addPage(); drawHeader(); y = 34; }
+    pdf.setFillColor(30, 45, 71);
+    pdf.rect(14, y - 5, 182, 9, 'F');
+    pdf.setFontSize(11);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(201, 160, 48);
+    pdf.text(gruppo.label.toUpperCase(), 16, y + 1);
+    y += 12;
+
+    voci.forEach(v => {
+      const { totale, cena, haTotale } = calcolaRigaReport(v.id, gruppo.modalita);
+      if (!haTotale && !parseFloat(trovaVenditaReport(v.id, 'sabato')?.quantita || 0) && !parseFloat(trovaVenditaReport(v.id, 'pranzo')?.quantita || 0)) return;
+
+      const sabato = parseFloat(trovaVenditaReport(v.id, 'sabato')?.quantita || 0);
+      const pranzo = parseFloat(trovaVenditaReport(v.id, 'pranzo')?.quantita || 0);
+      const dettagli = [
+        gruppo.modalita !== 'domenica_calcolata' && sabato ? `Sabato: ${sabato}` : null,
+        gruppo.modalita !== 'sabato_unico' && pranzo ? `Dom. Pranzo: ${pranzo}` : null,
+        gruppo.modalita !== 'sabato_unico' ? `Dom. Cena: ${cena === null ? 'n.d.' : cena}` : null
+      ].filter(Boolean).join('  ·  ');
+
+      const key = v.piatto.trim().toLowerCase();
+      const annoPrec = venditeAnnoPrecedente[key];
+
+      if (y > 278) { pdf.addPage(); drawHeader(); y = 34; }
+      pdf.setFontSize(9);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(26, 26, 26);
+      pdf.text(v.piatto, 18, y);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text(haTotale ? String(totale) : 'n.d.', 194, y, { align: 'right' });
+      y += 4.5;
+      if (dettagli) {
+        pdf.setFontSize(7.5);
+        pdf.setFont('helvetica', 'normal');
+        pdf.setTextColor(110, 110, 110);
+        pdf.text(dettagli + (annoPrec !== undefined ? `   (anno prec.: ${annoPrec})` : ''), 18, y);
+        y += 6;
+      } else {
+        y += 1.5;
+      }
+    });
+    y += 4;
+  });
+
+  pdf.save(`report_vendite_${sagraNome.replace(/\s+/g, '_')}.pdf`);
+  showToast('PDF generato!', 'success');
 }
 
 async function scaricaPDFPrimaNota() {
@@ -3159,44 +3322,6 @@ async function scaricaPDFPrimaNota() {
       y += 10;
       if (y > 265) { pdf.addPage(); drawHeader(sagraNome); y = 34; }
     });
-  });
-
-  // Vendite per articolo, divise per giorno
-  giorni.forEach(({ key, label }) => {
-    const menuCucina = key === 'sabato' ? 'cucina_sabato' : 'cucina_domenica';
-    const vociGiorno = tuttoMenu.filter(v => v.menu === menuCucina || v.menu === 'bar');
-    const conVendite = vociGiorno.filter(v => tutteVenditeMenu.some(x => x.menu_sagra_id === v.id && x.giorno === key && x.quantita > 0)).sort((a,b) => a.piatto.localeCompare(b.piatto));
-    if (!conVendite.length) return;
-
-    if (y > 250) { pdf.addPage(); drawHeader(sagraNome); y = 34; }
-    pdf.setFontSize(11);
-    pdf.setFont('helvetica', 'bold');
-    pdf.setTextColor(30, 45, 71);
-    pdf.text(`VENDITE PER ARTICOLO — ${label}`, 14, y);
-    y += 8;
-
-    let totaleIncassoAtteso = 0;
-    conVendite.forEach(v => {
-      const vendita = tutteVenditeMenu.find(x => x.menu_sagra_id === v.id && x.giorno === key);
-      const qta = vendita?.quantita || 0;
-      const incasso = qta * parseFloat(v.prezzo || 0);
-      totaleIncassoAtteso += incasso;
-      if (y > 278) { pdf.addPage(); drawHeader(sagraNome); y = 34; }
-      pdf.setFontSize(8.5);
-      pdf.setFont('helvetica', 'normal');
-      pdf.setTextColor(26, 26, 26);
-      pdf.text(v.piatto, 18, y);
-      pdf.text(String(qta), 150, y, { align: 'right' });
-      pdf.setFont('helvetica', 'bold');
-      pdf.text(`€ ${incasso.toFixed(2)}`, 194, y, { align: 'right' });
-      y += 6;
-    });
-    y += 3;
-    pdf.setFontSize(9.5);
-    pdf.setFont('helvetica', 'bold');
-    pdf.setTextColor(30, 45, 71);
-    pdf.text(`Incasso atteso ${label.toLowerCase()}: € ${totaleIncassoAtteso.toFixed(2)}`, 14, y);
-    y += 8;
   });
 
   pdf.save(`prima_nota_${sagraNome.replace(/\s+/g,'_')}.pdf`);
