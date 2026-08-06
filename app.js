@@ -3009,15 +3009,18 @@ async function registraIncassiPrimaNota() {
 }
 
 // ===== REPORT VENDITE (pagina a sé) =====
-// Modello: Sabato = una cassa sola (totale giornata unico).
-// Domenica = si registra Pranzo + Totale finale (contato a mano); la Cena si ricava per differenza.
-// Il Bar sabato non ha cassa propria (venduto dentro Ristorante), quindi anche le voci Bar
-// seguono lo stesso schema: Sabato (unico) + Domenica Pranzo + Totale finale.
-let venditeAnnoPrecedente = {}; // { "nome piatto minuscolo": quantita totale anno prima }
+// Modello venduto (spiegato da Federico):
+// - SABATO: 1 cassa unica condivisa tra Bar e Cucina (menu sabato) -> un solo numero per voce.
+// - DOMENICA CUCINA: passa solo dalla cassa Ristorante. Si conosce il Pranzo e il Totale finale
+//   (contato a mano); la Cena si ricava per differenza: Cena = Totale - Pranzo.
+// - DOMENICA BAR: passa da 2 casse diverse (Cassa Bar + Cassa Ristorante). Il Totale della domenica
+//   è quindi la somma delle due casse; la Cena si ricava comunque per differenza dal Pranzo:
+//   Totale Domenica = Cassa Bar + Cassa Ristorante; Cena = Totale Domenica - Pranzo.
+let venditeAnnoPrecedente = {}; // { "nome piatto minuscolo": totale generale anno prima }
 
 const RV_GRUPPI = [
   { key: 'cucina_sabato',   label: 'Cucina Sabato',   modalita: 'sabato_unico' },
-  { key: 'cucina_domenica', label: 'Cucina Domenica', modalita: 'domenica_calcolata' },
+  { key: 'cucina_domenica', label: 'Cucina Domenica', modalita: 'domenica_manuale' },
   { key: 'bar',             label: 'Bar',             modalita: 'bar_completo' }
 ];
 
@@ -3038,6 +3041,44 @@ async function loadReportVendite() {
   renderReportVendite();
 }
 
+function numOrNull(rec) {
+  if (!rec) return null;
+  if (rec.quantita === null || rec.quantita === undefined || rec.quantita === '') return null;
+  return parseFloat(rec.quantita);
+}
+
+// Calcola totale/cena di una voce a partire da un set di vendite (corrente o anno precedente)
+function calcolaRigaReport(vendite, voceId, modalita) {
+  const trova = (tipo) => vendite.find(v => v.menu_sagra_id === voceId && v.tipo === tipo);
+
+  if (modalita === 'sabato_unico') {
+    const sabato = numOrNull(trova('sabato'));
+    return { totale: sabato, haTotale: sabato !== null };
+  }
+
+  if (modalita === 'domenica_manuale') {
+    const pranzoRaw = numOrNull(trova('pranzo'));
+    const pranzo = pranzoRaw || 0;
+    const totaleInserito = numOrNull(trova('totale'));
+    const cena = totaleInserito !== null ? totaleInserito - pranzo : null;
+    return { totale: totaleInserito, cena, haTotale: totaleInserito !== null };
+  }
+
+  // bar_completo
+  const sabatoRaw = numOrNull(trova('sabato'));
+  const sabato = sabatoRaw || 0;
+  const pranzoRaw = numOrNull(trova('pranzo'));
+  const pranzo = pranzoRaw || 0;
+  const cassaBar = numOrNull(trova('cassa_bar_domenica'));
+  const cassaRist = numOrNull(trova('cassa_ristorante_domenica'));
+  const haDomenica = cassaBar !== null || cassaRist !== null;
+  const totaleDomenica = haDomenica ? (cassaBar || 0) + (cassaRist || 0) : null;
+  const cena = totaleDomenica !== null ? totaleDomenica - pranzo : null;
+  const haTotale = sabatoRaw !== null || haDomenica;
+  const totale = haTotale ? sabato + (totaleDomenica || 0) : null;
+  return { totale, totaleDomenica, cena, haTotale };
+}
+
 async function caricaVenditeAnnoPrecedente(sagraIdCorrente) {
   venditeAnnoPrecedente = {};
   const corrente = tutteSagre.find(s => s.id === sagraIdCorrente);
@@ -3046,41 +3087,24 @@ async function caricaVenditeAnnoPrecedente(sagraIdCorrente) {
   if (!precedente) return;
 
   const [menuPrecRes, venditePrecRes] = await Promise.all([
-    db.from('menu_sagra').select('id,piatto').eq('sagra_id', precedente.id),
+    db.from('menu_sagra').select('id,piatto,menu').eq('sagra_id', precedente.id),
     db.from('vendite_menu_sagra').select('menu_sagra_id,tipo,quantita').eq('sagra_id', precedente.id)
   ]);
   const menuPrec = menuPrecRes.data || [];
-  (venditePrecRes.data || []).forEach(v => {
-    // Per il totale anno precedente usiamo: 'sabato' + 'totale' (se c'era il calcolo),
-    // altrimenti sommiamo quello che c'è (compatibilità con eventuali dati vecchi).
-    if (v.tipo === 'pranzo') return; // il pranzo è già incluso nel 'totale' finale, non va sommato di nuovo
-    const voce = menuPrec.find(m => m.id === v.menu_sagra_id);
-    if (!voce || !voce.piatto) return;
+  const venditePrec = venditePrecRes.data || [];
+
+  menuPrec.forEach(voce => {
+    const gruppo = RV_GRUPPI.find(g => g.key === voce.menu);
+    if (!gruppo || !voce.piatto) return;
+    const { totale, haTotale } = calcolaRigaReport(venditePrec, voce.id, gruppo.modalita);
+    if (!haTotale) return;
     const key = voce.piatto.trim().toLowerCase();
-    venditeAnnoPrecedente[key] = (venditeAnnoPrecedente[key] || 0) + (parseFloat(v.quantita) || 0);
+    venditeAnnoPrecedente[key] = (venditeAnnoPrecedente[key] || 0) + totale;
   });
 }
 
 function trovaVenditaReport(menuSagraId, tipo) {
   return tutteVenditeMenu.find(v => v.menu_sagra_id === menuSagraId && v.tipo === tipo);
-}
-
-function calcolaRigaReport(voceId, modalita) {
-  const sabato = parseFloat(trovaVenditaReport(voceId, 'sabato')?.quantita || 0);
-  const pranzo = parseFloat(trovaVenditaReport(voceId, 'pranzo')?.quantita || 0);
-  const totaleRec = trovaVenditaReport(voceId, 'totale');
-  const totaleInserito = totaleRec && totaleRec.quantita !== null && totaleRec.quantita !== '' ? parseFloat(totaleRec.quantita) : null;
-
-  if (modalita === 'sabato_unico') {
-    return { totale: sabato, cena: null, haTotale: true };
-  }
-  if (modalita === 'domenica_calcolata') {
-    const cena = totaleInserito !== null ? totaleInserito - pranzo : null;
-    return { totale: totaleInserito, cena, haTotale: totaleInserito !== null };
-  }
-  // bar_completo
-  const cena = totaleInserito !== null ? totaleInserito - sabato - pranzo : null;
-  return { totale: totaleInserito, cena, haTotale: totaleInserito !== null };
 }
 
 function inputCampo(v, tipo, label, larghezza = 58) {
@@ -3090,6 +3114,10 @@ function inputCampo(v, tipo, label, larghezza = 58) {
       style="width:${larghezza}px;padding:4px 6px;border:1px solid #D4C9BE;border-radius:6px;font-size:12.5px;text-align:right;outline:none;"
       onchange="salvaVenditaReport('${v.id}','${tipo}', this.value)">
   </td>`;
+}
+
+function celleCalcolate(valori) {
+  return valori.map(val => `<td style="padding:4px 8px;text-align:right;color:${val === null ? 'var(--testo-muted)' : (val < 0 ? '#9B2C2C' : 'var(--testo)')};">${val === null ? '—' : val}</td>`).join('');
 }
 
 function renderReportVendite() {
@@ -3106,9 +3134,9 @@ function renderReportVendite() {
 
     const intestazioni = gruppo.modalita === 'sabato_unico'
       ? ['Sabato']
-      : gruppo.modalita === 'domenica_calcolata'
+      : gruppo.modalita === 'domenica_manuale'
         ? ['Dom. Pranzo', 'Totale finale (a mano)', 'Dom. Cena (calc.)']
-        : ['Sabato', 'Dom. Pranzo', 'Totale finale (a mano)', 'Dom. Cena (calc.)'];
+        : ['Sabato', 'Dom. Pranzo', 'Dom. Cassa Bar', 'Dom. Cassa Rist.', 'Dom. Totale (calc.)', 'Dom. Cena (calc.)'];
 
     return `
       <div style="margin-bottom:24px;">
@@ -3125,20 +3153,21 @@ function renderReportVendite() {
           </thead>
           <tbody>
             ${voci.map(v => {
-              const { totale, cena, haTotale } = calcolaRigaReport(v.id, gruppo.modalita);
+              const { totale, totaleDomenica, cena, haTotale } = calcolaRigaReport(tutteVenditeMenu, v.id, gruppo.modalita);
 
               let celle;
               if (gruppo.modalita === 'sabato_unico') {
                 celle = inputCampo(v, 'sabato', 'Sabato');
-              } else if (gruppo.modalita === 'domenica_calcolata') {
+              } else if (gruppo.modalita === 'domenica_manuale') {
                 celle = inputCampo(v, 'pranzo', 'Domenica Pranzo')
                   + inputCampo(v, 'totale', 'Totale finale')
-                  + `<td style="padding:4px 8px;text-align:right;color:${cena === null ? 'var(--testo-muted)' : (cena < 0 ? '#9B2C2C' : 'var(--testo)')};">${cena === null ? '—' : cena}</td>`;
+                  + celleCalcolate([cena]);
               } else {
                 celle = inputCampo(v, 'sabato', 'Sabato')
                   + inputCampo(v, 'pranzo', 'Domenica Pranzo')
-                  + inputCampo(v, 'totale', 'Totale finale')
-                  + `<td style="padding:4px 8px;text-align:right;color:${cena === null ? 'var(--testo-muted)' : (cena < 0 ? '#9B2C2C' : 'var(--testo)')};">${cena === null ? '—' : cena}</td>`;
+                  + inputCampo(v, 'cassa_bar_domenica', 'Domenica - Cassa Bar')
+                  + inputCampo(v, 'cassa_ristorante_domenica', 'Domenica - Cassa Ristorante')
+                  + celleCalcolate([totaleDomenica, cena]);
               }
 
               const key = v.piatto.trim().toLowerCase();
@@ -3217,14 +3246,19 @@ async function scaricaPDFReportVendite() {
     y += 12;
 
     voci.forEach(v => {
-      const { totale, cena, haTotale } = calcolaRigaReport(v.id, gruppo.modalita);
-      if (!haTotale && !parseFloat(trovaVenditaReport(v.id, 'sabato')?.quantita || 0) && !parseFloat(trovaVenditaReport(v.id, 'pranzo')?.quantita || 0)) return;
+      const { totale, totaleDomenica, cena, haTotale } = calcolaRigaReport(tutteVenditeMenu, v.id, gruppo.modalita);
+      if (!haTotale) return;
 
-      const sabato = parseFloat(trovaVenditaReport(v.id, 'sabato')?.quantita || 0);
-      const pranzo = parseFloat(trovaVenditaReport(v.id, 'pranzo')?.quantita || 0);
+      const sabato = numOrNull(trovaVenditaReport(v.id, 'sabato'));
+      const pranzo = numOrNull(trovaVenditaReport(v.id, 'pranzo'));
+      const cassaBar = numOrNull(trovaVenditaReport(v.id, 'cassa_bar_domenica'));
+      const cassaRist = numOrNull(trovaVenditaReport(v.id, 'cassa_ristorante_domenica'));
+
       const dettagli = [
-        gruppo.modalita !== 'domenica_calcolata' && sabato ? `Sabato: ${sabato}` : null,
-        gruppo.modalita !== 'sabato_unico' && pranzo ? `Dom. Pranzo: ${pranzo}` : null,
+        (gruppo.modalita === 'sabato_unico' || gruppo.modalita === 'bar_completo') && sabato !== null ? `Sabato: ${sabato}` : null,
+        gruppo.modalita !== 'sabato_unico' && pranzo !== null ? `Dom. Pranzo: ${pranzo}` : null,
+        gruppo.modalita === 'bar_completo' && cassaBar !== null ? `Dom. Cassa Bar: ${cassaBar}` : null,
+        gruppo.modalita === 'bar_completo' && cassaRist !== null ? `Dom. Cassa Rist.: ${cassaRist}` : null,
         gruppo.modalita !== 'sabato_unico' ? `Dom. Cena: ${cena === null ? 'n.d.' : cena}` : null
       ].filter(Boolean).join('  ·  ');
 
@@ -3237,7 +3271,7 @@ async function scaricaPDFReportVendite() {
       pdf.setTextColor(26, 26, 26);
       pdf.text(v.piatto, 18, y);
       pdf.setFont('helvetica', 'bold');
-      pdf.text(haTotale ? String(totale) : 'n.d.', 194, y, { align: 'right' });
+      pdf.text(String(totale), 194, y, { align: 'right' });
       y += 4.5;
       if (dettagli) {
         pdf.setFontSize(7.5);
