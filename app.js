@@ -138,6 +138,7 @@ function showPage(pageId) {
   if (pageId === 'spesa') loadSpesa();
   if (pageId === 'prima-nota') loadPrimaNota();
   if (pageId === 'report-vendite') loadReportVendite();
+  if (pageId === 'bilancio-stand') loadBilancioStand();
   if (pageId === 'inventario') loadInventario();
   if (pageId === 'richieste') loadRichieste();
   if (pageId === 'servizio') loadServizio();
@@ -3290,6 +3291,118 @@ async function scaricaPDFReportVendite() {
   showToast('PDF generato!', 'success');
 }
 
+// ===== BILANCIO PER STAND =====
+// Costi: dalla Lista Spesa, raggruppati per il campo "stand" gia' presente li' (CUCINA/BAR/...).
+// Ricavi: dal Report Vendite (prezzo di ogni voce del Menu Sagra x quantita' totale venduta).
+async function loadBilancioStand() {
+  await assicuraSagreCaricate();
+  const sagraId = getSagraId();
+  aggiornaHeaderSagra('bs-sagra-header');
+  if (!sagraId) return;
+
+  const [spesaRes, menuRes, venditeRes] = await Promise.all([
+    db.from('lista_spesa').select('*').eq('sagra_id', sagraId).eq('acquistato', true),
+    db.from('menu_sagra').select('*').eq('sagra_id', sagraId),
+    db.from('vendite_menu_sagra').select('*').eq('sagra_id', sagraId)
+  ]);
+  tuttoMenu = menuRes.data || [];
+  tutteVenditeMenu = venditeRes.data || [];
+
+  renderBilancioStand(spesaRes.data || []);
+}
+
+function calcolaRicavoGruppoMenu(menuKey, modalita) {
+  const voci = tuttoMenu.filter(v => v.menu === menuKey);
+  let tot = 0;
+  voci.forEach(v => {
+    const { totale, haTotale } = calcolaRigaReport(tutteVenditeMenu, v.id, modalita);
+    if (haTotale && totale) tot += totale * parseFloat(v.prezzo || 0);
+  });
+  return tot;
+}
+
+function renderBilancioStand(spesa) {
+  const container = document.getElementById('bs-list');
+  if (!container) return;
+
+  // Costi raggruppati per stand (normalizzato maiuscolo/trim, per evitare doppioni tipo "Bar"/"BAR ")
+  const costiPerStand = {};
+  const senzaStand = [];
+  spesa.forEach(r => {
+    const raw = (r.stand || '').trim();
+    if (!raw) { senzaStand.push(r); return; }
+    const key = raw.toUpperCase();
+    if (!costiPerStand[key]) costiPerStand[key] = { label: raw, totale: 0, nVoci: 0 };
+    costiPerStand[key].totale += parseFloat(r.prezzo_totale || 0);
+    costiPerStand[key].nVoci += 1;
+  });
+
+  // Ricavi noti: Cucina (sabato+domenica uniti) e Bar
+  const ricavoCucina = calcolaRicavoGruppoMenu('cucina_sabato', 'sabato_unico') + calcolaRicavoGruppoMenu('cucina_domenica', 'domenica_manuale');
+  const ricavoBar = calcolaRicavoGruppoMenu('bar', 'bar_completo');
+  const mappaRicavi = { 'CUCINA': ricavoCucina, 'BAR': ricavoBar };
+
+  // Unione di tutte le chiavi (stand con costi + stand con ricavi noti)
+  const chiavi = new Set([...Object.keys(costiPerStand), ...Object.keys(mappaRicavi)]);
+  const righe = [...chiavi].map(key => {
+    const costo = costiPerStand[key]?.totale || 0;
+    const label = costiPerStand[key]?.label || key;
+    const haRicavo = mappaRicavi.hasOwnProperty(key);
+    const ricavo = haRicavo ? mappaRicavi[key] : null;
+    return { key, label, costo, ricavo, haRicavo, nVoci: costiPerStand[key]?.nVoci || 0 };
+  });
+
+  // Stand con ricavo noto prima (Cucina/Bar), poi gli altri (costi generali non abbinati)
+  righe.sort((a, b) => (b.haRicavo - a.haRicavo) || (b.costo - a.costo));
+
+  const totCosto = righe.reduce((s, r) => s + r.costo, 0);
+  const totRicavo = righe.reduce((s, r) => s + (r.ricavo || 0), 0);
+
+  container.innerHTML = `
+    <div style="overflow-x:auto;">
+    <table style="width:100%;border-collapse:collapse;font-size:13px;">
+      <thead>
+        <tr style="border-bottom:2px solid var(--border);">
+          <th style="text-align:left;padding:8px;">Stand</th>
+          <th style="text-align:right;padding:8px;">Ricavi</th>
+          <th style="text-align:right;padding:8px;">Costi (Lista Spesa)</th>
+          <th style="text-align:right;padding:8px;">Margine</th>
+          <th style="text-align:right;padding:8px;">Margine %</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${righe.map(r => {
+          const margine = r.haRicavo ? (r.ricavo - r.costo) : null;
+          const marginePct = (r.haRicavo && r.ricavo > 0) ? (margine / r.ricavo * 100) : null;
+          const colore = margine === null ? 'var(--testo-muted)' : (margine >= 0 ? 'var(--verde)' : '#9B2C2C');
+          return `<tr style="border-bottom:1px solid var(--border);">
+            <td style="padding:8px;font-weight:600;">${r.label}${!r.haRicavo ? ' <span style="font-size:11px;font-weight:400;color:var(--testo-muted);">(nessun ricavo diretto — costo generale)</span>' : ''}</td>
+            <td style="padding:8px;text-align:right;">${r.haRicavo ? '€ ' + r.ricavo.toFixed(2) : '—'}</td>
+            <td style="padding:8px;text-align:right;">€ ${r.costo.toFixed(2)}${r.nVoci ? ` <span style="font-size:11px;color:var(--testo-muted);">(${r.nVoci} voci)</span>` : ''}</td>
+            <td style="padding:8px;text-align:right;font-weight:700;color:${colore};">${margine === null ? '—' : '€ ' + margine.toFixed(2)}</td>
+            <td style="padding:8px;text-align:right;color:${colore};">${marginePct === null ? '—' : marginePct.toFixed(0) + '%'}</td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+      <tfoot>
+        <tr style="border-top:2px solid var(--blu-notte);font-weight:700;">
+          <td style="padding:8px;">Totale</td>
+          <td style="padding:8px;text-align:right;">€ ${totRicavo.toFixed(2)}</td>
+          <td style="padding:8px;text-align:right;">€ ${totCosto.toFixed(2)}</td>
+          <td style="padding:8px;text-align:right;color:${(totRicavo-totCosto)>=0?'var(--verde)':'#9B2C2C'};">€ ${(totRicavo-totCosto).toFixed(2)}</td>
+          <td></td>
+        </tr>
+      </tfoot>
+    </table>
+    </div>
+    ${senzaStand.length ? `
+      <div style="margin-top:20px;padding:14px 16px;background:#FDF0DC;border-radius:10px;">
+        <div style="font-weight:700;color:#8A6D1D;margin-bottom:6px;"><i class="ti ti-alert-triangle"></i> ${senzaStand.length} voci di Lista Spesa senza uno "Stand" indicato (€ ${senzaStand.reduce((s,r)=>s+parseFloat(r.prezzo_totale||0),0).toFixed(2)} di costo non conteggiato sopra)</div>
+        <div style="font-size:12px;color:#6E5A15;">${senzaStand.slice(0,15).map(r => r.articolo).join(', ')}${senzaStand.length > 15 ? '…' : ''}</div>
+      </div>` : ''}
+  `;
+}
+
 async function scaricaPDFPrimaNota() {
   await caricaJsPDF();
   const { jsPDF } = window.jspdf;
@@ -4336,18 +4449,7 @@ function etichettaSottoconto(m) {
 function renderCassa() {
   const search = (document.getElementById('cassa-search')?.value || '').toLowerCase();
   const filtroFondo = document.getElementById('cassa-filtro-fondo')?.value || 'tutti';
-  const filtroStand = document.getElementById('cassa-filtro-stand')?.value || 'tutti';
   const filtroAnno = document.getElementById('cassa-filtro-anno')?.value || 'tutti';
-
-  // Popola le opzioni del filtro Stand con quelli realmente presenti nei movimenti caricati
-  const selStand = document.getElementById('cassa-filtro-stand');
-  if (selStand) {
-    const standPresenti = [...new Set(tuttiMovimentiCassa.map(m => m.stand).filter(Boolean))].sort();
-    const valorePrecedente = selStand.value;
-    selStand.innerHTML = '<option value="tutti">Tutti gli stand</option>'
-      + standPresenti.map(s => `<option value="${s}">${s}</option>`).join('');
-    selStand.value = standPresenti.includes(valorePrecedente) ? valorePrecedente : 'tutti';
-  }
 
   // I 4 saldi in alto devono sempre riflettere TUTTO (rispettano solo l'anno) — non vanno
   // "svuotati" se stai usando il filtro Fondo o la ricerca solo per guardare l'elenco sotto
@@ -4358,7 +4460,6 @@ function renderCassa() {
   let lista = listaPerBilancio;
   if (search) lista = lista.filter(m => JSON.stringify(m).toLowerCase().includes(search));
   if (filtroFondo !== 'tutti') lista = lista.filter(m => m.fondo === filtroFondo);
-  if (filtroStand !== 'tutti') lista = lista.filter(m => m.stand === filtroStand);
 
   const container = document.getElementById('cassa-list');
   if (!container) return;
@@ -4408,7 +4509,6 @@ function renderCassa() {
               <div class="row-sub">${m.data ? formatDataIT(m.data) : ''} · ${etichettaSottoconto(m)}${m.metodo_pagamento ? ' · ' + m.metodo_pagamento : ''}</div>
             </div>
             ${m.sagra_id ? '<span class="badge" style="background:#FDF0DC;color:#8A6D1D;">🎪 Sagra</span>' : ''}
-            ${m.stand ? `<span class="badge" style="background:#E8EEF6;color:#2C4A6E;">${m.stand}</span>` : ''}
             <span style="font-weight:600;color:${color};white-space:nowrap;">${segno} € ${parseFloat(m.importo).toFixed(2)}</span>
             ${(m.tipo === 'uscita' && m.fondo === 'Sella' && m.sottoconto === 'conto') ? `<button class="btn btn-sm" style="color:#7C3AED;" onclick="convertiInPrelievo('${m.id}')" title="Genera l'entrata mancante nei Contanti Sella"><i class="ti ti-transfer"></i></button>` : ''}
             <button class="btn btn-sm" onclick='openModalMovimentoCassa(${JSON.stringify(m).replace(/"/g,"&quot;")})'><i class="ti ti-edit"></i></button>
@@ -4806,7 +4906,6 @@ function openModalMovimentoCassa(m = null, forzaSagra = false) {
   aggiornaSottocontoCassaSelect(m?.sottoconto);
   aggiornaMetodoCassaSelect(m?.metodo_pagamento);
   document.getElementById('m-cassa-sagra').checked = forzaSagra || !!m?.sagra_id;
-  aggiornaStandCassaSelect(m?.stand);
   document.getElementById('m-cassa-note').value = m?.note || '';
   document.getElementById('m-cassa-fattura-url').value = m?.fattura_url || '';
   document.getElementById('m-cassa-fattura-file').value = '';
@@ -4856,24 +4955,6 @@ function aggiornaMetodoCassaSelect(metodoAttuale) {
     // Contanti Sella, Conto Dora (cassetta) o Contanti Dora: sempre "contanti", niente scelta
     wrap.style.display = 'none';
   }
-}
-
-async function aggiornaStandCassaSelect(standAttuale) {
-  const wrap = document.getElementById('m-cassa-stand-wrap');
-  const sel = document.getElementById('m-cassa-stand');
-  const attivo = document.getElementById('m-cassa-sagra').checked;
-  if (!attivo) { wrap.style.display = 'none'; sel.value = ''; return; }
-
-  await assicuraSagreCaricate();
-  const sagraId = getSagraId();
-  wrap.style.display = 'block';
-  if (!sagraId) { sel.innerHTML = '<option value="">— Nessuna edizione sagra selezionata —</option>'; return; }
-
-  const { data } = await db.from('prima_nota_casse_definizioni').select('*').eq('sagra_id', sagraId).order('ordine');
-  const casse = data || [];
-  sel.innerHTML = '<option value="">— Nessuno (spesa/incasso generale) —</option>'
-    + casse.map(c => `<option value="${c.nome}">${c.nome}</option>`).join('');
-  sel.value = standAttuale || '';
 }
 
 function anteprimaFatturaMovimentoCassa() {
@@ -4936,7 +5017,6 @@ async function saveMovimentoCassa() {
     fondo,
     sottoconto,
     sagra_id: sagraId,
-    stand: (movimentoSagra && document.getElementById('m-cassa-stand').value) || null,
     note: document.getElementById('m-cassa-note').value.trim() || null,
     fattura_url: fatturaUrl
   };
