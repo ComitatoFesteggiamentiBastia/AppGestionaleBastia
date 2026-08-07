@@ -139,6 +139,7 @@ function showPage(pageId) {
   if (pageId === 'prima-nota') loadPrimaNota();
   if (pageId === 'report-vendite') loadReportVendite();
   if (pageId === 'bilancio-stand') loadBilancioStand();
+  if (pageId === 'analisi') loadAnalisi();
   if (pageId === 'inventario') loadInventario();
   if (pageId === 'richieste') loadRichieste();
   if (pageId === 'servizio') loadServizio();
@@ -3418,6 +3419,226 @@ function vaiACassaFiltrataStand(stand) {
     const sel = document.getElementById('cassa-filtro-stand');
     if (sel) { sel.value = stand; renderCassa(); }
   }, 50);
+}
+
+// ===== ANALISI =====
+// Mette insieme tutte le fonti dati gia' presenti nell'app:
+// - Cassa Generale (movimenti collegati alla sagra) -> incasso/spesa reali, il dato di riferimento
+// - Lista Spesa -> dettaglio spesa per categoria/fornitore
+// - Report Vendite (Menu Sagra + vendite) -> ricavo per articolo, con costo unitario facoltativo -> margine
+// - Bilancio per Stand (entrate manuali + uscite taggate) -> riepilogo per stand
+// - Confronto con l'anno precedente
+let analisiCostoUnitarioModificato = {};
+
+async function loadAnalisi() {
+  await assicuraSagreCaricate();
+  const sagraId = getSagraId();
+  aggiornaHeaderSagra('an-sagra-header');
+  if (!sagraId) return;
+
+  const [movRes, spesaRes, menuRes, venditeRes, entrateStandRes] = await Promise.all([
+    db.from('movimenti').select('*').eq('sagra_id', sagraId),
+    db.from('lista_spesa').select('*').eq('sagra_id', sagraId).eq('acquistato', true),
+    db.from('menu_sagra').select('*').eq('sagra_id', sagraId),
+    db.from('vendite_menu_sagra').select('*').eq('sagra_id', sagraId),
+    db.from('bilancio_stand_entrate').select('*').eq('sagra_id', sagraId)
+  ]);
+  tuttoMenu = menuRes.data || [];
+  tutteVenditeMenu = venditeRes.data || [];
+  bsEntrateManuali = {};
+  (entrateStandRes.data || []).forEach(r => { bsEntrateManuali[r.stand] = parseFloat(r.entrate || 0); });
+
+  await caricaVenditeAnnoPrecedente(sagraId);
+  renderAnalisi(movRes.data || [], spesaRes.data || []);
+}
+
+function renderAnalisi(movimenti, spesa) {
+  const container = document.getElementById('an-content');
+  if (!container) return;
+
+  // ---- 1) Panoramica generale (dal registro reale: Cassa Generale) ----
+  const incassoTotale = movimenti.filter(m => m.tipo === 'entrata').reduce((s, m) => s + parseFloat(m.importo || 0), 0);
+  const spesaTotaleCassa = movimenti.filter(m => m.tipo === 'uscita').reduce((s, m) => s + parseFloat(m.importo || 0), 0);
+  const margineTotale = incassoTotale - spesaTotaleCassa;
+  const marginePct = incassoTotale > 0 ? (margineTotale / incassoTotale * 100) : 0;
+  const spesaTotaleListaSpesa = spesa.reduce((s, r) => s + parseFloat(r.prezzo_totale || 0), 0);
+
+  // ---- 2) Spese per categoria (Lista Spesa: CUCINA/BAR/PULIZIE/ALTRO) ----
+  const perCategoria = {};
+  spesa.forEach(r => {
+    const cat = r.categoria || 'Non categorizzato';
+    perCategoria[cat] = (perCategoria[cat] || 0) + parseFloat(r.prezzo_totale || 0);
+  });
+  const righeCategoria = Object.entries(perCategoria).sort((a, b) => b[1] - a[1]);
+
+  // ---- 3) Spese per fornitore (top 8) ----
+  const perFornitore = {};
+  spesa.forEach(r => {
+    const f = r.fornitore || 'Sconosciuto';
+    perFornitore[f] = (perFornitore[f] || 0) + parseFloat(r.prezzo_totale || 0);
+  });
+  const righeFornitore = Object.entries(perFornitore).sort((a, b) => b[1] - a[1]).slice(0, 8);
+
+  // ---- 4) Bilancio per stand (riepilogo, stessa logica della pagina dedicata) ----
+  const usciteStand = movimenti.filter(m => m.tipo === 'uscita' && m.stand);
+  const perStand = {};
+  const aggiungiStand = (key, m, quota = 1) => {
+    perStand[key] = (perStand[key] || 0) + parseFloat(m.importo || 0) * quota;
+  };
+  usciteStand.forEach(m => {
+    if (m.stand === 'Rist+Bar') { aggiungiStand('Ristorante', m, 0.5); aggiungiStand('Bar', m, 0.5); }
+    else aggiungiStand(m.stand, m, 1);
+  });
+  const chiaviStand = [...new Set(['Ristorante', 'Bar', 'Lotteria', ...Object.keys(perStand), ...Object.keys(bsEntrateManuali)])];
+  const righeStand = chiaviStand.map(k => {
+    const entr = bsEntrateManuali[k] || 0;
+    const usc = perStand[k] || 0;
+    return { stand: k, entrate: entr, uscite: usc, margine: entr - usc };
+  }).filter(r => r.entrate || r.uscite);
+
+  // ---- 5) Vendite per articolo con margine (Report Vendite + costo unitario) ----
+  const righeArticoli = [];
+  RV_GRUPPI.forEach(gruppo => {
+    tuttoMenu.filter(v => v.menu === gruppo.key).forEach(v => {
+      const { totale, haTotale } = calcolaRigaReport(tutteVenditeMenu, v.id, gruppo.modalita);
+      if (!haTotale || !totale) return;
+      const prezzo = parseFloat(v.prezzo || 0);
+      const ricavo = totale * prezzo;
+      const costoUnit = v.costo_unitario !== null && v.costo_unitario !== undefined ? parseFloat(v.costo_unitario) : null;
+      const costoTot = costoUnit !== null ? costoUnit * totale : null;
+      const margine = costoTot !== null ? ricavo - costoTot : null;
+      const marginePctVoce = (costoTot !== null && ricavo > 0) ? (margine / ricavo * 100) : null;
+      righeArticoli.push({ id: v.id, piatto: v.piatto, gruppo: gruppo.label, quantita: totale, prezzo, ricavo, costoUnit, margine, marginePctVoce });
+    });
+  });
+  righeArticoli.sort((a, b) => b.ricavo - a.ricavo);
+  const ricavoArticoliTotale = righeArticoli.reduce((s, r) => s + r.ricavo, 0);
+
+  // ---- 6) Confronto anno precedente ----
+  const ricavoAnnoPrec = righeArticoli.reduce((s, r) => {
+    const key = r.piatto.trim().toLowerCase();
+    const prec = venditeAnnoPrecedente[key];
+    return s + (prec !== undefined ? prec * r.prezzo : 0);
+  }, 0);
+  const nMatchAnnoPrec = righeArticoli.filter(r => venditeAnnoPrecedente[r.piatto.trim().toLowerCase()] !== undefined).length;
+
+  // ======================= RENDER =======================
+  const card = (label, valore, colore) => `
+    <div style="flex:1;min-width:140px;background:white;border:1px solid var(--border);border-radius:10px;padding:14px 16px;">
+      <div style="font-size:11px;color:var(--testo-muted);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:4px;">${label}</div>
+      <div style="font-size:20px;font-weight:700;color:${colore || 'var(--blu-notte)'};">${valore}</div>
+    </div>`;
+
+  container.innerHTML = `
+    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:24px;">
+      ${card('Incasso totale', '€ ' + incassoTotale.toFixed(2), 'var(--verde)')}
+      ${card('Spesa totale (Cassa Generale)', '€ ' + spesaTotaleCassa.toFixed(2), '#9B2C2C')}
+      ${card('Margine', '€ ' + margineTotale.toFixed(2), margineTotale >= 0 ? 'var(--verde)' : '#9B2C2C')}
+      ${card('Margine %', marginePct.toFixed(1) + '%', margineTotale >= 0 ? 'var(--verde)' : '#9B2C2C')}
+    </div>
+    ${Math.abs(spesaTotaleCassa - spesaTotaleListaSpesa) > 1 ? `
+      <div style="padding:10px 14px;background:#FDF0DC;border-radius:8px;font-size:12px;color:#8A6D1D;margin-bottom:20px;">
+        <i class="ti ti-alert-triangle"></i> La spesa totale in Cassa Generale (€ ${spesaTotaleCassa.toFixed(2)}) e quella somma dalla Lista Spesa (€ ${spesaTotaleListaSpesa.toFixed(2)}) non coincidono — probabile spesa non ancora registrata in uno dei due posti.
+      </div>` : ''}
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:28px;">
+      <div>
+        <div style="font-weight:700;font-size:13px;color:var(--blu-notte);text-transform:uppercase;margin-bottom:8px;">Spese per categoria</div>
+        ${righeCategoria.map(([cat, tot]) => `
+          <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px;">
+            <span>${cat}</span>
+            <span style="font-weight:600;">€ ${tot.toFixed(2)} <span style="color:var(--testo-muted);font-size:11px;">(${(tot/spesaTotaleListaSpesa*100).toFixed(0)}%)</span></span>
+          </div>`).join('')}
+      </div>
+      <div>
+        <div style="font-weight:700;font-size:13px;color:var(--blu-notte);text-transform:uppercase;margin-bottom:8px;">Spese per fornitore (top 8)</div>
+        ${righeFornitore.map(([f, tot]) => `
+          <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px;">
+            <span>${f}</span>
+            <span style="font-weight:600;">€ ${tot.toFixed(2)} <span style="color:var(--testo-muted);font-size:11px;">(${(tot/spesaTotaleListaSpesa*100).toFixed(0)}%)</span></span>
+          </div>`).join('')}
+      </div>
+    </div>
+
+    <div style="margin-bottom:28px;">
+      <div style="font-weight:700;font-size:13px;color:var(--blu-notte);text-transform:uppercase;margin-bottom:8px;">Bilancio per stand</div>
+      <table style="width:100%;border-collapse:collapse;font-size:13px;">
+        <thead><tr style="border-bottom:2px solid var(--border);">
+          <th style="text-align:left;padding:6px 8px;">Stand</th>
+          <th style="text-align:right;padding:6px 8px;">Entrate</th>
+          <th style="text-align:right;padding:6px 8px;">Uscite</th>
+          <th style="text-align:right;padding:6px 8px;">Margine</th>
+        </tr></thead>
+        <tbody>
+          ${righeStand.map(r => `<tr style="border-bottom:1px solid var(--border);">
+            <td style="padding:6px 8px;font-weight:600;">${r.stand}</td>
+            <td style="padding:6px 8px;text-align:right;color:var(--verde);">€ ${r.entrate.toFixed(2)}</td>
+            <td style="padding:6px 8px;text-align:right;color:#9B2C2C;">€ ${r.uscite.toFixed(2)}</td>
+            <td style="padding:6px 8px;text-align:right;font-weight:700;color:${r.margine>=0?'var(--verde)':'#9B2C2C'};">€ ${r.margine.toFixed(2)}</td>
+          </tr>`).join('') || '<tr><td colspan="4" style="padding:12px;color:var(--testo-muted);">Nessun dato — vai su Bilancio per Stand per compilarlo.</td></tr>'}
+        </tbody>
+      </table>
+      <div style="font-size:11px;color:var(--testo-muted);margin-top:4px;">Dettaglio completo nella pagina Bilancio per Stand.</div>
+    </div>
+
+    <div style="margin-bottom:28px;">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px;">
+        <div style="font-weight:700;font-size:13px;color:var(--blu-notte);text-transform:uppercase;">Vendite per articolo — ricavo, costo, margine</div>
+        <div style="font-size:12px;color:var(--testo-muted);">Ricavo totale articoli: € ${ricavoArticoliTotale.toFixed(2)}</div>
+      </div>
+      <div style="font-size:11.5px;color:var(--testo-muted);margin-bottom:8px;">Il "Costo unitario" è facoltativo: scrivilo per un piatto per vederne subito il margine. Lo trovi anche in Menu Sagra.</div>
+      <div style="overflow-x:auto;">
+      <table style="width:100%;border-collapse:collapse;font-size:12.5px;">
+        <thead><tr style="border-bottom:2px solid var(--border);">
+          <th style="text-align:left;padding:6px 8px;">Voce</th>
+          <th style="text-align:left;padding:6px 8px;">Gruppo</th>
+          <th style="text-align:right;padding:6px 8px;">Q.tà</th>
+          <th style="text-align:right;padding:6px 8px;">Prezzo</th>
+          <th style="text-align:right;padding:6px 8px;">Ricavo</th>
+          <th style="text-align:right;padding:6px 8px;">Costo unit.</th>
+          <th style="text-align:right;padding:6px 8px;">Margine</th>
+          <th style="text-align:right;padding:6px 8px;">Margine %</th>
+        </tr></thead>
+        <tbody>
+          ${righeArticoli.map(r => `<tr style="border-bottom:1px solid var(--border);">
+            <td style="padding:5px 8px;">${r.piatto}</td>
+            <td style="padding:5px 8px;color:var(--testo-muted);font-size:11px;">${r.gruppo}</td>
+            <td style="padding:5px 8px;text-align:right;">${r.quantita}</td>
+            <td style="padding:5px 8px;text-align:right;">€ ${r.prezzo.toFixed(2)}</td>
+            <td style="padding:5px 8px;text-align:right;font-weight:600;">€ ${r.ricavo.toFixed(2)}</td>
+            <td style="padding:5px 8px;text-align:right;">
+              <input type="number" step="0.01" value="${r.costoUnit ?? ''}" placeholder="—"
+                style="width:64px;padding:4px 6px;border:1px solid #D4C9BE;border-radius:6px;font-size:12px;text-align:right;outline:none;"
+                onchange="salvaCostoUnitarioAnalisi('${r.id}', this.value)">
+            </td>
+            <td style="padding:5px 8px;text-align:right;font-weight:700;color:${r.margine===null?'var(--testo-muted)':(r.margine>=0?'var(--verde)':'#9B2C2C')};">${r.margine===null?'—':'€ '+r.margine.toFixed(2)}</td>
+            <td style="padding:5px 8px;text-align:right;color:${r.marginePctVoce===null?'var(--testo-muted)':(r.marginePctVoce>=0?'var(--verde)':'#9B2C2C')};">${r.marginePctVoce===null?'—':r.marginePctVoce.toFixed(0)+'%'}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+      </div>
+    </div>
+
+    <div>
+      <div style="font-weight:700;font-size:13px;color:var(--blu-notte);text-transform:uppercase;margin-bottom:8px;">Confronto con l'anno precedente</div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;">
+        ${card('Ricavo articoli quest\'anno', '€ ' + ricavoArticoliTotale.toFixed(2))}
+        ${card('Ricavo articoli anno prec. (voci corrispondenti)', '€ ' + ricavoAnnoPrec.toFixed(2))}
+        ${card('Differenza', (ricavoArticoliTotale - ricavoAnnoPrec >= 0 ? '+' : '') + '€ ' + (ricavoArticoliTotale - ricavoAnnoPrec).toFixed(2), (ricavoArticoliTotale - ricavoAnnoPrec) >= 0 ? 'var(--verde)' : '#9B2C2C')}
+      </div>
+      <div style="font-size:11px;color:var(--testo-muted);margin-top:6px;">Calcolato solo sulle ${nMatchAnnoPrec} voci di menu con lo stesso nome trovate anche nell'edizione precedente.</div>
+    </div>
+  `;
+}
+
+async function salvaCostoUnitarioAnalisi(voceId, valore) {
+  const costo = valore === '' ? null : (parseFloat(valore) || 0);
+  const { error } = await db.from('menu_sagra').update({ costo_unitario: costo }).eq('id', voceId);
+  if (error) { showToast('Errore: ' + error.message, 'error'); return; }
+  const voce = tuttoMenu.find(v => v.id === voceId);
+  if (voce) voce.costo_unitario = costo;
+  showToast('Costo salvato', 'success');
+  loadAnalisi();
 }
 
 

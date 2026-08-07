@@ -581,6 +581,7 @@
       <div class="s-item" onclick="showPage('prima-nota')"><i class="ti ti-calculator"></i> Prima Nota</div>
       <div class="s-item" onclick="showPage('report-vendite')"><i class="ti ti-chart-bar"></i> Report Vendite</div>
       <div class="s-item" onclick="showPage('bilancio-stand')"><i class="ti ti-report-money"></i> Bilancio per Stand</div>
+      <div class="s-item" onclick="showPage('analisi')" style="font-weight:700;"><i class="ti ti-chart-infographic"></i> Analisi</div>
     </div>
     <div class="s-section">
       <div class="s-label">Risorse</div>
@@ -852,6 +853,7 @@
             <option value="Lotteria">Lotteria</option>
             <option value="Rist+Bar">Ristorante + Bar</option>
           </select>
+          <button class="btn" style="background:var(--blu-notte);color:white;" onclick="showPage('analisi')"><i class="ti ti-chart-infographic"></i> Analisi</button>
           <button class="btn" onclick="scaricaPDFCassa()"><i class="ti ti-file-download"></i> Bilancio PDF</button>
           <button class="btn" onclick="esportaExcelMovimenti()"><i class="ti ti-file-spreadsheet"></i> Movimenti Excel</button>
           <button class="btn" onclick="openModalSaldoIniziale()"><i class="ti ti-cash-banknote"></i> Saldo iniziale</button>
@@ -1158,6 +1160,17 @@
         </div>
       </div>
       <div id="bs-list"><div style="padding:24px;text-align:center;color:var(--testo-muted);">Caricamento...</div></div>
+    </div>
+
+    <!-- ANALISI -->
+    <div class="page" id="page-analisi">
+      <div class="page-header">
+        <div>
+          <h2>Analisi</h2>
+          <div id="an-sagra-header" style="font-size:12px;color:var(--testo-muted);margin-top:2px;"></div>
+        </div>
+      </div>
+      <div id="an-content"><div style="padding:24px;text-align:center;color:var(--testo-muted);">Caricamento...</div></div>
     </div>
 
 
