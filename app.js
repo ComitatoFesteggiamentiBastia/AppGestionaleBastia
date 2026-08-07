@@ -3292,71 +3292,51 @@ async function scaricaPDFReportVendite() {
 }
 
 // ===== BILANCIO PER STAND =====
-// Costi: dalla Lista Spesa, raggruppati per il campo "stand" gia' presente li' (CUCINA/BAR/...).
-// Ricavi: dal Report Vendite (prezzo di ogni voce del Menu Sagra x quantita' totale venduta).
+// Basato direttamente sui movimenti di Cassa Generale collegati alla sagra corrente
+// e taggati con uno Stand (Ristorante / Bar / Lotteria / Rist+Bar per le spese condivise).
+// Entrate e uscite di ogni stand vengono sommate cosi' come sono state registrate: nessuna
+// ricostruzione a posteriori da Lista Spesa o Report Vendite.
 async function loadBilancioStand() {
   await assicuraSagreCaricate();
   const sagraId = getSagraId();
   aggiornaHeaderSagra('bs-sagra-header');
   if (!sagraId) return;
 
-  const [spesaRes, menuRes, venditeRes] = await Promise.all([
-    db.from('lista_spesa').select('*').eq('sagra_id', sagraId).eq('acquistato', true),
-    db.from('menu_sagra').select('*').eq('sagra_id', sagraId),
-    db.from('vendite_menu_sagra').select('*').eq('sagra_id', sagraId)
-  ]);
-  tuttoMenu = menuRes.data || [];
-  tutteVenditeMenu = venditeRes.data || [];
-
-  renderBilancioStand(spesaRes.data || []);
+  const { data } = await db.from('movimenti').select('*').eq('sagra_id', sagraId);
+  renderBilancioStand(data || []);
 }
 
-function calcolaRicavoGruppoMenu(menuKey, modalita) {
-  const voci = tuttoMenu.filter(v => v.menu === menuKey);
-  let tot = 0;
-  voci.forEach(v => {
-    const { totale, haTotale } = calcolaRigaReport(tutteVenditeMenu, v.id, modalita);
-    if (haTotale && totale) tot += totale * parseFloat(v.prezzo || 0);
-  });
-  return tot;
-}
+const BS_STAND_ORDINE = ['Ristorante', 'Bar', 'Lotteria', 'Rist+Bar'];
 
-function renderBilancioStand(spesa) {
+function renderBilancioStand(movimenti) {
   const container = document.getElementById('bs-list');
   if (!container) return;
 
-  // Costi raggruppati per stand (normalizzato maiuscolo/trim, per evitare doppioni tipo "Bar"/"BAR ")
-  const costiPerStand = {};
-  const senzaStand = [];
-  spesa.forEach(r => {
-    const raw = (r.stand || '').trim();
-    if (!raw) { senzaStand.push(r); return; }
-    const key = raw.toUpperCase();
-    if (!costiPerStand[key]) costiPerStand[key] = { label: raw, totale: 0, nVoci: 0 };
-    costiPerStand[key].totale += parseFloat(r.prezzo_totale || 0);
-    costiPerStand[key].nVoci += 1;
+  const conStand = movimenti.filter(m => m.stand);
+  const senzaStand = movimenti.filter(m => !m.stand);
+
+  const perStand = {};
+  conStand.forEach(m => {
+    const key = m.stand;
+    if (!perStand[key]) perStand[key] = { entrate: 0, uscite: 0, nMovimenti: 0 };
+    if (m.tipo === 'entrata') perStand[key].entrate += parseFloat(m.importo || 0);
+    else perStand[key].uscite += parseFloat(m.importo || 0);
+    perStand[key].nMovimenti += 1;
   });
 
-  // Ricavi noti: Cucina (sabato+domenica uniti) e Bar
-  const ricavoCucina = calcolaRicavoGruppoMenu('cucina_sabato', 'sabato_unico') + calcolaRicavoGruppoMenu('cucina_domenica', 'domenica_manuale');
-  const ricavoBar = calcolaRicavoGruppoMenu('bar', 'bar_completo');
-  const mappaRicavi = { 'CUCINA': ricavoCucina, 'BAR': ricavoBar };
-
-  // Unione di tutte le chiavi (stand con costi + stand con ricavi noti)
-  const chiavi = new Set([...Object.keys(costiPerStand), ...Object.keys(mappaRicavi)]);
-  const righe = [...chiavi].map(key => {
-    const costo = costiPerStand[key]?.totale || 0;
-    const label = costiPerStand[key]?.label || key;
-    const haRicavo = mappaRicavi.hasOwnProperty(key);
-    const ricavo = haRicavo ? mappaRicavi[key] : null;
-    return { key, label, costo, ricavo, haRicavo, nVoci: costiPerStand[key]?.nVoci || 0 };
+  const chiavi = [...new Set([...BS_STAND_ORDINE, ...Object.keys(perStand)])].filter(k => perStand[k]);
+  const righe = chiavi.map(key => {
+    const d = perStand[key];
+    return { key, entrate: d.entrate, uscite: d.uscite, margine: d.entrate - d.uscite, nMovimenti: d.nMovimenti };
   });
 
-  // Stand con ricavo noto prima (Cucina/Bar), poi gli altri (costi generali non abbinati)
-  righe.sort((a, b) => (b.haRicavo - a.haRicavo) || (b.costo - a.costo));
+  if (!righe.length) {
+    container.innerHTML = '<div style="padding:24px;text-align:center;color:var(--testo-muted);">Nessun movimento della sagra corrente ha ancora uno Stand assegnato. Aprili in Cassa Generale e scegli lo Stand nel modulo di modifica.</div>';
+    return;
+  }
 
-  const totCosto = righe.reduce((s, r) => s + r.costo, 0);
-  const totRicavo = righe.reduce((s, r) => s + (r.ricavo || 0), 0);
+  const totEntrate = righe.reduce((s, r) => s + r.entrate, 0);
+  const totUscite = righe.reduce((s, r) => s + r.uscite, 0);
 
   container.innerHTML = `
     <div style="overflow-x:auto;">
@@ -3364,43 +3344,51 @@ function renderBilancioStand(spesa) {
       <thead>
         <tr style="border-bottom:2px solid var(--border);">
           <th style="text-align:left;padding:8px;">Stand</th>
-          <th style="text-align:right;padding:8px;">Ricavi</th>
-          <th style="text-align:right;padding:8px;">Costi (Lista Spesa)</th>
+          <th style="text-align:right;padding:8px;">Entrate</th>
+          <th style="text-align:right;padding:8px;">Uscite</th>
           <th style="text-align:right;padding:8px;">Margine</th>
-          <th style="text-align:right;padding:8px;">Margine %</th>
+          <th style="text-align:right;padding:8px;">Movimenti</th>
         </tr>
       </thead>
       <tbody>
         ${righe.map(r => {
-          const margine = r.haRicavo ? (r.ricavo - r.costo) : null;
-          const marginePct = (r.haRicavo && r.ricavo > 0) ? (margine / r.ricavo * 100) : null;
-          const colore = margine === null ? 'var(--testo-muted)' : (margine >= 0 ? 'var(--verde)' : '#9B2C2C');
-          return `<tr style="border-bottom:1px solid var(--border);">
-            <td style="padding:8px;font-weight:600;">${r.label}${!r.haRicavo ? ' <span style="font-size:11px;font-weight:400;color:var(--testo-muted);">(nessun ricavo diretto — costo generale)</span>' : ''}</td>
-            <td style="padding:8px;text-align:right;">${r.haRicavo ? '€ ' + r.ricavo.toFixed(2) : '—'}</td>
-            <td style="padding:8px;text-align:right;">€ ${r.costo.toFixed(2)}${r.nVoci ? ` <span style="font-size:11px;color:var(--testo-muted);">(${r.nVoci} voci)</span>` : ''}</td>
-            <td style="padding:8px;text-align:right;font-weight:700;color:${colore};">${margine === null ? '—' : '€ ' + margine.toFixed(2)}</td>
-            <td style="padding:8px;text-align:right;color:${colore};">${marginePct === null ? '—' : marginePct.toFixed(0) + '%'}</td>
+          const colore = r.margine >= 0 ? 'var(--verde)' : '#9B2C2C';
+          return `<tr style="border-bottom:1px solid var(--border);cursor:pointer;" onclick="vaiACassaFiltrataStand('${r.key}')">
+            <td style="padding:8px;font-weight:600;">${r.key}</td>
+            <td style="padding:8px;text-align:right;color:var(--verde);">€ ${r.entrate.toFixed(2)}</td>
+            <td style="padding:8px;text-align:right;color:#9B2C2C;">€ ${r.uscite.toFixed(2)}</td>
+            <td style="padding:8px;text-align:right;font-weight:700;color:${colore};">€ ${r.margine.toFixed(2)}</td>
+            <td style="padding:8px;text-align:right;color:var(--testo-muted);">${r.nMovimenti}</td>
           </tr>`;
         }).join('')}
       </tbody>
       <tfoot>
         <tr style="border-top:2px solid var(--blu-notte);font-weight:700;">
           <td style="padding:8px;">Totale</td>
-          <td style="padding:8px;text-align:right;">€ ${totRicavo.toFixed(2)}</td>
-          <td style="padding:8px;text-align:right;">€ ${totCosto.toFixed(2)}</td>
-          <td style="padding:8px;text-align:right;color:${(totRicavo-totCosto)>=0?'var(--verde)':'#9B2C2C'};">€ ${(totRicavo-totCosto).toFixed(2)}</td>
+          <td style="padding:8px;text-align:right;color:var(--verde);">€ ${totEntrate.toFixed(2)}</td>
+          <td style="padding:8px;text-align:right;color:#9B2C2C;">€ ${totUscite.toFixed(2)}</td>
+          <td style="padding:8px;text-align:right;color:${(totEntrate-totUscite)>=0?'var(--verde)':'#9B2C2C'};">€ ${(totEntrate-totUscite).toFixed(2)}</td>
           <td></td>
         </tr>
       </tfoot>
     </table>
     </div>
+    <div style="margin-top:6px;font-size:11.5px;color:var(--testo-muted);">Clicca una riga per vedere i movimenti di quello stand in Cassa Generale.</div>
+    ${perStand['Rist+Bar'] ? `<div style="margin-top:14px;font-size:12px;color:var(--testo-muted);">"Rist+Bar" raccoglie le spese condivise tra i due stand (es. ordini multi-stand tipo SOGEGROSS) non ripartite singolarmente.</div>` : ''}
     ${senzaStand.length ? `
       <div style="margin-top:20px;padding:14px 16px;background:#FDF0DC;border-radius:10px;">
-        <div style="font-weight:700;color:#8A6D1D;margin-bottom:6px;"><i class="ti ti-alert-triangle"></i> ${senzaStand.length} voci di Lista Spesa senza uno "Stand" indicato (€ ${senzaStand.reduce((s,r)=>s+parseFloat(r.prezzo_totale||0),0).toFixed(2)} di costo non conteggiato sopra)</div>
-        <div style="font-size:12px;color:#6E5A15;">${senzaStand.slice(0,15).map(r => r.articolo).join(', ')}${senzaStand.length > 15 ? '…' : ''}</div>
+        <div style="font-weight:700;color:#8A6D1D;margin-bottom:6px;"><i class="ti ti-alert-triangle"></i> ${senzaStand.length} movimenti della sagra corrente senza Stand assegnato (non conteggiati sopra)</div>
+        <div style="font-size:12px;color:#6E5A15;">${senzaStand.slice(0,15).map(r => r.descrizione).join(', ')}${senzaStand.length > 15 ? '…' : ''}</div>
       </div>` : ''}
   `;
+}
+
+function vaiACassaFiltrataStand(stand) {
+  showPage('cassa');
+  setTimeout(() => {
+    const sel = document.getElementById('cassa-filtro-stand');
+    if (sel) { sel.value = stand; renderCassa(); }
+  }, 50);
 }
 
 async function scaricaPDFPrimaNota() {
@@ -4449,6 +4437,7 @@ function etichettaSottoconto(m) {
 function renderCassa() {
   const search = (document.getElementById('cassa-search')?.value || '').toLowerCase();
   const filtroFondo = document.getElementById('cassa-filtro-fondo')?.value || 'tutti';
+  const filtroStand = document.getElementById('cassa-filtro-stand')?.value || 'tutti';
   const filtroAnno = document.getElementById('cassa-filtro-anno')?.value || 'tutti';
 
   // I 4 saldi in alto devono sempre riflettere TUTTO (rispettano solo l'anno) — non vanno
@@ -4460,6 +4449,7 @@ function renderCassa() {
   let lista = listaPerBilancio;
   if (search) lista = lista.filter(m => JSON.stringify(m).toLowerCase().includes(search));
   if (filtroFondo !== 'tutti') lista = lista.filter(m => m.fondo === filtroFondo);
+  if (filtroStand !== 'tutti') lista = lista.filter(m => m.stand === filtroStand);
 
   const container = document.getElementById('cassa-list');
   if (!container) return;
@@ -4509,6 +4499,7 @@ function renderCassa() {
               <div class="row-sub">${m.data ? formatDataIT(m.data) : ''} · ${etichettaSottoconto(m)}${m.metodo_pagamento ? ' · ' + m.metodo_pagamento : ''}</div>
             </div>
             ${m.sagra_id ? '<span class="badge" style="background:#FDF0DC;color:#8A6D1D;">🎪 Sagra</span>' : ''}
+            ${m.stand ? `<span class="badge" style="background:#E8EEF6;color:#2C4A6E;">${m.stand}</span>` : ''}
             <span style="font-weight:600;color:${color};white-space:nowrap;">${segno} € ${parseFloat(m.importo).toFixed(2)}</span>
             ${(m.tipo === 'uscita' && m.fondo === 'Sella' && m.sottoconto === 'conto') ? `<button class="btn btn-sm" style="color:#7C3AED;" onclick="convertiInPrelievo('${m.id}')" title="Genera l'entrata mancante nei Contanti Sella"><i class="ti ti-transfer"></i></button>` : ''}
             <button class="btn btn-sm" onclick='openModalMovimentoCassa(${JSON.stringify(m).replace(/"/g,"&quot;")})'><i class="ti ti-edit"></i></button>
@@ -4906,6 +4897,7 @@ function openModalMovimentoCassa(m = null, forzaSagra = false) {
   aggiornaSottocontoCassaSelect(m?.sottoconto);
   aggiornaMetodoCassaSelect(m?.metodo_pagamento);
   document.getElementById('m-cassa-sagra').checked = forzaSagra || !!m?.sagra_id;
+  document.getElementById('m-cassa-stand').value = m?.stand || '';
   document.getElementById('m-cassa-note').value = m?.note || '';
   document.getElementById('m-cassa-fattura-url').value = m?.fattura_url || '';
   document.getElementById('m-cassa-fattura-file').value = '';
@@ -5017,6 +5009,7 @@ async function saveMovimentoCassa() {
     fondo,
     sottoconto,
     sagra_id: sagraId,
+    stand: document.getElementById('m-cassa-stand').value || null,
     note: document.getElementById('m-cassa-note').value.trim() || null,
     fattura_url: fatturaUrl
   };
