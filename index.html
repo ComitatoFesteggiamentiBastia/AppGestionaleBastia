@@ -844,6 +844,9 @@
             <option value="Sella">Solo Sella</option>
             <option value="Dora">Solo Dora</option>
           </select>
+          <select id="cassa-filtro-stand" onchange="renderCassa()" style="padding:7px 10px;border:1px solid #D4C9BE;border-radius:7px;font-size:13px;outline:none;">
+            <option value="tutti">Tutti gli stand</option>
+          </select>
           <button class="btn" onclick="scaricaPDFCassa()"><i class="ti ti-file-download"></i> Bilancio PDF</button>
           <button class="btn" onclick="esportaExcelMovimenti()"><i class="ti ti-file-spreadsheet"></i> Movimenti Excel</button>
           <button class="btn" onclick="openModalSaldoIniziale()"><i class="ti ti-cash-banknote"></i> Saldo iniziale</button>
@@ -1804,8 +1807,14 @@
       </div>
       <div class="form-group" style="grid-column:1/3">
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;">
-          <input type="checkbox" id="m-cassa-sagra" style="width:16px;height:16px;accent-color:var(--oro);"> Movimento Sagra
+          <input type="checkbox" id="m-cassa-sagra" style="width:16px;height:16px;accent-color:var(--oro);" onchange="aggiornaStandCassaSelect()"> Movimento Sagra
         </label>
+      </div>
+      <div class="form-group" style="grid-column:1/3;display:none;" id="m-cassa-stand-wrap">
+        <label>Stand</label>
+        <select id="m-cassa-stand" style="width:100%;padding:9px 12px;border:1px solid #D4C9BE;border-radius:8px;font-size:14px;outline:none;">
+          <option value="">— Nessuno (spesa/incasso generale) —</option>
+        </select>
       </div>
       <div class="form-group" style="grid-column:1/3"><label>Note</label><input id="m-cassa-note"></div>
       <div class="form-group" style="grid-column:1/3">

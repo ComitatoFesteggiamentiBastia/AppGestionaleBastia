@@ -4336,7 +4336,18 @@ function etichettaSottoconto(m) {
 function renderCassa() {
   const search = (document.getElementById('cassa-search')?.value || '').toLowerCase();
   const filtroFondo = document.getElementById('cassa-filtro-fondo')?.value || 'tutti';
+  const filtroStand = document.getElementById('cassa-filtro-stand')?.value || 'tutti';
   const filtroAnno = document.getElementById('cassa-filtro-anno')?.value || 'tutti';
+
+  // Popola le opzioni del filtro Stand con quelli realmente presenti nei movimenti caricati
+  const selStand = document.getElementById('cassa-filtro-stand');
+  if (selStand) {
+    const standPresenti = [...new Set(tuttiMovimentiCassa.map(m => m.stand).filter(Boolean))].sort();
+    const valorePrecedente = selStand.value;
+    selStand.innerHTML = '<option value="tutti">Tutti gli stand</option>'
+      + standPresenti.map(s => `<option value="${s}">${s}</option>`).join('');
+    selStand.value = standPresenti.includes(valorePrecedente) ? valorePrecedente : 'tutti';
+  }
 
   // I 4 saldi in alto devono sempre riflettere TUTTO (rispettano solo l'anno) — non vanno
   // "svuotati" se stai usando il filtro Fondo o la ricerca solo per guardare l'elenco sotto
@@ -4347,6 +4358,7 @@ function renderCassa() {
   let lista = listaPerBilancio;
   if (search) lista = lista.filter(m => JSON.stringify(m).toLowerCase().includes(search));
   if (filtroFondo !== 'tutti') lista = lista.filter(m => m.fondo === filtroFondo);
+  if (filtroStand !== 'tutti') lista = lista.filter(m => m.stand === filtroStand);
 
   const container = document.getElementById('cassa-list');
   if (!container) return;
@@ -4396,6 +4408,7 @@ function renderCassa() {
               <div class="row-sub">${m.data ? formatDataIT(m.data) : ''} · ${etichettaSottoconto(m)}${m.metodo_pagamento ? ' · ' + m.metodo_pagamento : ''}</div>
             </div>
             ${m.sagra_id ? '<span class="badge" style="background:#FDF0DC;color:#8A6D1D;">🎪 Sagra</span>' : ''}
+            ${m.stand ? `<span class="badge" style="background:#E8EEF6;color:#2C4A6E;">${m.stand}</span>` : ''}
             <span style="font-weight:600;color:${color};white-space:nowrap;">${segno} € ${parseFloat(m.importo).toFixed(2)}</span>
             ${(m.tipo === 'uscita' && m.fondo === 'Sella' && m.sottoconto === 'conto') ? `<button class="btn btn-sm" style="color:#7C3AED;" onclick="convertiInPrelievo('${m.id}')" title="Genera l'entrata mancante nei Contanti Sella"><i class="ti ti-transfer"></i></button>` : ''}
             <button class="btn btn-sm" onclick='openModalMovimentoCassa(${JSON.stringify(m).replace(/"/g,"&quot;")})'><i class="ti ti-edit"></i></button>
@@ -4793,6 +4806,7 @@ function openModalMovimentoCassa(m = null, forzaSagra = false) {
   aggiornaSottocontoCassaSelect(m?.sottoconto);
   aggiornaMetodoCassaSelect(m?.metodo_pagamento);
   document.getElementById('m-cassa-sagra').checked = forzaSagra || !!m?.sagra_id;
+  aggiornaStandCassaSelect(m?.stand);
   document.getElementById('m-cassa-note').value = m?.note || '';
   document.getElementById('m-cassa-fattura-url').value = m?.fattura_url || '';
   document.getElementById('m-cassa-fattura-file').value = '';
@@ -4842,6 +4856,24 @@ function aggiornaMetodoCassaSelect(metodoAttuale) {
     // Contanti Sella, Conto Dora (cassetta) o Contanti Dora: sempre "contanti", niente scelta
     wrap.style.display = 'none';
   }
+}
+
+async function aggiornaStandCassaSelect(standAttuale) {
+  const wrap = document.getElementById('m-cassa-stand-wrap');
+  const sel = document.getElementById('m-cassa-stand');
+  const attivo = document.getElementById('m-cassa-sagra').checked;
+  if (!attivo) { wrap.style.display = 'none'; sel.value = ''; return; }
+
+  await assicuraSagreCaricate();
+  const sagraId = getSagraId();
+  wrap.style.display = 'block';
+  if (!sagraId) { sel.innerHTML = '<option value="">— Nessuna edizione sagra selezionata —</option>'; return; }
+
+  const { data } = await db.from('prima_nota_casse_definizioni').select('*').eq('sagra_id', sagraId).order('ordine');
+  const casse = data || [];
+  sel.innerHTML = '<option value="">— Nessuno (spesa/incasso generale) —</option>'
+    + casse.map(c => `<option value="${c.nome}">${c.nome}</option>`).join('');
+  sel.value = standAttuale || '';
 }
 
 function anteprimaFatturaMovimentoCassa() {
@@ -4904,6 +4936,7 @@ async function saveMovimentoCassa() {
     fondo,
     sottoconto,
     sagra_id: sagraId,
+    stand: (movimentoSagra && document.getElementById('m-cassa-stand').value) || null,
     note: document.getElementById('m-cassa-note').value.trim() || null,
     fattura_url: fatturaUrl
   };
