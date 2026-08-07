@@ -3136,7 +3136,7 @@ function renderReportVendite() {
       ? ['Sabato']
       : gruppo.modalita === 'domenica_manuale'
         ? ['Dom. Pranzo', 'Totale finale (a mano)', 'Dom. Cena (calc.)']
-        : ['Sabato', 'Dom. Pranzo', 'Dom. Cassa Bar', 'Dom. Cassa Rist.', 'Dom. Totale (calc.)', 'Dom. Cena (calc.)'];
+        : ['Sabato', 'Dom. Pranzo', 'Dom. Cassa Bar (tot. giornata)', 'Dom. Cassa Rist. (tot. giornata)', 'Dom. Totale (calc.)', 'Dom. Cena (calc.)'];
 
     return `
       <div style="margin-bottom:24px;">
@@ -3165,8 +3165,8 @@ function renderReportVendite() {
               } else {
                 celle = inputCampo(v, 'sabato', 'Sabato')
                   + inputCampo(v, 'pranzo', 'Domenica Pranzo')
-                  + inputCampo(v, 'cassa_bar_domenica', 'Domenica - Cassa Bar')
-                  + inputCampo(v, 'cassa_ristorante_domenica', 'Domenica - Cassa Ristorante')
+                  + inputCampo(v, 'cassa_bar_domenica', 'Domenica - Cassa Bar, totale intera giornata')
+                  + inputCampo(v, 'cassa_ristorante_domenica', 'Domenica - Cassa Ristorante, totale intera giornata')
                   + celleCalcolate([totaleDomenica, cena]);
               }
 
